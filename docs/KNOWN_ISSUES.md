@@ -14,12 +14,12 @@ that fixed them.
 4. **No vault / climb / push** — scheduled with windows (R2) and combat (R4).
 5. **HUD is not scaled for high-DPI** — stretch mode is `canvas_items`, so it
    scales with window size, but font sizes are engine defaults.
-7. **HUD still polls two things** — the debug overlay (fine) and the
+6. **HUD still polls two things** — the debug overlay (fine) and the
    winded-timer clear (Character does not emit an event when the winded
    lockout expires). Add an `exhaustion_changed` event when needed.
-8. **Stamina at 0 while jogging** — the player can keep jogging at 0 %
+7. **Stamina at 0 while jogging** — the player can keep jogging at 0 %
    stamina (×0.6). Intended for now; revisit with pain/stress (Phase 3).
-6. **Screenshot runner is Linux-oriented** — uses `xvfb-run` when present;
+8. **Screenshot runner is Linux-oriented** — uses `xvfb-run` when present;
    on macOS run `scripts/screenshots.sh` with a display (works, untested
    here).
 
