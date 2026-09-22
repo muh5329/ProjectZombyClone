@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="CharacterStatsProfile" load_steps=2 format=3 uid="uid://c0statsprof0001"]
+
+[ext_resource type="Script" path="res://data/characters/character_stats_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stamina_max = 100.0
+stamina_rate_idle = 3.5
+stamina_rate_sneak = 1.0
+stamina_rate_walk = 1.0
+stamina_rate_jog = -1.5
+stamina_rate_sprint = -18.0
+stamina_low_fraction = 0.25
+stamina_exhausted_enter = 0.02
+stamina_exhausted_exit = 0.4
+exhausted_speed_multiplier = 0.6
+winded_min_seconds = 4.0

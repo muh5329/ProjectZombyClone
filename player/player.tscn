@@ -1,0 +1,53 @@
+[gd_scene load_steps=10 format=3 uid="uid://c0player000001"]
+
+[ext_resource type="Script" path="res://player/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://characters/movement_component.gd" id="2_move"]
+[ext_resource type="Script" path="res://characters/stats_component.gd" id="3_stats"]
+[ext_resource type="Script" path="res://player/player_controller.gd" id="4_ctrl"]
+[ext_resource type="Resource" path="res://data/characters/player_stats.tres" id="5_profile"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
+radius = 0.3
+height = 1.7
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_body"]
+radius = 0.3
+height = 1.7
+
+[sub_resource type="BoxMesh" id="BoxMesh_nose"]
+size = Vector3(0.16, 0.1, 0.22)
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.85, 0.7, 0.45, 1)
+
+[node name="Player" type="CharacterBody3D" groups=["player"]]
+collision_layer = 2
+collision_mask = 13
+floor_snap_length = 0.3
+script = ExtResource("1_player")
+profile = ExtResource("5_profile")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.85, 0)
+shape = SubResource("CapsuleShape3D_body")
+
+[node name="Visual" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 0.85, 0)
+mesh = SubResource("CapsuleMesh_body")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="Nose" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 1.45, -0.36)
+mesh = SubResource("BoxMesh_nose")
+surface_material_override/0 = SubResource("Mat_body")
+
+[node name="Movement" type="Node" parent="."]
+script = ExtResource("2_move")
+
+[node name="Stats" type="Node" parent="."]
+script = ExtResource("3_stats")
+
+[node name="Controller" type="Node" parent="."]
+script = ExtResource("4_ctrl")
