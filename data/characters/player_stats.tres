@@ -17,3 +17,4 @@ stamina_exhausted_exit = 0.4
 exhausted_speed_multiplier = 0.6
 winded_min_seconds = 4.0
 eye_height = 0.9
+health_max = 100.0

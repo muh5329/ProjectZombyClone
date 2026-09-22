@@ -13,12 +13,14 @@ extends CharacterBody3D
 const STAMINA := StatsComponent.STAMINA
 const STATE_EXHAUSTED := &"exhausted"
 ## Intent directions shorter than this count as "not moving".
-const INTENT_DEADZONE := 0.1
+const INTENT_DEADZONE := BodyHelpers.INTENT_DEADZONE
 
 @export var profile: CharacterStatsProfile
 
 @onready var movement: MovementComponent = $Movement
 @onready var stats: StatsComponent = $Stats
+## Optional HealthComponent child named "Health" (player, survivors).
+@onready var health: HealthComponent = get_node_or_null("Health")
 ## Visual root that is rotated to face the movement direction.
 @onready var visual: Node3D = get_node_or_null("Visual")
 
@@ -50,6 +52,10 @@ func _ready() -> void:
 	stats.character = self
 	stats.threshold.connect(_on_stat_threshold)
 	stats.add_stat(STAMINA, profile.stamina_max, profile.stamina_rates(), profile.stamina_thresholds())
+	if health:
+		health.character = self
+		health.set_max(profile.health_max)
+		health.died.connect(_on_died)
 
 
 func set_intent(direction: Vector3, mode: MovementComponent.Mode) -> void:
@@ -58,19 +64,44 @@ func set_intent(direction: Vector3, mode: MovementComponent.Mode) -> void:
 
 
 func has_move_intent() -> bool:
-	return intent_direction.length_squared() > INTENT_DEADZONE * INTENT_DEADZONE
+	return BodyHelpers.has_move_intent(intent_direction)
 
 
 func is_moving() -> bool:
-	return Vector2(velocity.x, velocity.z).length_squared() > 0.01
+	return BodyHelpers.is_moving(velocity)
 
 
 func speed() -> float:
-	return Vector2(velocity.x, velocity.z).length()
+	return BodyHelpers.flat_speed(velocity)
 
 
 func can_sprint() -> bool:
 	return not exhausted
+
+
+func is_dead() -> bool:
+	return health != null and health.dead
+
+
+## Damage entry point used by zombies / hazards. Duck-typed: anything with
+## take_damage(amount, source, info) can be attacked. Returns the
+## HealthComponent result, or {ok: false} when this character has no health.
+func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> Dictionary:
+	if health == null:
+		return {"ok": false, "reason": "No health"}
+	return health.take_damage(amount, source, info)
+
+
+## Death: the body stays as a busy (input-ignoring) character. Round 4
+## replaces this with a proper death sequence.
+func _on_died(_source: Node) -> void:
+	if busy_tween and busy_tween.is_valid():
+		busy_tween.kill()
+	busy_tween = null
+	is_busy = true
+	busy_context = &"dead"
+	intent_direction = Vector3.ZERO
+	velocity = Vector3.ZERO
 
 
 ## Height of the eyes / interaction focus above the feet (from the profile).

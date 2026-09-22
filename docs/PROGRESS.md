@@ -6,6 +6,82 @@ that did not write the code).
 
 ---
 
+## Round 3 — Basic zombie AI, senses, navigation, health (2026-09-22)
+
+### Goal
+Zombies that are readable and dangerous: state machine, vision/hearing/
+proximity senses, navmesh pathing through door openings, door banging,
+attacks that damage a new HealthComponent; player death and restart.
+
+### What changed
+- `ZombieProfile` resource (all tuning: speeds 0.9/1.6, vision 14 m/120°,
+  memory 8 s, attack 0.9 m / 0.5 s windup / 1.5 s cooldown / 12 dmg,
+  health 60, AI/sense/repath cadences, door damage 8, hold distance…).
+- `Zombie` (CharacterBody3D, layer 3) + `ZombieVisual`, `ZombieCorpse`
+  (layer 4, "Search corpse" placeholder), `ZombieSenses` (staggered 6 Hz
+  vision with LOS on layers 1+7+8, hearing with wall attenuation,
+  proximity with LOS), `ZombieAI` on a generic RefCounted `StateMachine`:
+  Idle/Wander/Investigate/Search/Chase/Attack/AttackDoor/LostTarget/
+  Stunned/Dead. Max 4 attackers per target, others hold at 1.4 m.
+- Navigation: `NavBaker` bakes a NavigationMesh at load from layer-1
+  static colliders; door leaves moved to layer 7, window panes to layer 8
+  so doorways bake as passable and open windows are see-through.
+- Doors: 300 hp, `take_damage`, broken state (leaf gone, always open,
+  still targetable), `door_banged` + 10 m sound. Breakable contract
+  (group + `take_damage`/`blocks_path`) so AI never imports Door.
+- Sound stub: `EventBus.sound_emitted(position, radius, intensity,
+  category, source)`; footsteps (sneak 2 / walk 4 / jog 8 / sprint 14 m),
+  doors 6 m, window smash 18 m, bangs 10 m.
+- `HealthComponent` on Character; player death → busy, overlay, R restart.
+- HUD: ♥ health bar, "! N chasing", red damage vignette (shader).
+- `ZombieSpawner` (seeded, ≥15 m from player, outside buildings).
+- Perf script: 200 zombies calm 4.2 ms, all hostile 8.4 ms avg (budgets
+  8 / 10 ms) on the 2-core CI box; far calm zombies use cheap navmesh
+  sliding out of the physics space.
+
+### Files changed
+zombies/**, ai/state_machine/*, data/zombies/*, characters/{health_component,
+footstep_emitter,body_helpers,character}.gd, world/{nav_baker,world_query}.gd,
+interaction/{door,window,wall_fixture}.gd, core/event_bus.gd, ui/hud/*,
+maps/test_ground.tscn, project.godot (layers 7/8, Jolt, restart action),
+tests/unit/test_{state_machine,zombie_senses,health}.gd,
+tests/integration/test_zombie_scene.gd, tests/perf/perf_zombies.gd,
+scripts/{perf,test}.sh, docs/*.
+
+### Tests performed
+`scripts/test.sh` → **112 tests, 0 failed** (54 unit, 58 integration);
+runner now also fails on plain `ERROR:` lines. `scripts/screenshots.sh` OK
+(11_zombies_overview, 12_chase, 13_damage_flash). `scripts/perf.sh` OK.
+Critic probe: 18 adversarial cases.
+
+### Bugs discovered (critic) → all fixed
+Corpse left outside the physics space (die() ordering) → untargetable,
+order-dependent test; bites through walls (no LOS on attack/proximity);
+broken door untargetable; stale "N chasing"; zombies blind through open
+windows; freed sound source crashed a listener (engine ERROR not caught by
+runner); non-deterministic AI phase from instance ids; take_damage(0) ok;
+door query allocations per tick; hostile perf 18 ms → 8.4 ms; hardcoded
+tuning outside profile; zombie.gd god object; AI importing Door/Building;
+duplicated movement math; vacuous dead-player test; health/stamina bars
+same colour.
+
+### Failed approaches
+- Baking doors on layer 1 sealed doorways in the navmesh → layer 7.
+- Reading Performance monitors per frame (1 Hz refresh) gave flat perf
+  numbers → per-step timing with priority-bracket nodes.
+- Instance-id stagger looked random but broke seeded repeatability.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (6) · System Integration 8 (7) · Survival Depth 6 (4) ·
+Architecture 7 (6) · Performance 7 (5) · UX/Feedback 7 (6) ·
+Bug Resistance 7 (4).
+
+### Highest-priority remaining issue
+The player cannot fight back or shove; zombies are only avoidable.
+Round 4 (melee, push, body-region injuries) is next.
+
+---
+
 ## Round 2 — Interaction framework, enterable house, dimetric camera + cutaway (2026-09-22)
 
 ### Goal

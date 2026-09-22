@@ -72,6 +72,17 @@ func wait_until(pred: Callable, max_frames: int = 600) -> bool:
 	return pred.call()
 
 
+## Advance PHYSICS frames until [pred] is true or [max_frames] elapse.
+## Use this for gameplay timers (AI, cooldowns): headless process frames
+## can run much faster than the 60 Hz physics tick.
+func wait_physics_until(pred: Callable, max_frames: int = 600) -> bool:
+	for i in max_frames:
+		if pred.call():
+			return true
+		await tree.physics_frame
+	return pred.call()
+
+
 ## Instantiate a scene under the root and wait a frame so _ready has run.
 func spawn_scene(path: String) -> Node:
 	var scene: PackedScene = load(path)

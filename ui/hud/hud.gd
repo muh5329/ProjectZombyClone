@@ -6,8 +6,15 @@ extends CanvasLayer
 
 const COL_OK := Color(0.55, 0.8, 0.35)
 const COL_LOW := Color(0.95, 0.65, 0.2)
-const COL_EXHAUSTED := Color(0.9, 0.25, 0.2)
+## Exhausted is orange-red so the stamina bar never matches the health bar.
+const COL_EXHAUSTED := Color(0.95, 0.45, 0.2)
+const COL_HEALTH := Color(0.6, 0.08, 0.06)
 
+@onready var health_bar: ProgressBar = %HealthBar
+@onready var health_label: Label = %HealthLabel
+@onready var danger_label: Label = %DangerLabel
+@onready var damage_flash: ColorRect = %DamageFlash
+@onready var death_overlay: ColorRect = %DeathOverlay
 @onready var stamina_bar: ProgressBar = %StaminaBar
 @onready var stamina_label: Label = %StaminaLabel
 @onready var mode_label: Label = %ModeLabel
@@ -23,6 +30,11 @@ var _stamina_state: StringName = &"normal"
 var _mode: StringName = &"jog"
 var _exhausted: bool = false
 var _frac: float = 1.0
+var _health_frac: float = 1.0
+## Zombies currently chasing / attacking the player (zombie -> true).
+var _chasers: Dictionary = {}
+var _flash_tween: Tween
+var _dead: bool = false
 
 
 func _ready() -> void:
@@ -33,7 +45,16 @@ func _ready() -> void:
 	EventBus.interaction_target_changed.connect(_on_interaction_target_changed)
 	EventBus.interaction_refused.connect(_on_interaction_refused)
 	EventBus.player_room_changed.connect(_on_player_room_changed)
-	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 1-4 actions · Q/R rotate · Wheel zoom · F3 debug"
+	EventBus.character_damaged.connect(_on_character_damaged)
+	EventBus.character_died.connect(_on_character_died)
+	EventBus.zombie_state_changed.connect(_on_zombie_state_changed)
+	EventBus.zombie_died.connect(_on_zombie_died)
+	danger_label.text = ""
+	death_overlay.visible = false
+	health_bar.modulate = COL_HEALTH
+	health_label.add_theme_color_override(&"font_color", Color.WHITE)
+	_set_flash(0.0)
+	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 1-4 actions · Q/R rotate · Wheel zoom · F3 debug · R restart"
 	notice_label.text = ""
 	prompt_label.text = ""
 	room_label.text = ""
@@ -54,6 +75,9 @@ func _sync_from_player() -> void:
 	_stamina_state = p.stats.get_state(Character.STAMINA)
 	_mode = MovementComponent.mode_name(p.effective_mode)
 	_exhausted = p.exhausted
+	if p.health:
+		_health_frac = p.health.fraction()
+		_dead = p.health.dead
 
 
 func _on_stat_changed(c: Node, stat: StringName, value: float, max_value: float) -> void:
@@ -142,6 +166,118 @@ func _on_player_room_changed(room: Node, building: Node) -> void:
 	room_label.text = "Inside: %s%s" % [rn, (" — " + bn) if bn != "" else ""]
 
 
+# --- Health / zombies -------------------------------------------------------
+
+func _on_character_damaged(c: Node, _amount: float, _source: Node, _info: Dictionary) -> void:
+	if not _is_player(c):
+		return
+	var ch := c as Character
+	if ch and ch.health:
+		_health_frac = ch.health.fraction()
+	_refresh()
+	flash_damage()
+
+
+func _on_character_died(c: Node, _source: Node) -> void:
+	if not _is_player(c):
+		return
+	_dead = true
+	_health_frac = 0.0
+	death_overlay.visible = true
+	prompt_label.text = ""
+	_refresh()
+
+
+## Red screen-edge flash (0.55 s).
+func flash_damage() -> void:
+	if _flash_tween and _flash_tween.is_valid():
+		_flash_tween.kill()
+	_set_flash(0.9)
+	_flash_tween = create_tween()
+	_flash_tween.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	_flash_tween.tween_method(_set_flash, 0.9, 0.0, 0.55).set_ease(Tween.EASE_IN)
+
+
+func _set_flash(v: float) -> void:
+	var m := damage_flash.material as ShaderMaterial
+	if m:
+		m.set_shader_parameter(&"strength", v)
+
+
+func flash_strength() -> float:
+	var m := damage_flash.material as ShaderMaterial
+	return float(m.get_shader_parameter(&"strength")) if m else 0.0
+
+
+func _on_zombie_state_changed(zombie: Node, _from: StringName, to: StringName) -> void:
+	var chasing: bool = (to == &"chase" or to == &"attack") and GameManager.player != null and zombie.get("target") == GameManager.player
+	if chasing:
+		if not _chasers.has(zombie):
+			_chasers[zombie] = true
+			# A chaser removed from the tree (freed, scene change) must not
+			# leave a stale count behind.
+			zombie.tree_exiting.connect(_on_chaser_gone.bind(zombie), CONNECT_ONE_SHOT)
+	else:
+		_forget_chaser(zombie)
+	_refresh_danger()
+
+
+func _on_zombie_died(zombie: Node, _killer: Node) -> void:
+	_forget_chaser(zombie)
+	_refresh_danger()
+
+
+func _on_chaser_gone(zombie: Node) -> void:
+	_chasers.erase(zombie)
+	_refresh_danger()
+
+
+func _forget_chaser(zombie: Node) -> void:
+	if _chasers.erase(zombie) and is_instance_valid(zombie):
+		var cb := _on_chaser_gone.bind(zombie)
+		if zombie.tree_exiting.is_connected(cb):
+			zombie.tree_exiting.disconnect(cb)
+
+
+func chasing_count() -> int:
+	_prune_chasers()
+	return _chasers.size()
+
+
+func _prune_chasers() -> void:
+	for z in _chasers.keys():
+		if not is_instance_valid(z) or not z.is_inside_tree():
+			_chasers.erase(z)
+
+
+func _refresh_danger() -> void:
+	_prune_chasers()
+	danger_label.text = format_danger(_chasers.size())
+
+
+static func format_danger(n: int) -> String:
+	if n <= 0:
+		return ""
+	return "!  %d chasing" % n
+
+
+func restart_action_name() -> StringName:
+	return &"restart"
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _dead and event.is_action_pressed(restart_action_name()):
+		get_viewport().set_input_as_handled()
+		restart()
+
+
+## Reload the running scene (no-op in tests where the scene is not current).
+func restart() -> void:
+	var t := get_tree()
+	if t.current_scene != null and t.current_scene.is_ancestor_of(self):
+		t.reload_current_scene()
+
+
 func _notice(text: String, seconds: float) -> void:
 	notice_label.text = text
 	_notice_time = seconds
@@ -149,6 +285,8 @@ func _notice(text: String, seconds: float) -> void:
 
 func _refresh() -> void:
 	stamina_bar.value = _frac * 100.0
+	health_bar.value = _health_frac * 100.0
+	health_label.text = "♥ Health %d%%" % int(round(_health_frac * 100.0)) if not _dead else "♥ Dead"
 	var suffix := ""
 	if _stamina_state == &"low":
 		suffix = "  (low)"
@@ -176,6 +314,11 @@ func _process(delta: float) -> void:
 	if p and p.exhausted != _exhausted:
 		_exhausted = p.exhausted
 		_refresh()
+	if not _chasers.is_empty():
+		var n := _chasers.size()
+		_prune_chasers()
+		if _chasers.size() != n:
+			danger_label.text = format_danger(_chasers.size())
 
 	debug_label.visible = GameManager.debug_overlay
 	if debug_label.visible and p:

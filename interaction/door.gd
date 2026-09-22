@@ -8,9 +8,26 @@ extends WallFixture
 ## player never knows this is a door. Emits EventBus.door_state_changed.
 ## A swing is refused ("Blocked") when a character stands where the leaf
 ## would end up, and toggles are rate-limited by WallFixture.toggle_cooldown.
+##
+## Physics: the leaf is on layer 7 ("doors") + 4 + 6, NOT layer 1, so the
+## navigation mesh bakes doorways as passable; characters still collide
+## with it through their masks. Zombies bang on closed doors through the
+## "breakable" contract (group "breakable", take_damage(), blocks_path()):
+## take_damage() lowers [health]; at 0 the door is "broken" — the leaf is
+## gone (the body stays on layer 4 only so "Close door (Door is broken)"
+## remains readable), the doorway is permanently open. Every bang emits
+## door_banged + a 10 m sound so more zombies come. Sounds: open/close/
+## hit/break emit EventBus.sound_emitted (Round 8 grows this into real
+## propagation).
 
 const STATE_CLOSED := &"closed"
 const STATE_OPEN := &"open"
+const STATE_BROKEN := &"broken"
+## Physics layer index (0-based) of the "doors" layer.
+const DOOR_LAYER_BIT := 6
+const SOUND_TOGGLE_RADIUS := 6.0
+const SOUND_HIT_RADIUS := 10.0
+const SOUND_BREAK_RADIUS := 18.0
 const ACTION_OPEN := &"open"
 const ACTION_CLOSE := &"close"
 ## Layers checked before swinging: 2 player + 3 zombies.
@@ -23,8 +40,14 @@ const BLOCK_MASK := (1 << 1) | (1 << 2)
 @export var swing_seconds: float = 0.4
 ## Locked doors cannot be opened (keys/lockpicking in a later round).
 @export var locked: bool = false
+## Hit points before the door breaks. With a zombie's 8 damage every 2 s a
+## single zombie needs ~75 s; a group of four ~20 s (axes later).
+@export var health_max: float = 300.0
 
 var state: StringName = STATE_CLOSED
+var health: float = 300.0
+var _block_query: PhysicsShapeQueryParameters3D
+var _block_shape: BoxShape3D
 ## Signed swing angle of the last opening (radians), 0 when closed.
 var _swing: float = 0.0
 var _mesh: MeshInstance3D
@@ -33,6 +56,21 @@ var _shape: CollisionShape3D
 
 func _init() -> void:
 	fixture_group = &"door"
+
+
+func _ready() -> void:
+	super._ready()
+	# Leaf on the doors layer (7), never on world (1): see class doc.
+	collision_layer = (1 << DOOR_LAYER_BIT) | (1 << 3) | (1 << 5)
+	health = health_max
+	add_to_group(&"breakable")
+	_block_shape = BoxShape3D.new()
+	_block_shape.size = _leaf_size()
+	_block_query = PhysicsShapeQueryParameters3D.new()
+	_block_query.shape = _block_shape
+	_block_query.collision_mask = BLOCK_MASK
+	_block_query.collide_with_areas = false
+	_block_query.exclude = [get_rid()]
 
 
 func _build_visual() -> void:
@@ -51,8 +89,18 @@ func _leaf_offset() -> Vector3:
 	return Vector3(width * 0.5, height * 0.5, 0.0)
 
 
+## True when the doorway can be walked through (open or broken).
 func is_open() -> bool:
-	return state == STATE_OPEN
+	return state != STATE_CLOSED
+
+
+func is_broken() -> bool:
+	return state == STATE_BROKEN
+
+
+## Breakable contract: a closed door is in the way.
+func blocks_path() -> bool:
+	return state == STATE_CLOSED
 
 
 # --- Interactable provider API --------------------------------------------
@@ -68,7 +116,9 @@ func interaction_prompt_position() -> Vector3:
 func interaction_actions(actor: Node) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var busy := on_cooldown()
-	if state == STATE_CLOSED:
+	if state == STATE_BROKEN:
+		out.append(Interactable.action(ACTION_CLOSE, "Close door", false, "Door is broken"))
+	elif state == STATE_CLOSED:
 		if locked:
 			out.append(Interactable.action(ACTION_OPEN, "Open door", false, "Locked"))
 		elif busy:
@@ -108,15 +158,25 @@ func _swing_for(actor: Node) -> float:
 
 
 ## Would the leaf, rotated to [angle] about the hinge, overlap a character?
+## Runs every physics tick while the door is targeted, so the query and
+## shape are created once.
 func _blocked_at(angle: float) -> bool:
+	if not is_inside_tree():
+		return false
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return false
 	# The query is expressed in this node's (currently rotated) space, so
 	# only the difference between the target and current swing matters.
 	var b := Basis(Vector3.UP, angle - rotation.y)
-	return _box_blocked(_leaf_size(), b * _leaf_offset(), b, BLOCK_MASK)
+	_block_query.transform = global_transform * Transform3D(b, b * _leaf_offset())
+	return not space.intersect_shape(_block_query, 1).is_empty()
 
 
 ## Opens away from [actor] (if given). Result {ok, reason}.
 func open_door(actor: Node = null) -> Dictionary:
+	if state == STATE_BROKEN:
+		return {"ok": false, "reason": "Door is broken"}
 	if state == STATE_OPEN:
 		return {"ok": false, "reason": "Already open"}
 	if locked:
@@ -131,10 +191,13 @@ func open_door(actor: Node = null) -> Dictionary:
 	_mark_toggled()
 	_animate_to(_swing)
 	EventBus.door_state_changed.emit(self, state)
+	_emit_sound(SOUND_TOGGLE_RADIUS, 0.3, actor)
 	return {"ok": true}
 
 
 func close_door() -> Dictionary:
+	if state == STATE_BROKEN:
+		return {"ok": false, "reason": "Door is broken"}
 	if state == STATE_CLOSED:
 		return {"ok": false, "reason": "Already closed"}
 	if on_cooldown():
@@ -146,7 +209,50 @@ func close_door() -> Dictionary:
 	_mark_toggled()
 	_animate_to(0.0)
 	EventBus.door_state_changed.emit(self, state)
+	_emit_sound(SOUND_TOGGLE_RADIUS, 0.3, null)
 	return {"ok": true}
+
+
+## Damage the door (zombie banging, later axes/sledgehammers). Returns
+## {ok, broken, health}. A broken door is passable forever: the leaf and
+## its collision are removed and door_state_changed(door, "broken") fires.
+func take_damage(amount: float, source: Node = null, _info: Dictionary = {}) -> Dictionary:
+	if state == STATE_BROKEN:
+		return {"ok": false, "broken": true, "health": 0.0}
+	if amount <= 0.0:
+		return {"ok": false, "broken": false, "health": health}
+	health = maxf(0.0, health - amount)
+	EventBus.door_banged.emit(self, source)
+	if health <= 0.0:
+		_break(source)
+		return {"ok": true, "broken": true, "health": 0.0}
+	_emit_sound(SOUND_HIT_RADIUS, 0.6, source)
+	# Small shudder so banging reads visually (does not change collision).
+	if _mesh and is_inside_tree():
+		_new_tween().tween_property(_mesh, "position:x", _leaf_offset().x, 0.15).from(_leaf_offset().x + 0.04)
+	return {"ok": true, "broken": false, "health": health}
+
+
+func _break(source: Node) -> void:
+	_kill_tween()
+	state = STATE_BROKEN
+	_swing = 0.0
+	health = 0.0
+	# Keep a collision shape so the broken door can still be targeted
+	# (layer 4 only: nothing collides with it, the doorway is free).
+	collision_layer = 1 << 3
+	if visual:
+		visual.visible = false
+	_mark_toggled()
+	EventBus.door_state_changed.emit(self, state)
+	_emit_sound(SOUND_BREAK_RADIUS, 1.0, source)
+
+
+func _emit_sound(radius: float, intensity: float, source: Node) -> void:
+	if not is_inside_tree():
+		return
+	var at := _mesh.global_position if _mesh else global_position
+	EventBus.sound_emitted.emit(at, radius, intensity, &"door", source)
 
 
 func _animate_to(angle: float) -> void:

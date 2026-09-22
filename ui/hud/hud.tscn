@@ -1,16 +1,32 @@
-[gd_scene load_steps=2 format=3 uid="uid://c0hud000000001"]
+[gd_scene load_steps=4 format=3 uid="uid://c0hud000000001"]
 
 [ext_resource type="Script" path="res://ui/hud/hud.gd" id="1_hud"]
+[ext_resource type="Shader" path="res://ui/hud/damage_vignette.gdshader" id="2_vignette"]
+
+[sub_resource type="ShaderMaterial" id="Mat_vignette"]
+shader = ExtResource("2_vignette")
+shader_parameter/strength = 0.0
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
+
+[node name="DamageFlash" type="ColorRect" parent="."]
+unique_name_in_owner = true
+material = SubResource("Mat_vignette")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
 
 [node name="Margin" type="MarginContainer" parent="."]
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 16.0
-offset_top = -140.0
+offset_top = -190.0
 offset_right = 320.0
 offset_bottom = -16.0
 grow_vertical = 0
@@ -30,6 +46,18 @@ theme_override_constants/separation = 6
 unique_name_in_owner = true
 layout_mode = 2
 text = "Jog"
+
+[node name="HealthLabel" type="Label" parent="Margin/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Health 100%"
+
+[node name="HealthBar" type="ProgressBar" parent="Margin/Panel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+value = 100.0
+show_percentage = false
 
 [node name="StaminaLabel" type="Label" parent="Margin/Panel/VBox"]
 unique_name_in_owner = true
@@ -110,3 +138,60 @@ theme_override_colors/font_color = Color(1, 0.85, 0.6, 1)
 theme_override_font_sizes/font_size = 22
 horizontal_alignment = 1
 text = ""
+
+[node name="DangerLabel" type="Label" parent="."]
+unique_name_in_owner = true
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 14.0
+offset_right = 200.0
+offset_bottom = 50.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 0.25, 0.2, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 26
+horizontal_alignment = 1
+text = ""
+
+[node name="DeathOverlay" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.1, 0, 0, 0.6)
+
+[node name="Center" type="CenterContainer" parent="DeathOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="DeathOverlay/Center"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="DeadLabel" type="Label" parent="DeathOverlay/Center/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.15, 0.1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 64
+horizontal_alignment = 1
+text = "You died"
+
+[node name="RestartLabel" type="Label" parent="DeathOverlay/Center/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.9, 0.85, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+text = "Press R to restart"

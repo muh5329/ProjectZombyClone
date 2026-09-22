@@ -24,22 +24,26 @@
 
 ```
 core/         event_bus.gd, game_manager.gd             (autoloads)
-characters/   character.gd, movement_component.gd, stats_component.gd
+characters/   character.gd, movement_component.gd, stats_component.gd,
+              health_component.gd, footstep_emitter.gd, body_helpers.gd (R3)
 player/       player.gd, player.tscn, player_controller.gd, player_interaction.gd
 camera/       isometric_camera.gd, occlusion_manager.gd
 interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2)
 buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2)
-world/        blockout_box.gd                            (Phase-1 placeholder prop)
-ui/hud/       hud.gd, hud.tscn
+ai/           state_machine/state_machine.gd, state.gd  (generic FSM, R3)
+zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
+              zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3)
+world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3)
+ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader
 maps/         test_ground.tscn                           (main scene)
-data/         characters/*.tres, buildings/house_a.tres  (content as Resources)
+data/         characters/*.tres, buildings/house_a.tres, zombies/zombie_basic.tres
 assets/       materials/grid_ground.gdshader
-tests/        test_runner.gd, test_case.gd, unit/, integration/, screenshot_run.gd
-scripts/      test.sh, screenshots.sh
+tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd
+scripts/      test.sh, screenshots.sh, perf.sh
 docs/
 ```
 
-Planned folders follow the brief (`zombies/`, `ai/`, `inventory/`, `items/`,
+Planned folders follow the brief (`inventory/`, `items/`,
 `combat/`, `survival/`, `injuries/`, `crafting/`, `simulation/`,
 `vehicles/`, `farming/`, `weather/`, `electricity/`, `audio/`, `npc/`).
 
@@ -174,24 +178,101 @@ Planned folders follow the brief (`zombies/`, `ai/`, `inventory/`, `items/`,
   query object is reused. Emits `player_room_changed(room, building)`;
   room hysteresis via `Building.locate`.
 
+### `StateMachine` / `AIState` (ai/state_machine/, RefCounted)
+- Generic explicit FSM: `add_state(state)`, `change_to(id)` (exit/enter,
+  `state_changed(from, to)`, `previous_state`, bounded `history`),
+  `update(delta)` ticks the current state, which returns the id of the
+  next state or `&""`. Transient states resolve within the same update
+  (chained transitions capped at 4). States hold the machine weakly.
+  Pure: no scene tree, delta comes from the caller. NPCs reuse it later.
+
+### `Zombie` (zombies/zombie.gd, CharacterBody3D — deliberately not a Character)
+- Physics, damage and component wiring only. Children: `Movement`
+  (MovementComponent: walk = shamble, jog = chase — its
+  `compute_velocity()` is the one movement model), `Stats` (health),
+  `Senses` (ZombieSenses), `AI` (ZombieAI), `Visual` (ZombieVisual),
+  `NavigationAgent3D`, `Collision`.
+- Children are ready before the parent's `@onready` vars exist, so the
+  zombie calls `senses.setup(self)` / `ai.setup(self)` itself.
+- `set_intent(direction, mode)`, `face_toward(p)`, `take_damage(amount,
+  source, info)` ({ok:false} for ≤ 0; head ×3; stun ≥ stagger_damage;
+  otherwise the AI turns toward the source), `die(killer)` → ZombieCorpse.
+- One `_physics_process` runs senses, the AI and the movement step (all
+  rates from the profile, phases from `ai_seed`); the step is skipped
+  while settled; `cheap_movement` (calm, and known to be > cheap_distance
+  from the player) integrates the velocity directly and takes the body
+  out of the physics space; `hostile` raises the AI rate.
+
+### `ZombieVisual` (zombies/zombie_visual.gd, MeshInstance3D)
+- Shared 3-surface mesh and head materials from a `ZombieAssets` node
+  under the scene root (never statics: resources held by scripts at exit
+  are reported as leaks). Facing lerp, state tint, attack lunge offset,
+  swing flash, death collapse. Updated only while `needs_update()`.
+
+### `ZombieCorpse` (zombies/zombie_corpse.gd, StaticBody3D)
+- Layer 4 / mask 0, group `corpse`, adopts the zombie's Visual and
+  provides the disabled "Search corpse" action. `take_damage` refuses.
+
+### `ZombieSenses` / `ZombieAI` / `ZombieSpawner` / `NavBaker` / `WorldQuery`
+- See SYSTEMS.md (Zombies, Navigation). `ZombieSenses.can_see()` is a
+  pure static; `ZombieAI` owns the navigation helpers
+  (`set_destination`, `move_along_path`, `breakable_ahead` ray on layer
+  7, `random_point_near`), the attack-slot registry, `has_attack_line()`
+  and a seeded RNG. It imports no Door / Building types: obstacles are
+  **breakables** (group `breakable`, duck-typed `take_damage(amount,
+  source)` + `blocks_path()`), world lookups go through the static
+  `WorldQuery` (`is_inside_building`, `random_nav_point`).
+- `BodyHelpers` (characters/body_helpers.gd): flat distance / speed /
+  yaw helpers shared by Character and Zombie.
+- `NavBaker extends NavigationRegion3D`: bakes on a thread from the map
+  root's static colliders (layer 1), then waits for the NavigationServer
+  map iteration to advance before `navigation_ready` — queries before
+  that return nothing.
+
+### `HealthComponent` (characters/health_component.gd)
+- `max_health`, `take_damage(amount, source, info) -> {ok, health, dead}`,
+  `heal`, `revive`, `invulnerable`; local `damaged`/`died`/`changed` and
+  EventBus `character_damaged` / `character_died` with the owning
+  character. `Character` picks up an optional `Health` child, delegates
+  `take_damage`, and on death sets `is_busy` (input ignored).
+
+### `FootstepEmitter` (characters/footstep_emitter.gd)
+- Child of a Character; emits `sound_emitted` once per second while it
+  moves, radius by effective mode (2 / 4 / 8 / 14 m).
+
 ### `EventBus` signals (so far)
 `movement_mode_changed`, `stat_changed`, `stat_threshold`, `sprint_denied`,
 `camera_rotated`, `camera_zoomed`, `debug_message`,
 `interaction_target_changed(actor, target, actions)`,
 `interaction_performed(actor, target, action_id)`,
 `interaction_refused(actor, target, reason)`,
-`door_state_changed(door, state)`, `window_state_changed(window, state)`,
-`window_climbed(actor, window, hazard)`, `player_room_changed(room, building)`.
+`door_state_changed(door, state)` (open / closed / broken), `door_banged(door, source)`,
+`window_state_changed(window, state)`,
+`window_climbed(actor, window, hazard)`, `player_room_changed(room, building)`,
+`character_damaged(character, amount, source, info)`,
+`character_died(character, source)`,
+`sound_emitted(position, radius, intensity, category, source)`,
+`zombie_state_changed(zombie, from, to)`, `zombie_spotted_target(zombie, target)`,
+`zombie_lost_target(zombie)`, `zombie_attacked(zombie, target, hit)`,
+`zombie_died(zombie, killer)`.
 
 ## Physics layers
-1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders
+1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders ·
+7 doors · 8 window_panes
 
-Walls, doors, windows: 1+6 (+4 for doors/windows). Roofs: 6 only (never
-block movement). Props (`BlockoutBox`): 1+6. Player mask: 1+3+4.
+Walls: 1+6. Windows: sill + header body 1+4+6, glass child body 8 while
+closed (0 once open / smashed). Door leaves: 7+4+6 — never on 1, so the
+navmesh (baked from layer 1) passes through doorways; broken doors: 4
+only. Roofs: 6 only (never block movement). Props (`BlockoutBox`): 1+6.
+Player mask: 1+3+7+8 (not 4: corpses on layer 4 are walked over). Zombie
+mask: 1+2+3+7+8. Zombie corpses: layer 4, mask 0. Vision / attack /
+interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 
 ## Groups
 `player`, `isometric_camera`, `occlusion_manager`, `building`, `room`,
-`wall`, `roof`, `floor`, `door`, `window`, `occluder`, `interactable`.
+`wall`, `roof`, `floor`, `door`, `window`, `occluder`, `interactable`,
+`breakable` (doors: `take_damage` + `blocks_path`), `zombie`, `corpse`,
+`navigation_mesh_source_group` (the map root; parsed by NavBaker).
 
 ## Testing
 
@@ -205,4 +286,17 @@ block movement). Props (`BlockoutBox`): 1+6. Player mask: 1+3+4.
   PNG evidence.
 - Gotcha: scripts launched with `-s` compile before autoloads exist, so they
   must not statically type against gameplay classes that reference
-  `EventBus`.
+  `EventBus` (nor call `EventBus` directly — use `root.get_node("EventBus")`).
+- Gotcha: `wait_until` counts *process* frames, which run far faster than
+  physics headless. Gameplay timers (AI, cooldowns, memory) are waited on
+  with `wait_physics_until`.
+- `tests/perf/perf_zombies.gd` (`scripts/perf.sh`, calm and `--hostile`)
+  measures the scene-tree part of every physics step with two probe
+  nodes at the lowest / highest physics priority (all `_physics_process`
+  callbacks incl. move_and_slide; the Jolt step for kinematic bodies is
+  negligible). `Performance.TIME_PHYSICS_PROCESS` is unusable for this:
+  it refreshes once per second and covers whole catch-up bursts.
+- `scripts/test.sh` fails on any `SCRIPT ERROR` and on any plain
+  `ERROR:` line except the audio-device and `ERR_CANT_OPEN` ones.
+- Integration tests of other systems disable the map's zombie spawner
+  (`scene.get_node("Zombies").auto_spawn = false`) in `setup()`.

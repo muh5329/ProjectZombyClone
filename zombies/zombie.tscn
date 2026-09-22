@@ -1,0 +1,46 @@
+[gd_scene load_steps=8 format=3 uid="uid://c0zombie000001"]
+
+[ext_resource type="Script" path="res://zombies/zombie.gd" id="1_zombie"]
+[ext_resource type="Script" path="res://characters/movement_component.gd" id="2_move"]
+[ext_resource type="Script" path="res://characters/stats_component.gd" id="3_stats"]
+[ext_resource type="Script" path="res://zombies/zombie_senses.gd" id="4_senses"]
+[ext_resource type="Script" path="res://zombies/zombie_ai.gd" id="5_ai"]
+[ext_resource type="Resource" path="res://data/zombies/zombie_basic.tres" id="6_profile"]
+[ext_resource type="Script" path="res://zombies/zombie_visual.gd" id="7_visual"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
+radius = 0.3
+height = 1.7
+
+[node name="Zombie" type="CharacterBody3D" groups=["zombie"]]
+collision_layer = 4
+collision_mask = 199
+floor_snap_length = 0.3
+script = ExtResource("1_zombie")
+profile = ExtResource("6_profile")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.85, 0)
+shape = SubResource("CapsuleShape3D_body")
+
+[node name="Visual" type="MeshInstance3D" parent="."]
+script = ExtResource("7_visual")
+
+[node name="Movement" type="Node" parent="."]
+script = ExtResource("2_move")
+
+[node name="Stats" type="Node" parent="."]
+script = ExtResource("3_stats")
+
+[node name="Senses" type="Node" parent="."]
+script = ExtResource("4_senses")
+
+[node name="AI" type="Node" parent="."]
+script = ExtResource("5_ai")
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.5
+target_desired_distance = 0.5
+path_max_distance = 3.0
+radius = 0.3
+height = 1.7

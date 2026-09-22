@@ -31,8 +31,8 @@ gameplay, and independent verification.
 |---|-------|--------|
 | 1 | Player + isometric camera | **DONE** (2026-09-22, 39 tests) |
 | 2 | One enterable house with doors and windows (+ roof/wall occlusion) | **DONE** (2026-09-22, 81 tests) |
-| 3 | Basic zombie AI (states, senses, navigation) | next |
-| 4 | Melee combat and player health | |
+| 3 | Basic zombie AI (states, senses, navigation) | **DONE** (2026-09-22, 112 tests) |
+| 4 | Melee combat and player health | next |
 | 5 | Interactable containers and loot (data-driven loot tables) | |
 | 6 | Inventory and equipment (weight, encumbrance → movement) | |
 | 7 | Hunger / thirst + consumable food | |

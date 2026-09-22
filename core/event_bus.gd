@@ -29,12 +29,33 @@ signal interaction_target_changed(actor: Node, target: Node, actions: Array)
 signal interaction_performed(actor: Node, target: Node, action_id: StringName)
 ## An action was refused (disabled, locked, blocked, busy…). reason is text.
 signal interaction_refused(actor: Node, target: Node, reason: String)
-## A door changed state (&"open" / &"closed"). Round 8 hooks noise here.
+## Something (a zombie) banged on a door. Recruits nearby zombies via sound.
+signal door_banged(door: Node, source: Node)
+## A door changed state (&"open" / &"closed" / &"broken").
 signal door_state_changed(door: Node, state: StringName)
 ## A window changed state (&"open" / &"closed" / &"smashed").
 signal window_state_changed(window: Node, state: StringName)
 ## A character finished climbing through a window. hazard = broken glass.
 signal window_climbed(actor: Node, window: Node, hazard: bool)
+
+# --- Health -----------------------------------------------------------------
+## A character took damage. info: {region: StringName, ...} (free-form).
+signal character_damaged(character: Node, amount: float, source: Node, info: Dictionary)
+## A character's health reached 0.
+signal character_died(character: Node, source: Node)
+
+# --- Sound (stub; Round 8 adds propagation / occlusion) --------------------
+## Something made a noise. radius in metres, intensity 0..1, category e.g.
+## &"footstep", &"door", &"glass". source may be null.
+signal sound_emitted(position: Vector3, radius: float, intensity: float, category: StringName, source: Node)
+
+# --- Zombies ----------------------------------------------------------------
+signal zombie_state_changed(zombie: Node, from: StringName, to: StringName)
+signal zombie_spotted_target(zombie: Node, target: Node)
+signal zombie_lost_target(zombie: Node)
+## hit = false when the swing missed (target moved away / not facing).
+signal zombie_attacked(zombie: Node, target: Node, hit: bool)
+signal zombie_died(zombie: Node, killer: Node)
 
 # --- Buildings / location ---------------------------------------------------
 ## The player entered a Room (or left all rooms: room == null).

@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://c0player000001"]
+[gd_scene load_steps=13 format=3 uid="uid://c0player000001"]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://characters/movement_component.gd" id="2_move"]
@@ -6,6 +6,8 @@
 [ext_resource type="Script" path="res://player/player_controller.gd" id="4_ctrl"]
 [ext_resource type="Resource" path="res://data/characters/player_stats.tres" id="5_profile"]
 [ext_resource type="Script" path="res://player/player_interaction.gd" id="6_interact"]
+[ext_resource type="Script" path="res://characters/health_component.gd" id="7_health"]
+[ext_resource type="Script" path="res://characters/footstep_emitter.gd" id="8_steps"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -23,7 +25,7 @@ albedo_color = Color(0.85, 0.7, 0.45, 1)
 
 [node name="Player" type="CharacterBody3D" groups=["player"]]
 collision_layer = 2
-collision_mask = 13
+collision_mask = 197
 floor_snap_length = 0.3
 script = ExtResource("1_player")
 profile = ExtResource("5_profile")
@@ -49,6 +51,12 @@ script = ExtResource("2_move")
 
 [node name="Stats" type="Node" parent="."]
 script = ExtResource("3_stats")
+
+[node name="Health" type="Node" parent="."]
+script = ExtResource("7_health")
+
+[node name="Footsteps" type="Node" parent="."]
+script = ExtResource("8_steps")
 
 [node name="Controller" type="Node" parent="."]
 script = ExtResource("4_ctrl")

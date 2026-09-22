@@ -31,6 +31,8 @@ extends Resource
 @export_group("Body")
 ## Height of the eyes / interaction focus above the feet (metres).
 @export var eye_height: float = 0.9
+## Hit points (Round 4 layers injuries on top).
+@export var health_max: float = 100.0
 
 
 func stamina_rates() -> Dictionary:

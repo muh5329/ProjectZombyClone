@@ -5,6 +5,37 @@ that fixed them.
 
 ## Open
 
+0. **Zombie Round-3 gaps** (ordered):
+   - **Cheap-mode zombies are out of the physics space** (calm and known
+     to be > 8 m from the player): they overlap each other and are not
+     seen by `Door._blocked_at` (a door can swing into one) or by shape
+     queries. They regain a body within one sense check of the player
+     coming within 8 m, of turning hostile, or of any hit.
+   - **Zombies never open doors and only bang on a breakable that is
+     *ahead on their path*** (1.2 m ray at 2 Hz); a door hit from the
+     side or a zombie pushed against a door by the crowd just stands
+     (stuck timer → idle / search). No window climbing, no vaulting.
+   - **Hearing occlusion is one ray**: a wall halves the radius, whatever
+     its thickness or count. Round 8.
+   - **Player is the only prey**; `zombie.target` is duck-typed so NPCs
+     can join through a group later.
+   - **Attack tell is minimal**: lunge + white head flash; no swing
+     animation, no player hit reaction (Round 4).
+   - **Perf budget is machine-bound**: ≈ 5 ms calm / ≈ 8.5 ms hostile per
+     physics step with 200 zombies on the (slow, 2-core) dev box against
+     8 / 10 ms budgets. Next step: a zombie manager ticking far zombies
+     at 5 Hz or turning them into pure data (population sim).
+   - **Attack slots are a static registry** keyed by target instance id
+     (`ZombieAI._attack_slots`); a target freed while attacked is pruned
+     only when its attackers release.
+   - **Navmesh y is ~0.2 m above the floor** (Recast voxel rounding);
+     all path use ignores Y. Prop tops (car roof) bake as walkable
+     islands; the spawner rejects points above 0.75 m.
+   - **The map's 10 seeded zombies roam during the Round-2 screenshot
+     section** (seed 1337 is verified stable; a different seed may put a
+     zombie in the door arc → "Blocked").
+   - **Restart (R) reloads the whole scene**; no death cause / stats.
+   - **Search corpse** is a disabled placeholder until inventory (R5).
 1. **Cutaway is facade-wide, not view-based** — every camera-facing
    exterior wall of the building is stubbed, even in rooms the player is
    not in; interior partitions are only cut for the current room. Good
@@ -41,6 +72,48 @@ that fixed them.
    here).
 
 ## Fixed
+
+- (R3) Door leaves were on layer 1 and got baked into the navmesh (no
+  path into houses). New layer 7 "doors"; player/zombie masks include it.
+- (R3) `NavigationServer3D` map queries returned nothing right after
+  `bake_finished`; `NavBaker` now waits for the map iteration id to advance.
+- (R3) Recast rounds agent radius/height to cell multiples (0.35 → 0.5
+  with cell 0.25 blocked 0.9 m doorways); cell 0.15, radius 0.3, height 1.5.
+- (R3) Children `_ready` before the parent's `@onready` vars: AI/Senses are
+  wired by `Zombie._ready()` through explicit `setup()`.
+- (R3) Chase copied the *live* target position while `visible_target` was
+  stale between 6 Hz checks (a teleported player leaked its new position);
+  last-known now comes from the senses' snapshot.
+- (R3) `wait_until` (process frames) timed out long before gameplay
+  timers elapsed headless; added `wait_physics_until`.
+- (R3) `StateMachine` ↔ `AIState` strong cycle leaked RefCounted objects
+  at exit; the state's back-reference is a `WeakRef`.
+- (R3) Perf probe counted the post-spawn catch-up burst as 50 ms frames;
+  it now samples once per main-loop iteration after a warm-up.
+- (R3) Physics engine switched to Jolt (200 kinematic bodies were ~1.5 ms
+  cheaper per step and CharacterBody3D behaviour is unchanged in the tests).
+- (R3, critic) `die()` set `dead` before clearing `cheap_movement`, whose
+  setter bailed out on `dead` → corpses never re-entered the physics
+  space. Death now hands over to a separate `ZombieCorpse`.
+- (R3, critic) Bites through walls (attack range > capsule radii + wall):
+  entering Attack, every swing and proximity detection need a clear
+  chest-to-chest ray.
+- (R3, critic) Broken doors were untargetable (shape disabled); the body
+  stays on layer 4 only.
+- (R3, critic) HUD chase count went stale when a chasing zombie was freed
+  without dying; pruned on `tree_exiting` and every frame.
+- (R3, critic) Vision through windows: glass is now its own body on layer
+  8, dropped when open / smashed.
+- (R3, critic) `sound_emitted` crashed when the source was freed before a
+  listener ran ("Cannot convert argument"); the listener takes a Variant.
+- (R3, critic) Tick phases came from instance ids (non-deterministic);
+  now from the seeded `ai_seed`.
+- (R3, critic) `Door._blocked_at` allocated a query + shape per physics
+  tick while targeted; cached.
+- (R3, critic) `Performance.TIME_PHYSICS_PROCESS` refreshes at 1 Hz — the
+  perf probe now measures each step itself.
+- (R3, critic) Static Resource caches (`_head_materials`, `_shared_mesh`)
+  were reported as leaks at exit; moved to a tree-owned `ZombieAssets`.
 
 - (R2) `Area3D.get_overlapping_bodies()` never reported the static door /
   window bodies in headless runs; `PlayerInteraction` now uses a direct

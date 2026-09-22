@@ -16,6 +16,7 @@ GODOT=/path/to/godot scripts/test.sh                 # all
 GODOT=/path/to/godot scripts/test.sh unit            # unit only
 GODOT=/path/to/godot scripts/test.sh --filter=camera # by name
 GODOT=/path/to/godot scripts/screenshots.sh          # gameplay run + PNGs
+GODOT=/path/to/godot scripts/perf.sh                 # 200-zombie AI perf probe
 ```
 On macOS: `GODOT="/Applications/Godot.app/Contents/MacOS/Godot"`.
 

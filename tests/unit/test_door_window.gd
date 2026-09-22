@@ -125,7 +125,9 @@ func test_fixture_shared_contract() -> void:
 	for f in [d, w]:
 		check(f is WallFixture, "%s extends WallFixture" % f.name)
 		check(f.is_in_group(&"wall") and f.is_in_group(&"occluder"), "groups")
-		check_eq(f.collision_layer, 41, "layers 1+4+6")
+	check_eq(w.collision_layer, 41, "window layers 1+4+6")
+	check_eq(d.collision_layer, 104, "door layers 4+6+7 (doors layer, not world: navmesh bakes through)")
+	for f in [d, w]:
 		check(f.has_meta(&"outward") and f.has_meta(&"wall_height"), "occlusion metadata")
 		check(f.get_node_or_null("Visual") != null, "Visual child")
 		check(Interactable.of(f) != null, "Interactable attached")

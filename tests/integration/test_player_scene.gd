@@ -11,6 +11,7 @@ var cam: IsometricCamera
 
 func setup() -> void:
 	scene = await spawn_scene("res://maps/test_ground.tscn")
+	scene.get_node("Zombies").auto_spawn = false  # zombies have their own tests
 	player = scene.get_node("Player")
 	ctrl = player.get_node("Controller")
 	cam = scene.get_node("IsometricCamera")

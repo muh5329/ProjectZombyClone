@@ -1,0 +1,61 @@
+[gd_resource type="Resource" script_class="ZombieProfile" load_steps=2 format=3 uid="uid://c0zombieprof001"]
+
+[ext_resource type="Script" path="res://data/zombies/zombie_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+shamble_speed = 0.9
+chase_speed = 1.6
+turn_speed = 4.0
+acceleration = 5.0
+cheap_distance = 8.0
+vision_range = 14.0
+vision_fov_degrees = 120.0
+eye_height = 1.5
+hearing_sensitivity = 1.0
+hearing_wall_attenuation = 0.5
+proximity_range = 1.5
+memory_seconds = 8.0
+sense_hz = 6.0
+chase_sense_interval = 0.5
+sneak_range_multiplier = 0.5
+sprint_range_multiplier = 1.25
+attack_range = 0.9
+attack_windup = 0.5
+attack_cooldown = 1.5
+attack_damage = 12.0
+attack_hit_slack = 0.25
+attack_leash_slack = 0.6
+attack_facing_dot = 0.4
+lunge_distance = 0.25
+swing_flash_seconds = 0.15
+max_attackers = 4
+hold_distance = 1.4
+hold_stuck_seconds = 0.5
+hold_recheck_seconds = 1.5
+door_damage = 8.0
+door_max_distance = 1.8
+door_check_distance = 1.2
+health = 60.0
+head_hit_multiplier = 3.0
+stagger_damage = 20.0
+stun_seconds = 0.8
+ai_hz_hostile = 20.0
+ai_hz_calm = 10.0
+repath_hz = 2.0
+wander_radius = 10.0
+wander_timeout = 25.0
+wander_stuck_seconds = 1.5
+idle_time_min = 2.0
+idle_time_max = 8.0
+investigate_timeout = 40.0
+investigate_arrive_distance = 1.0
+investigate_stuck_seconds = 2.0
+search_time_min = 4.0
+search_time_max = 6.0
+search_turn_period_min = 0.9
+search_turn_period_max = 1.6
+search_walk_chance = 0.35
+search_walk_radius = 2.0
+search_stuck_seconds = 1.0
+lost_near_distance = 1.5

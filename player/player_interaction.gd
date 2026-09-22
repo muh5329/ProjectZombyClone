@@ -20,8 +20,9 @@ extends Node3D
 ## [close_range_m].
 @export var min_facing_dot: float = -0.2
 @export var close_range_m: float = 1.0
-## Layers that block line of sight (1 = world).
-@export_flags_3d_physics var los_mask: int = 1
+## Layers that block line of sight: 1 world, 7 closed door leaves, 8 closed
+## window panes.
+@export_flags_3d_physics var los_mask: int = (1 << 0) | (1 << 6) | (1 << 7)
 
 var current_target: Interactable = null
 var current_actions: Array[Dictionary] = []

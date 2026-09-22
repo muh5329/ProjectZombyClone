@@ -143,6 +143,60 @@ func _run() -> void:
 	await _frames(20)
 	await _shot("10_after_climb")
 
+	# --- Round 3: zombies --------------------------------------------------
+	# Into the open field south-west of the house, zoomed out, with a small
+	# group of shamblers nearby (facing away) so several are in frame.
+	var spawner: Node = inst.get_node("Zombies")
+	var hud: Node = inst.get_node("HUD")
+	if spawner.zombies.size() < 10:
+		_problems.append("map spawner placed %d zombies (expected 10)" % spawner.zombies.size())
+	player.global_position = Vector3(-22, 0.1, 4)
+	await _tap(&"camera_zoom_out")
+	await _frames(5)
+	await _tap(&"camera_zoom_out")
+	var group_origin := player.global_position + Vector3(-7, 0, -6)
+	var jitter := RandomNumberGenerator.new()
+	jitter.seed = 7
+	for i in 7:
+		var off := Vector3(float(i % 4) * 1.5 - 2.2 + jitter.randf_range(-0.4, 0.4), 0.0,
+			float(i / 4) * 1.6 - 0.8 + jitter.randf_range(-0.4, 0.4))
+		var z: Node3D = spawner.spawn_at(group_origin + off)
+		var yaw := PI * 0.5 + jitter.randf_range(-0.6, 0.6)  # roughly west, away from the player
+		z.snap_facing(yaw)
+	await _frames(60)
+	await _shot("11_zombies_overview")
+
+	# One zombie in front of the player: it must spot and chase within 1 s.
+	var chaser: Node3D = spawner.spawn_at(player.global_position + Vector3(-5.5, 0, 0))
+	chaser.face_toward(player.global_position)
+	chaser.snap_facing(chaser.movement.facing)
+	var chasing := false
+	for i in 90:
+		await physics_frame
+		if chaser.state() == &"chase":
+			chasing = true
+			break
+	if not chasing:
+		_problems.append("zombie did not chase the player (state %s)" % chaser.state())
+	await _frames(30)
+	if not String(hud.danger_label.text).begins_with("!"):
+		_problems.append("HUD danger indicator missing (got '%s')" % hud.danger_label.text)
+	await _shot("12_chase")
+
+	# Stand still until it bites: damage flash + health bar drop.
+	var hp0: float = player.health.health
+	var bitten := false
+	for i in 60 * 8:
+		await physics_frame
+		if player.health.health < hp0:
+			bitten = true
+			break
+	if not bitten:
+		_problems.append("zombie never damaged the player")
+	if hud.flash_strength() < 0.05:
+		_problems.append("damage flash not visible after the hit (strength %.2f)" % hud.flash_strength())
+	await _shot("13_damage_flash")
+
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
 		quit(0)

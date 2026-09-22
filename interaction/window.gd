@@ -3,10 +3,13 @@ extends WallFixture
 ## Window set into a wall opening. Occupies the FULL wall segment (sill,
 ## sash, header) so the wall generator leaves the opening empty.
 ##
-## Collision is always a full-height wall segment: you cannot walk through
-## a window, open or not — you climb (ACTION_CLIMB). The climb tween is
-## owned by the ACTOR (Character.begin_busy), so the actor's busy lock
-## always clears even if this window is freed mid-climb.
+## Collision: the sill and the header are wall (layer 1, always): you
+## cannot walk through a window, open or not — you climb (ACTION_CLIMB).
+## The glass is a separate child body ("Pane") on layer 8 ("window_panes")
+## while closed and on no layer once open or smashed, so vision and
+## interaction rays (masks 1+7+8) see through open / smashed windows only.
+## The climb tween is owned by the ACTOR (Character.begin_busy), so the
+## actor's busy lock always clears even if this window is freed mid-climb.
 ##
 ## States: closed / open / smashed. Smashed windows can be climbed but with
 ## hazard = true (glass; injuries come in Round 4).
@@ -19,6 +22,11 @@ const ACTION_CLOSE := &"close"
 const ACTION_SMASH := &"smash"
 const ACTION_CLIMB := &"climb"
 const CLIMB_CONTEXT := &"climb"
+## Physics layer index (0-based) of "window_panes".
+const PANE_LAYER_BIT := 7
+## Noise radii (m) for EventBus.sound_emitted.
+const SOUND_TOGGLE_RADIUS := 5.0
+const SOUND_SMASH_RADIUS := 18.0
 
 @export var width: float = 1.2
 @export var wall_thickness: float = 0.2
@@ -36,6 +44,7 @@ var state: StringName = STATE_CLOSED
 var last_climb_hazard: bool = false
 var _pane: MeshInstance3D
 var _shards: MeshInstance3D
+var _pane_body: StaticBody3D
 
 
 func _init() -> void:
@@ -63,7 +72,21 @@ func _build_visual() -> void:
 		Vector3(0, sill_height + fw + 0.06, 0), Color(0.75, 0.85, 0.95, 0.7), true)
 	_shards.name = "Shards"
 	_shards.visible = false
-	_add_shape(Vector3(width, wall_height, t), Vector3(0, wall_height * 0.5, 0))
+	# Sill and header block walking (and bake into the navmesh); the glass
+	# is its own body on the pane layer.
+	_add_shape(Vector3(width, sill_height, t), Vector3(0, sill_height * 0.5, 0))
+	_add_shape(Vector3(width, header_h, t), Vector3(0, top_height + header_h * 0.5, 0))
+	_pane_body = StaticBody3D.new()
+	_pane_body.name = "Pane"
+	_pane_body.collision_layer = 1 << PANE_LAYER_BIT
+	_pane_body.collision_mask = 0
+	var ps := CollisionShape3D.new()
+	var pbs := BoxShape3D.new()
+	pbs.size = Vector3(width, open_h, t)
+	ps.shape = pbs
+	ps.position = Vector3(0, sill_height + open_h * 0.5, 0)
+	_pane_body.add_child(ps)
+	add_child(_pane_body)
 
 
 func can_climb() -> bool:
@@ -161,7 +184,14 @@ func _set_state(s: StringName) -> void:
 	state = s
 	_mark_toggled()
 	_refresh_visual()
+	if _pane_body:
+		_pane_body.collision_layer = (1 << PANE_LAYER_BIT) if s == STATE_CLOSED else 0
 	EventBus.window_state_changed.emit(self, state)
+	if is_inside_tree():
+		if s == STATE_SMASHED:
+			EventBus.sound_emitted.emit(global_position, SOUND_SMASH_RADIUS, 1.0, &"glass", null)
+		else:
+			EventBus.sound_emitted.emit(global_position, SOUND_TOGGLE_RADIUS, 0.3, &"window", null)
 
 
 func _refresh_visual() -> void:

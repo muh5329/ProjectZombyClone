@@ -12,4 +12,12 @@ if echo "$OUT" | grep -q "SCRIPT ERROR"; then
   echo "test.sh: SCRIPT ERROR detected in engine output -> FAIL"
   exit 1
 fi
+# Plain engine errors fail too (leaked resources, bad calls…), except the
+# known harmless ones: no audio device, and the fontconfig/XDG open failure.
+BAD="$(echo "$OUT" | grep -E "^ERROR:" | grep -v -E "ALSA|audio|ERR_CANT_OPEN" || true)"
+if [ -n "$BAD" ]; then
+  echo "test.sh: ERROR lines in engine output -> FAIL"
+  echo "$BAD"
+  exit 1
+fi
 exit $CODE
