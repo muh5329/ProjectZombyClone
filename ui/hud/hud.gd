@@ -51,6 +51,10 @@ var _injury_summary: Array = []
 var _infection_stage: StringName = &"none"
 ## Player stands still (mode label reads "Idle").
 var _idle: bool = true
+## Generic timed action (rummaging…): progress bar created in code.
+var action_bar: ProgressBar
+var _action_start_frame: int = -1
+var _action_seconds: float = 0.0
 
 
 func _ready() -> void:
@@ -77,6 +81,10 @@ func _ready() -> void:
 	EventBus.item_picked_up.connect(_on_item_picked_up)
 	EventBus.bandage_interrupted.connect(_on_bandage_interrupted)
 	EventBus.infection_stage_changed.connect(_on_infection_stage_changed)
+	EventBus.timed_action_started.connect(_on_timed_action_started)
+	EventBus.timed_action_finished.connect(_on_timed_action_finished)
+	EventBus.wound_reopened.connect(_on_wound_reopened)
+	_build_action_bar()
 	charge_bar.visible = false
 	bandage_bar.visible = false
 	danger_label.text = ""
@@ -84,7 +92,7 @@ func _ready() -> void:
 	health_bar.modulate = COL_HEALTH
 	health_label.add_theme_color_override(&"font_color", Color.WHITE)
 	_set_flash(0.0)
-	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 1-4 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · B bandage · Q/R rotate · Wheel zoom · F3 debug"
+	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 1-4 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · B bandage · Tab inventory · Q/R rotate · Wheel zoom · F3 debug"
 	aim_label.text = ""
 	_on_weapon_changed(GameManager.player, {"name": "Fists", "max_condition": 0})
 	_refresh_body()
@@ -332,6 +340,58 @@ func _on_bandage_finished(c: Node, region: StringName) -> void:
 		_notice("Bandaged %s" % Injury.REGION_LABELS[maxi(Injury.region_from_id(region), 0)].to_lower(), 1.5)
 
 
+# --- Timed actions (Round 5) ----------------------------------------------------
+
+func _build_action_bar() -> void:
+	action_bar = ProgressBar.new()
+	action_bar.name = "ActionBar"
+	action_bar.show_percentage = false
+	action_bar.anchor_left = 0.5
+	action_bar.anchor_right = 0.5
+	action_bar.anchor_top = 1.0
+	action_bar.anchor_bottom = 1.0
+	action_bar.offset_left = -120.0
+	action_bar.offset_right = 120.0
+	action_bar.offset_top = -170.0
+	action_bar.offset_bottom = -160.0
+	action_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	action_bar.modulate = Color(1.0, 0.8, 0.35)
+	action_bar.visible = false
+	add_child(action_bar)
+
+
+func _on_timed_action_started(actor: Node, _action: StringName, label: String, seconds: float) -> void:
+	if not _is_player(actor):
+		return
+	_notice(label, seconds)
+	_action_start_frame = Engine.get_physics_frames()
+	_action_seconds = maxf(seconds, 0.01)
+	action_bar.value = 0.0
+	action_bar.visible = true
+
+
+func _on_timed_action_finished(actor: Node, _action: StringName, _completed: bool) -> void:
+	if not _is_player(actor):
+		return
+	_action_start_frame = -1
+	action_bar.visible = false
+	notice_label.text = ""
+	_notice_time = 0.0
+
+
+## 0..1 while a timed action runs, -1 otherwise.
+func action_progress() -> float:
+	if _action_start_frame < 0:
+		return -1.0
+	var t := float(Engine.get_physics_frames() - _action_start_frame) / float(Engine.physics_ticks_per_second)
+	return clampf(t / _action_seconds, 0.0, 1.0)
+
+
+func _on_wound_reopened(c: Node, region: StringName) -> void:
+	if _is_player(c):
+		_notice("Wound on %s reopened!" % Injury.REGION_LABELS[maxi(Injury.region_from_id(region), 0)].to_lower(), 2.5)
+
+
 func _on_character_damaged(c: Node, _amount: float, _source: Node, _info: Dictionary) -> void:
 	if not _is_player(c):
 		return
@@ -496,6 +556,13 @@ func _process(delta: float) -> void:
 		charge_bar.visible = cf >= 0.0
 		if cf >= 0.0:
 			charge_bar.value = cf * 100.0
+		if _action_start_frame >= 0:
+			var ap := action_progress()
+			action_bar.value = ap * 100.0
+			# The actor stopped being busy without a finish event (death,
+			# interruption): drop the bar.
+			if not p.is_busy:
+				_on_timed_action_finished(p, &"", false)
 		var bp: float = p.injuries.bandage_progress() if p.injuries else -1.0
 		bandage_bar.visible = bp >= 0.0
 		if bp >= 0.0:

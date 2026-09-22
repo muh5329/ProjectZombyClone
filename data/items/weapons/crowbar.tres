@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"crowbar"
 display_name = "Crowbar"
-category = &"weapon"
+description = "Pries doors and skulls alike. Durable."
+category = 3
 weight = 2.0
 max_stack = 1
 max_condition = 30
@@ -26,4 +27,4 @@ knockback = 0.25
 knockdown_chance = 0.1
 condition_loss_chance = 0.08
 noise_radius = 7
-
+tags = Array[StringName]([&"tool", &"crowbar"])

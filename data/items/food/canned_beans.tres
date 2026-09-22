@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="FoodData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/food_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"canned_beans"
+display_name = "Canned Beans"
+description = "Keeps forever. Needs a tin opener."
+category = 0
+weight = 0.6
+max_stack = 10
+calories = 380.0
+hunger = 30.0
+thirst = 0.0
+spoil_days = 0.0
+color = Color(0.7, 0.35, 0.2, 1)
+needs_opener = true
+world_size = Vector3(0.1, 0.12, 0.1)
+tags = Array[StringName]([&"canned"])

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/item_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"wrench"
+display_name = "Wrench"
+description = "For pipes, bolts and cars."
+category = 4
+weight = 1.0
+max_stack = 1
+color = Color(0.5, 0.52, 0.56, 1)
+world_size = Vector3(0.3, 0.03, 0.07)
+tags = Array[StringName]([&"wrench"])

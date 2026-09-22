@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FoodData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/food_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"peanut_butter"
+display_name = "Peanut Butter"
+description = "A jar of peanut butter. Dense calories."
+category = 0
+weight = 0.5
+max_stack = 3
+color = Color(0.6, 0.4, 0.2, 1)
+world_size = Vector3(0.09, 0.1, 0.09)
+tags = Array[StringName]([&"jar"])
+calories = 2000.0
+hunger = 20.0
+thirst = -5.0

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FoodData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/food_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"soda"
+display_name = "Soda Can"
+description = "Sugary, fizzy, quenches thirst a bit."
+category = 1
+weight = 0.35
+max_stack = 6
+calories = 140.0
+hunger = 3.0
+thirst = 20.0
+spoil_days = 0.0
+color = Color(0.2, 0.55, 0.3, 1)
+world_size = Vector3(0.07, 0.12, 0.07)
+tags = Array[StringName]([&"canned"])

@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1_plan")
 display_name = "House A"
+building_type = &"house"
 footprint = Vector2(10, 8)
 wall_height = 2.7
 wall_thickness = 0.2
@@ -16,15 +17,19 @@ floor_color = Color(0.45, 0.36, 0.28, 1)
 roof_color = Color(0.36, 0.3, 0.3, 1)
 rooms = Array[Dictionary]([{
 "name": "Bedroom",
+"room_type": &"bedroom",
 "rect": Rect2(0, 0, 4, 4)
 }, {
 "name": "Bathroom",
+"room_type": &"bathroom",
 "rect": Rect2(4, 0, 2.5, 4)
 }, {
 "name": "Kitchen",
+"room_type": &"kitchen",
 "rect": Rect2(6.5, 0, 3.5, 4)
 }, {
 "name": "Living Room",
+"room_type": &"living_room",
 "rect": Rect2(0, 4, 10, 4)
 }])
 walls = Array[Dictionary]([{
@@ -94,4 +99,60 @@ walls = Array[Dictionary]([{
 }, {
 "from": Vector2(6.5, 0),
 "to": Vector2(6.5, 4)
+}])
+furniture = Array[Dictionary]([{
+"type": &"bed",
+"room": "Bedroom",
+"position": Vector2(3.25, 1.15),
+"rotation": 0.0
+}, {
+"type": &"dresser",
+"room": "Bedroom",
+"position": Vector2(3.72, 3.1),
+"rotation": -90.0
+}, {
+"type": &"wardrobe",
+"room": "Bedroom",
+"position": Vector2(0.4, 3.35),
+"rotation": 90.0
+}, {
+"type": &"bathroom_cabinet",
+"room": "Bathroom",
+"position": Vector2(0.33, 1.6),
+"rotation": 90.0
+}, {
+"type": &"toilet",
+"room": "Bathroom",
+"position": Vector2(1.9, 0.45),
+"rotation": 0.0
+}, {
+"type": &"kitchen_cabinet",
+"room": "Kitchen",
+"position": Vector2(0.4, 0.75),
+"rotation": 90.0
+}, {
+"type": &"counter",
+"room": "Kitchen",
+"position": Vector2(0.4, 1.9),
+"rotation": 90.0
+}, {
+"type": &"fridge",
+"room": "Kitchen",
+"position": Vector2(0.45, 3.2),
+"rotation": 90.0
+}, {
+"type": &"kitchen_cabinet",
+"room": "Kitchen",
+"position": Vector2(2.95, 0.4),
+"rotation": 0.0
+}, {
+"type": &"sofa",
+"room": "Living Room",
+"position": Vector2(6.8, 1.25),
+"rotation": 0.0
+}, {
+"type": &"shelf",
+"room": "Living Room",
+"position": Vector2(0.3, 3.3),
+"rotation": 90.0
 }])

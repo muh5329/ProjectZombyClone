@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="MedicalData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/medical_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"rag"
+display_name = "Rag"
+description = "A makeshift dressing. Half the time the wound opens again."
+category = 2
+weight = 0.1
+max_stack = 5
+color = Color(0.75, 0.7, 0.6, 1)
+bandage_quality = 0.5
+rebleed_chance = 0.5
+rebleed_after = 60.0
+world_size = Vector3(0.15, 0.03, 0.12)
+tags = Array[StringName]([&"dressing"])

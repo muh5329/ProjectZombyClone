@@ -33,8 +33,8 @@ gameplay, and independent verification.
 | 2 | One enterable house with doors and windows (+ roof/wall occlusion) | **DONE** (2026-09-22, 81 tests) |
 | 3 | Basic zombie AI (states, senses, navigation) | **DONE** (2026-09-22, 112 tests) |
 | 4 | Melee combat and player health | **DONE** (2026-09-22, 154 tests) |
-| 5 | Interactable containers and loot (data-driven loot tables) | next |
-| 6 | Inventory and equipment (weight, encumbrance → movement) | |
+| 5 | Interactable containers and loot (data-driven loot tables) | **DONE** (2026-09-22, 188 tests) |
+| 6 | Inventory and equipment (weight, encumbrance → movement) | next |
 | 7 | Hunger / thirst + consumable food | |
 | 8 | Sound propagation + zombie hearing | |
 | 9 | Barricading windows and doors | |

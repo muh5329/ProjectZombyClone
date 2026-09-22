@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3 uid="uid://c0testground0001"]
+[gd_scene load_steps=24 format=3 uid="uid://c0testground0001"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://camera/isometric_camera.gd" id="2_cam"]
@@ -14,6 +14,10 @@
 [ext_resource type="Resource" path="res://data/items/weapons/baseball_bat.tres" id="12_bat"]
 [ext_resource type="Resource" path="res://data/items/weapons/kitchen_knife.tres" id="13_knife"]
 [ext_resource type="Script" path="res://effects/blood_decals.gd" id="14_blood"]
+[ext_resource type="Script" path="res://world/world_config.gd" id="15_world"]
+[ext_resource type="Resource" path="res://data/buildings/shed_a.tres" id="16_shed"]
+[ext_resource type="Script" path="res://interaction/loot_container.gd" id="17_loot"]
+[ext_resource type="PackedScene" path="res://ui/inventory/loot_window.tscn" id="18_lootwin"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
 size = Vector3(200, 1, 200)
@@ -36,6 +40,11 @@ tonemap_mode = 2
 albedo_color = Color(0.28, 0.28, 0.3, 1)
 
 [node name="TestGround" type="Node3D"]
+
+[node name="World" type="Node" parent="."]
+script = ExtResource("15_world")
+world_seed = 1337
+world_age_days = 0.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
@@ -110,6 +119,26 @@ position = Vector3(-14, 0, -10)
 script = ExtResource("6_house")
 plan = ExtResource("7_house_a")
 
+[node name="Garage" type="Node3D" parent="Buildings"]
+position = Vector3(6, 0, -16)
+script = ExtResource("6_house")
+plan = ExtResource("16_shed")
+
+[node name="Containers" type="Node3D" parent="."]
+
+[node name="SupplyCrate" type="StaticBody3D" parent="Containers"]
+position = Vector3(10.9, 0, -12.2)
+rotation_degrees = Vector3(0, -20, 0)
+script = ExtResource("17_loot")
+container_type = &"crate"
+display_name = "Supply crate"
+capacity = 30.0
+persist_id = "Map/SupplyCrate"
+prompt_height = 0.7
+size = Vector3(0.8, 0.7, 0.7)
+color = Color(0.55, 0.4, 0.25, 1)
+lid_style = &"top"
+
 [node name="Items" type="Node3D" parent="."]
 
 [node name="BaseballBat" type="StaticBody3D" parent="Items"]
@@ -147,3 +176,5 @@ script = ExtResource("8_occl")
 camera_path = NodePath("../IsometricCamera")
 
 [node name="HUD" parent="." instance=ExtResource("3_hud")]
+
+[node name="LootWindow" parent="." instance=ExtResource("18_lootwin")]

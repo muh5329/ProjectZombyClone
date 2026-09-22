@@ -5,6 +5,26 @@ that fixed them.
 
 ## Open
 
+000. **Round-5 containers / loot gaps** (ordered):
+   - **Player inventory is a flat 15 kg list with hard refusals**: no
+     encumbrance, equipment slots, worn bags or nested containers (the
+     backpack / duffel bag are data only) — Round 6.
+   - **Rows are stacks, not grouped by item**: non-stackable items (tin
+     openers, weapons) each take a row; there is no drag & drop, no
+     context menu (eat / drop / equip), no drop-to-floor.
+   - **Loot window is laid out for 1280×720** (left of the body panel);
+     not scaled for other resolutions.
+   - **Rummage noise is a flat 3 m** `search` sound for every container;
+     corpses are silent.
+   - **Containers do not respawn / refill**; world age only thins the
+     first roll. No per-building "already looted" state for AI survivors.
+   - **Furniture blocks windows only by placement** (the plan validator
+     checks the room rect, not overlaps with doors / windows / other
+     pieces).
+   - **Identical non-stackables are not grouped** ("Hammer ×2
+     (expand)"): each takes a row.
+   - **Save / load** only has `to_dict/from_dict` + `WorldState`
+     snapshots; nothing writes them to disk until Round 10.
 00. **Round-4 combat / injury gaps** (ordered):
    - **Knocked-down zombies keep their upright capsule**: only the visual
      lies down, so the player bumps into an invisible standing body over
@@ -17,8 +37,8 @@ that fixed them.
      reaction is a 0.2 s red body flash + knockback.
    - **Arc / ring are depth-tested ground meshes**: hidden under zombie
      bodies and indoors under the cutaway rules; readable in the open.
-   - **Bandages are free and unlimited** (items come in R5/6); no
-     disinfectant, stitches, splints (B refuses fractures). Burns and
+   - No disinfectant / stitches / splint *use* yet (the items exist as
+     data; B refuses fractures). Burns and
      fractures exist as data but nothing inflicts them yet.
    - **Smashed-window climbs always lacerate** (`glass_laceration_chance`
      1.0) — there is no "clear glass" action yet.
@@ -30,8 +50,6 @@ that fixed them.
      against the base max with "(max N%)").
    - **Mouse aim intersects the plane at the player's feet**; multi-level
      buildings will need a ground raycast.
-   - **`Player.held_items` is a stopgap** (no drop, no weight, no UI list);
-     X cycles fists → held weapons. Round 6 replaces it.
    - **Balance is tuned against one bot** (stand still, 0.35 s charges,
      shove windups): 1v1 bat ≈ 23 % health, 3 zombies always kill it. A
      player who backs off between swings does much better; no footwork
@@ -74,7 +92,6 @@ that fixed them.
      section** (seed 1337 is verified stable; a different seed may put a
      zombie in the door arc → "Blocked").
    - **Restart (R) reloads the whole scene**; no death cause / stats.
-   - **Search corpse** is a disabled placeholder until inventory (R5).
 1. **Cutaway is facade-wide, not view-based** — every camera-facing
    exterior wall of the building is stubbed, even in rooms the player is
    not in; interior partitions are only cut for the current room. Good
@@ -110,6 +127,30 @@ that fixed them.
    here).
 
 ## Fixed
+
+- (R5, critic) Equipped weapon could be stored mid-swing →
+  `Player.can_release_item` checked by every outgoing transfer.
+- (R5, critic) `remove(item, 0)` removed one; `from_dict` accepted
+  counts ≤ 0 and over-capacity loads; one instance could sit in two
+  containers (weak owner back-ref now).
+- (R5, critic) World age could reshuffle later rolls (gate consumed the
+  shared rng); per-roll sub-rng.
+- (R5, critic) Loot rows bound to list indices (double press moved two
+  stacks); rows now bind to the ItemInstance and are pooled.
+- (R5, critic) Corpse ids from `ai_seed` collided for two spawners on
+  one seed; spawner path + monotonic counter.
+- (R5, critic) An interrupted bandage with a full pack lost the dressing
+  (now dropped at the feet); a wound that vanished mid-bandage ate it
+  (refunded).
+- (R5, critic) Loot too generous; retuned for scarcity (see SYSTEMS).
+- (R5, critic) Loot window hid the room label; label moved bottom-left.
+
+- (R5) Bandages were free and unlimited; B now consumes a bandage / rag
+  from the inventory and refuses "No bandages".
+- (R5) "Search corpse" was a disabled placeholder; corpses are loot
+  containers.
+- (R5) `Player.held_items` stopgap replaced by `Player.inventory`
+  (ItemContainer, 15 kg).
 
 - (R4, critic) Interrupted swings (busy / death) kept their queued
   follow-up → double swing + double stamina later; the queue is cleared by

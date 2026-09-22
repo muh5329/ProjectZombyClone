@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ContainerItemData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/container_item_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"backpack"
+display_name = "School Bag"
+description = "A small school bag. Worn on the back (Round 6)."
+category = 7
+weight = 0.7
+capacity = 18.0
+weight_reduction = 0.6
+color = Color(0.25, 0.35, 0.6, 1)
+world_size = Vector3(0.35, 0.15, 0.4)
+tags = Array[StringName]([&"back"])

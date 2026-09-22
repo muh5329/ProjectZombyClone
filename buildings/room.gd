@@ -5,6 +5,8 @@ extends Node3D
 ## Used for "is the player inside?" queries (occlusion, HUD, later AI).
 
 @export var room_name: String = "Room"
+## Loot / AI context id (&"kitchen", &"bathroom"…). BuildingPlan room_type.
+@export var room_type: StringName = &""
 @export var size: Vector3 = Vector3(4, 2.7, 4)
 ## Tolerance beyond the walls so a character standing in a doorway still
 ## counts.

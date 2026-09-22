@@ -6,6 +6,61 @@ that did not write the code).
 
 ---
 
+## Round 5 — Containers and data-driven loot (2026-09-22)
+
+### Goal
+Physical containers that are searched (PZ-style lazy roll), data-driven
+items and loot tables keyed by building/room/container, a player
+inventory, and the ref-4 two-panel loot window.
+
+### What changed
+- `ItemData` categories/tags/description; `FoodData`, `MedicalData`,
+  `ContainerItemData` stubs; 41 items in `data/items/**`; `ItemDB`
+  autoload (recursive scan, duplicate-id errors).
+- `LootTable` (weights, chances, count ranges, rarity tiers) + pure seeded
+  `LootResolver` (world age only removes, via per-roll sub-RNGs);
+  14 tables with fallback container → room → building → default;
+  `LootTableDB` autoload. Loot tuned for scarcity (House A averages
+  5–11 items over 50 seeds; about a third of containers empty).
+- `ItemContainer` (stacking, split, capacity, ownership back-ref,
+  to/from_dict with validation); `ContainerAccess` (rummage 1 s / 0.5 s,
+  interruptible, transfer rules incl. `Player.can_release_item` mid-swing
+  guard); `ContainerVisual`; `LootContainer` glue. Corpses are containers
+  with unique ids.
+- Furniture from `BuildingPlan.furniture` (catalog resource): House A has
+  11 pieces / 8 containers; new garage with tool crate and shelf; supply
+  crate outside. `World` node holds seed + world age.
+- Player inventory 15 kg replaces R4 `held_items`; B consumes bandage/rag
+  (rag may reopen after 60 s); "No bandages" refusal.
+- `LootWindow` (ref 4): Inventory · Transfer All · W/15 kg on the left,
+  Loot All · container · W/Cap kg on the right; Name/Type/Qty/kg/Cond
+  columns, pooled rows bound to items, click/shift-click, "Too heavy".
+
+### Tests performed
+`scripts/test.sh` → **188 tests, 0 failed**. `scripts/screenshots.sh` OK
+(19_loot_window, 20_corpse_loot). `scripts/perf.sh` calm 2.6 ms / hostile
+5.6 ms.
+
+### Bugs discovered (critic) → all fixed
+Stash equipped weapon mid-swing and the hit still landed; remove(0)
+removed one; save load created items from count ≤ 0 and ignored capacity;
+one item could live in two containers (dupe risk); world age reshuffled
+loot instead of only removing it; loot rows bound to indices (double
+press moved two stacks); duplicate corpse ids across spawners; lost
+dressing on interrupted bandage; flat, over-generous loot; LootContainer
+god object; UI covered the room label; missing "kg"/type column.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (8) · System Integration 8 (7) · Survival Depth 6 (5) ·
+Architecture 8 (7) · Performance 9 (9) · UX/Feedback 7 (7) ·
+Bug Resistance 8 (6).
+
+### Highest-priority remaining issue
+Weight has no consequence yet and bags don't exist: Round 6 (inventory,
+equipment slots, backpacks, encumbrance → movement) is next.
+
+---
+
 ## Round 4 — Melee combat, shove, body-region injuries (2026-09-22)
 
 ### Goal

@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"pipe"
 display_name = "Lead Pipe"
-category = &"weapon"
+description = "A heavy lead pipe. Slow but hits hard."
+category = 3
 weight = 1.8
 max_stack = 1
 max_condition = 20
@@ -26,4 +27,4 @@ knockback = 0.25
 knockdown_chance = 0.12
 condition_loss_chance = 0.12
 noise_radius = 8
-
+tags = Array[StringName]([&"blunt"])

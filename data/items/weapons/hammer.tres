@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"hammer"
 display_name = "Hammer"
-category = &"weapon"
+description = "Builds barricades; a handy short weapon."
+category = 3
 weight = 1.0
 max_stack = 1
 max_condition = 20
@@ -26,4 +27,4 @@ knockback = 0.2
 knockdown_chance = 0.08
 condition_loss_chance = 0.1
 noise_radius = 6
-
+tags = Array[StringName]([&"tool", &"hammer"])

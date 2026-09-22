@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/item_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"sheet"
+display_name = "Bed Sheet"
+description = "Can be ripped into rags (crafting, later)."
+category = 5
+weight = 0.4
+max_stack = 1
+color = Color(0.85, 0.85, 0.95, 1)
+world_size = Vector3(0.35, 0.05, 0.3)
+tags = Array[StringName]([&"fabric"])

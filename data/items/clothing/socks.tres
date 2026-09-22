@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/item_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"socks"
+display_name = "Socks"
+description = "Clean socks. Luxury."
+category = 6
+weight = 0.1
+max_stack = 5
+color = Color(0.9, 0.9, 0.85, 1)
+world_size = Vector3(0.12, 0.02, 0.08)
+tags = Array[StringName]([&"feet"])

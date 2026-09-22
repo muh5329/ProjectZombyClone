@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"fists"
 display_name = "Fists"
-category = &"weapon"
+description = "Your bare hands."
+category = 3
 weight = 0.0
 max_stack = 1
 max_condition = 0
@@ -26,4 +27,4 @@ knockback = 0.25
 knockdown_chance = 0.05
 condition_loss_chance = 0.0
 noise_radius = 3
-
+tags = Array[StringName]([&"internal"])

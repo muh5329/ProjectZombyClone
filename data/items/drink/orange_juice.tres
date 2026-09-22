@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FoodData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/food_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"orange_juice"
+display_name = "Orange Juice"
+description = "Vitamins and sugar."
+category = 1
+weight = 1.0
+max_stack = 2
+color = Color(1.0, 0.6, 0.1, 1)
+world_size = Vector3(0.09, 0.22, 0.09)
+tags = Array[StringName]([])
+calories = 450.0
+hunger = 5.0
+thirst = 30.0
+spoil_days = 10.0

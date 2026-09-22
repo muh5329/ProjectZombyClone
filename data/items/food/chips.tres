@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FoodData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/food_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"chips"
+display_name = "Bag of Chips"
+description = "Salty. Fills you a little, makes you thirsty."
+category = 0
+weight = 0.2
+max_stack = 5
+calories = 540.0
+hunger = 15.0
+thirst = -5.0
+spoil_days = 90.0
+color = Color(0.95, 0.8, 0.2, 1)
+world_size = Vector3(0.22, 0.06, 0.16)
+tags = Array[StringName]([&"snack"])

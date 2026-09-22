@@ -24,7 +24,15 @@ signal spawned(zombies: Array)
 ## Navmesh points higher than this are prop tops (car roofs) — rejected.
 @export var max_spawn_height: float = 0.75
 
+## Stable id prefix of this spawner's zombies ("" → the node path relative
+## to the scene owner, e.g. "Zombies"). Zombies get
+## spawn_id = "<spawner_id>/<n>" with a monotonically increasing n, so
+## corpse loot ids never collide (even for two spawners on one seed).
+@export var spawner_id: String = ""
+
 var zombies: Array[Zombie] = []
+## Zombies ever spawned by this spawner (never decreases).
+var spawn_counter: int = 0
 var rng := RandomNumberGenerator.new()
 var _nav: NavBaker
 
@@ -97,11 +105,21 @@ func spawn_at(p: Vector3, p_profile: ZombieProfile = null) -> Zombie:
 	elif profile != null:
 		z.profile = profile
 	z.ai_seed = rng.randi() | 1
+	spawn_counter += 1
+	z.spawn_id = "%s/%d" % [stable_id(), spawn_counter]
 	z.name = "Zombie%d" % (zombies.size() + 1)
 	z.position = to_local(Vector3(p.x, p.y + 0.05, p.z))
 	add_child(z)
 	zombies.append(z)
 	return z
+
+
+func stable_id() -> String:
+	if spawner_id != "":
+		return spawner_id
+	if owner != null and owner != self:
+		return String(owner.get_path_to(self))
+	return String(name)
 
 
 func alive_count() -> int:

@@ -15,6 +15,13 @@ extends Node
 ##   `infection` stat rise slowly (lethal only after long game time).
 ## - bandage_worst(): B key — bandages the worst bleeding wound in
 ##   profile.bandage_seconds of busy time (the Character owns the tween).
+##   Round 5: needs a dressing (MedicalData.bandage_quality > 0: bandage,
+##   rag) in the character's `inventory` (ItemContainer) — refused "No
+##   bandages" otherwise. The best one is taken when bandaging starts
+##   (consumed) and given back if the bandaging is interrupted. The
+##   quality is recorded on the wound (a rag heals slower) and a makeshift
+##   dressing may give way: MedicalData.rebleed_chance (rag 50 %) that the
+##   wound bleeds again after rebleed_after (60 s) → wound_reopened.
 ## The pure effect maths are static (unit-tested without a scene).
 ## Everything is announced through EventBus.injuries_changed.
 
@@ -31,6 +38,9 @@ var rng := RandomNumberGenerator.new()
 var character: Character
 ## The wound being bandaged (null when not bandaging).
 var bandaging: Injury = null
+## The dressing being applied (taken out of the inventory; returned on
+## interrupt).
+var _dressing: ItemInstance = null
 ## Visible infection stage (&"none" until symptoms, see profile thresholds).
 var infection_stage: StringName = &"none"
 var _bandage_left: float = 0.0
@@ -221,6 +231,15 @@ static func max_stamina_penalty(list: Array[Injury], p: InjuryProfile) -> float:
 	return minf(t, p.max_stamina_penalty_cap)
 
 
+## Healing speed of a wound: 1 unbandaged; bandaged wounds heal
+## profile.bandaged_heal_multiplier × faster with a clean bandage, less
+## with a rag (the speed-up scales with the dressing quality).
+static func heal_rate(inj: Injury, p: InjuryProfile) -> float:
+	if not inj.bandaged:
+		return 1.0
+	return 1.0 + (p.bandaged_heal_multiplier - 1.0) * clampf(inj.bandage_quality, 0.0, 1.0)
+
+
 # --- Treatment -----------------------------------------------------------------
 
 ## Start bandaging the worst wound: [profile.bandage_seconds] of busy time
@@ -233,13 +252,40 @@ func bandage_worst() -> Dictionary:
 	var inj := worst_unbandaged()
 	if inj == null:
 		return _refuse("Nothing to bandage")
+	var inv := _inventory()
+	var dressing: ItemInstance = best_dressing_in(inv)
+	if dressing == null:
+		return _refuse("No bandages")
+	_dressing = inv.remove(dressing, 1)
 	bandaging = inj
 	_bandage_left = profile.bandage_seconds
 	var tw := character.begin_busy(BANDAGE_CONTEXT)
 	tw.tween_interval(profile.bandage_seconds)
 	tw.tween_callback(_finish_bandage.bind(inj))
 	EventBus.bandage_started.emit(character, inj.region_id(), profile.bandage_seconds)
-	return {"ok": true, "region": inj.region_id()}
+	return {"ok": true, "region": inj.region_id(), "dressing": _dressing.id()}
+
+
+## The character's carried ItemContainer (duck-typed `inventory`), or null.
+func _inventory() -> ItemContainer:
+	if character == null:
+		return null
+	var inv: Variant = character.get("inventory")
+	return inv as ItemContainer if inv is ItemContainer else null
+
+
+## Pure: the best dressing in [inv] (highest bandage_quality), or null.
+static func best_dressing_in(inv: ItemContainer) -> ItemInstance:
+	if inv == null:
+		return null
+	var best: ItemInstance = null
+	var q := 0.0
+	for it in inv.items:
+		var m := it.data as MedicalData
+		if m and m.bandage_quality > q:
+			q = m.bandage_quality
+			best = it
+	return best
 
 
 func is_bandaging() -> bool:
@@ -259,6 +305,8 @@ func interrupt_bandage() -> void:
 		return
 	var region := bandaging.region_id()
 	bandaging = null
+	# The dressing was not used: give it back.
+	_refund_dressing()
 	if character.busy_tween and character.busy_tween.is_valid():
 		character.busy_tween.kill()
 	character.end_busy()
@@ -268,12 +316,37 @@ func interrupt_bandage() -> void:
 func _finish_bandage(inj: Injury) -> void:
 	bandaging = null
 	if not injuries.has(inj):
+		# The wound healed / vanished meanwhile: the dressing was not used.
+		_refund_dressing()
 		return
+	var med := _dressing.data as MedicalData if _dressing != null else null
+	_dressing = null
 	inj.bandaged = true
+	inj.bandage_quality = med.bandage_quality if med else 1.0
+	inj.rebleed_left = -1.0
+	if med and med.rebleed_chance > 0.0 and rng.randf() < med.rebleed_chance:
+		inj.rebleed_left = med.rebleed_after
 	if profile.bandaged_bleed_multiplier <= 0.0:
 		inj.bleeding = false
 	EventBus.bandage_finished.emit(character, inj.region_id())
 	_changed()
+
+
+## Put the taken dressing back in the inventory; when it no longer fits
+## (or there is none) drop it as a WorldItem at the character's feet.
+func _refund_dressing() -> void:
+	var d := _dressing
+	_dressing = null
+	if d == null or d.stack <= 0:
+		return
+	var inv := _inventory()
+	if inv != null and inv.add(d).get("ok", false):
+		return
+	if character == null or character.get_parent() == null:
+		return
+	var w := WorldItem.for_instance(d)
+	character.get_parent().add_child(w)
+	w.global_position = character.global_position * Vector3(1, 0, 1) + Vector3(0, character.global_position.y - 0.1, 0) + character.facing_vector() * 0.4
 
 
 func _refuse(reason: String) -> Dictionary:
@@ -312,12 +385,17 @@ func tick(dt: float) -> void:
 	for i in range(injuries.size() - 1, -1, -1):
 		var inj := injuries[i]
 		inj.age += dt
+		if inj.bandaged and inj.rebleed_left > 0.0:
+			inj.rebleed_left -= dt
+			if inj.rebleed_left <= 0.0:
+				_reopen(inj)
+				dirty = true
 		if inj.bleeding and not inj.bandaged:
 			inj.bleed_left -= dt
 			if inj.bleed_left <= 0.0:
 				inj.bleeding = false
 				dirty = true
-		inj.heal_left -= dt * (profile.bandaged_heal_multiplier if inj.bandaged else 1.0)
+		inj.heal_left -= dt * heal_rate(inj, profile)
 		if inj.heal_left <= 0.0 and inj != bandaging:
 			injuries.remove_at(i)
 			dirty = true
@@ -327,6 +405,18 @@ func tick(dt: float) -> void:
 			character.health.drain(profile.infection_lethal_damage_per_second * dt, null, &"infection")
 	if dirty:
 		_changed()
+
+
+## A makeshift dressing gave way: the wound is unbandaged and bleeds again
+## (for its type's full bleed time).
+func _reopen(inj: Injury) -> void:
+	inj.rebleed_left = -1.0
+	inj.bandaged = false
+	var spec := profile.spec(inj.type)
+	if spec.bleed_rate > 0.0:
+		inj.bleeding = true
+		inj.bleed_left = spec.bleed_seconds if spec.bleed_seconds > 0.0 else INF
+	EventBus.wound_reopened.emit(character, inj.region_id())
 
 
 func _on_stat_changed(stat: StringName, value: float, _max_value: float) -> void:

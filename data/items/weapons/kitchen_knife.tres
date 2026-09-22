@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"kitchen_knife"
 display_name = "Kitchen Knife"
-category = &"weapon"
+description = "Quick, quiet, fragile. Can open cans, badly."
+category = 3
 weight = 0.3
 max_stack = 1
 max_condition = 10
@@ -27,3 +28,4 @@ knockdown_chance = 0.0
 condition_loss_chance = 0.25
 noise_radius = 2
 can_stagger = false
+tags = Array[StringName]([&"blade"])

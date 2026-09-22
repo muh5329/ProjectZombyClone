@@ -6,7 +6,9 @@ extends Resource
 ## right, z towards the front (south / +Z). The building origin is the
 ## footprint's min corner at floor level.
 ##
-## rooms: [{ "name": "Kitchen", "rect": Rect2(x, z, w, d) }]
+## rooms: [{ "name": "Kitchen", "rect": Rect2(x, z, w, d),
+##          "room_type": &"kitchen" (optional; default: snake_case of the
+##          name) — loot table context (LootTableDB fallback chain) }]
 ## walls: [{
 ##     "from": Vector2(x, z), "to": Vector2(x, z),
 ##     "outward": Vector2(nx, nz)     # unit normal for exterior walls, omit
@@ -14,8 +16,19 @@ extends Resource
 ##     "openings": [{ "type": "door"|"window", "at": float (distance from
 ##                   `from` to the opening centre), "width": float }]
 ## }]
+## furniture (Round 5): [{
+##     "type": &"counter"          FurnitureCatalog type
+##     "room": "Kitchen"           room name
+##     "position": Vector2(x, z)   centre, metres from the room rect's min corner
+##     "rotation": float           degrees about Y (0 = front faces +Z / south)
+##     "container_type": &"fridge"   override the catalog's container type
+##     "name", "size", "color", "capacity", "lid"   optional overrides
+##     "fixed": [{"id": &"kitchen_knife", "count": 1}]   always in the loot
+## }]
 
 @export var display_name: String = "House"
+## Loot context building type (&"house", &"store", &"police"…).
+@export var building_type: StringName = &"house"
 ## Footprint size (x, z) in metres.
 @export var footprint: Vector2 = Vector2(10, 8)
 @export var wall_height: float = 2.7
@@ -32,6 +45,23 @@ extends Resource
 @export var roof_color: Color = Color(0.36, 0.3, 0.3)
 @export var rooms: Array[Dictionary] = []
 @export var walls: Array[Dictionary] = []
+@export var furniture: Array[Dictionary] = []
+
+
+## Room type id of a room entry: its "type", else its name in snake_case
+## ("Living Room" -> &"living_room").
+static func room_type_of(room: Dictionary) -> StringName:
+	if room.has("room_type"):
+		return StringName(room["room_type"])
+	return StringName(String(room.get("name", "room")).strip_edges().to_lower().replace(" ", "_"))
+
+
+## The room entry called [room_name] ({} when missing).
+func room_named(room_name: String) -> Dictionary:
+	for r in rooms:
+		if String(r.get("name", "")) == room_name:
+			return r
+	return {}
 
 
 func opening_width(opening: Dictionary) -> float:
@@ -75,4 +105,15 @@ func validate() -> Array[String]:
 		for i in range(1, spans.size()):
 			if spans[i][0] < spans[i - 1][1] - 0.001:
 				problems.append("%s: %s at %.2f overlaps %s at %.2f" % [label, spans[i][2], spans[i][3], spans[i - 1][2], spans[i - 1][3]])
+	for fi in furniture.size():
+		var f: Dictionary = furniture[fi]
+		var flabel := "furniture %d (%s)" % [fi, f.get("type", "?")]
+		var room := room_named(String(f.get("room", "")))
+		if room.is_empty():
+			problems.append("%s: unknown room '%s'" % [flabel, f.get("room", "")])
+			continue
+		var rect: Rect2 = room.get("rect", Rect2())
+		var pos: Vector2 = f.get("position", Vector2.ZERO)
+		if pos.x < 0.0 or pos.y < 0.0 or pos.x > rect.size.x or pos.y > rect.size.y:
+			problems.append("%s: position %s outside room '%s' (%s)" % [flabel, pos, room.get("name"), rect.size])
 	return problems

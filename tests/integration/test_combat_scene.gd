@@ -38,6 +38,8 @@ func setup() -> void:
 	combat.rng.seed = 11
 	injuries.rng.seed = 11
 	player.get_node("Interaction").scripted = true
+	# Round 5: bandaging consumes dressings from the inventory.
+	player.inventory.add_id(&"bandage", 5)
 	var nav: NavBaker = scene.get_node("NavRegion")
 	if not nav.baked:
 		await nav.navigation_ready
@@ -277,7 +279,7 @@ func test_condition_loss_and_break() -> void:
 	check(item.is_broken(), "broken")
 	check_eq(broken.size(), 1, "weapon_broken once")
 	check(combat.equipped == null and combat.weapon() == combat.fists, "back to fists")
-	check(not player.held_items.has(item), "broken weapon dropped from hands")
+	check(not player.inventory.has(item), "broken weapon dropped from the inventory")
 	await frames(1)
 	check_eq(hud.weapon_label.text, "Weapon: Fists", "HUD shows fists")
 	check(hud.notice_label.text.contains("broke"), "HUD notice")
@@ -512,7 +514,9 @@ func test_pickup_and_cycle_weapons() -> void:
 	check(interaction.interact().ok, "picked up")
 	await physics_frames(2)
 	check(not is_instance_valid(body), "world item removed")
-	check_eq(player.held_items.size(), 1, "held")
+	check_eq(player.held_weapons().size(), 1, "carried")
+	check(player.inventory.has(player.held_weapons()[0]), "the bat is in the inventory")
+	check_near(player.inventory.total_weight(), BAT.weight + 0.5, 0.001, "inventory weight = bat + setup bandages")
 	check(combat.weapon() == BAT, "auto-equipped (hands were empty)")
 	await frames(1)
 	check_eq(hud.weapon_label.text, "Weapon: Baseball Bat  (12/12)", "HUD weapon + condition")

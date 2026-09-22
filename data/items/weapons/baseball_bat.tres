@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"baseball_bat"
 display_name = "Baseball Bat"
-category = &"weapon"
+description = "Long reach, wide swing, breaks eventually."
+category = 3
 weight = 1.5
 max_stack = 1
 max_condition = 12
@@ -26,4 +27,4 @@ knockback = 0.3
 knockdown_chance = 0.15
 condition_loss_chance = 0.2
 noise_radius = 8
-
+tags = Array[StringName]([&"blunt"])

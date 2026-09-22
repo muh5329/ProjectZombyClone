@@ -30,6 +30,9 @@ const CHEAP_MOVE_DIVIDER := 2
 ## Seed for this zombie's random decisions and tick phases (0 = random).
 ## The spawner sets it so runs are repeatable.
 @export var ai_seed: int = 0
+## Stable, unique id from the spawner ("Zombies/7"); keys the corpse's
+## loot seed and save entry.
+@export var spawn_id: String = ""
 
 @onready var movement: MovementComponent = $Movement
 @onready var stats: StatsComponent = $Stats
@@ -323,6 +326,8 @@ func die(p_killer: Node = null) -> ZombieCorpse:
 	corpse = ZombieCorpse.new()
 	corpse.name = name + "Corpse"
 	corpse.killer = p_killer
+	# Stable id: the pockets' loot is seeded from it (and it keys the save).
+	corpse.persist_id = "corpse/%s" % (spawn_id if spawn_id != "" else "%s@%d" % [name, get_instance_id()])
 	var parent := get_parent()
 	if parent:
 		parent.add_child(corpse)

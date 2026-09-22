@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/item_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"jacket"
+display_name = "Jacket"
+description = "Warm, and a little bite protection."
+category = 6
+weight = 1.0
+max_stack = 1
+color = Color(0.3, 0.25, 0.2, 1)
+world_size = Vector3(0.4, 0.06, 0.35)
+tags = Array[StringName]([&"torso", &"outer"])

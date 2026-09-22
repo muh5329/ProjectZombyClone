@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/item_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"tin_opener"
+display_name = "Tin Opener"
+description = "Opens canned food."
+category = 4
+weight = 0.2
+max_stack = 1
+color = Color(0.7, 0.7, 0.75, 1)
+world_size = Vector3(0.14, 0.02, 0.04)
+tags = Array[StringName]([&"can_opener"])

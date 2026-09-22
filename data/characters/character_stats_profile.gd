@@ -45,6 +45,8 @@ func stamina_rates() -> Dictionary:
 		&"climb": stamina_rate_climb,
 		# Bandaging is sitting still: idle recovery.
 		&"bandage": stamina_rate_idle,
+		# Searching a container: kneeling / rummaging, idle recovery.
+		&"search": stamina_rate_idle,
 	}
 
 

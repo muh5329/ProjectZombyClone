@@ -29,20 +29,25 @@ characters/   character.gd, movement_component.gd, stats_component.gd,
 player/       player.gd, player.tscn, player_controller.gd, player_interaction.gd,
               player_combat_input.gd (R4)
 camera/       isometric_camera.gd, occlusion_manager.gd
-interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2)
-buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2)
+interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2), loot_container.gd, container_visual.gd (R5)
+buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2), furniture_catalog.gd (R5)
 ai/           state_machine/state_machine.gd, state.gd  (generic FSM, R3)
-items/        item_data.gd, weapon_data.gd, item_instance.gd, world_item.gd (R4)
+items/        item_data.gd, weapon_data.gd, item_instance.gd, world_item.gd (R4),
+              food_data.gd, medical_data.gd, container_item_data.gd, item_db.gd (autoload ItemDB) (R5)
+inventory/    item_container.gd (ItemContainer), container_access.gd (ContainerAccess) (R5)
+loot/         loot_table.gd, loot_table_db.gd (autoload LootTableDB), loot_resolver.gd (R5)
 combat/       melee_combat.gd, swing_state_machine.gd, hit_resolver.gd, melee_visuals.gd (R4)
 injuries/     injury.gd, injury_type_spec.gd, injury_component.gd (R4)
 effects/      blood_decals.gd (R4)
 zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
               zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3)
-world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3)
+world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5)
 ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader
+ui/inventory/ loot_window.gd/.tscn (R5)
 maps/         test_ground.tscn                           (main scene)
-data/         characters/*.tres, buildings/house_a.tres, zombies/zombie_basic.tres,
-              items/weapons/*.tres, combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4)
+data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tres, zombies/zombie_basic.tres,
+              items/<category>/*.tres (41 items, R5), loot/*.tres + loot/garage/*.tres (R5),
+              combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4)
 assets/       materials/grid_ground.gdshader
 tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd
 scripts/      test.sh, screenshots.sh, perf.sh
@@ -248,8 +253,95 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
 - `WorldItem` (StaticBody3D, layer 4, mask 0, group `world_item`):
   blockout box from the data, Interactable "Pick up <name>" →
   duck-typed `actor.pick_up_item(item) -> {ok}`; frees itself on success.
-- `Player.held_items` + `cycle_weapon()` + `on_weapon_broken()` are a
-  stopgap until the Round-6 inventory.
+- R5: `ItemData.category` is an enum (`Category`: food, drink, medical,
+  weapon, tool, material, clothing, container, misc; `category_id()` →
+  StringName), `tags`, `description`. Subclasses `FoodData` (calories,
+  hunger, thirst, spoil_days, needs_opener — consumed in R7),
+  `MedicalData` (bandage_quality, rebleed_chance / rebleed_after,
+  disinfectant, pain_relief, splints), `ContainerItemData` (capacity,
+  weight_reduction — worn in R6).
+
+### `ItemDB` (items/item_db.gd, autoload, R5)
+- Scans `res://data/items` recursively at startup, indexes `ItemData` by
+  id; duplicate ids → `push_error` + `duplicates()`; pure
+  `find_duplicate_ids()`. `get_item(id)`, `has_item`, `all_ids`,
+  `ids_in_category`, `instance(id, count, condition)`, `register()`.
+  No class_name (the autoload name is the global).
+
+### `ItemContainer` (inventory/item_container.gd, RefCounted, R5)
+- Pure data: `items: Array[ItemInstance]`, `capacity` (kg, < 0 =
+  unlimited). `add(item)` / `add_new(data, n)` / `add_id(id, n)` merge by
+  id up to `max_stack` (condition items never stack), refuse "Too heavy"
+  unless everything fits; `remove(item, n)`, `remove_id`,
+  `transfer_to(to, item, n)` (moves as many as fit; refused only when
+  none fit), `transfer_id`, `transfer_all`, `split_stack(item, n)`,
+  `can_fit`, `fit_count`, `total_weight`, `grouped()`,
+  `to_dict()/from_dict()` (ids via ItemDB). `changed` signal.
+- Ownership: every stored `ItemInstance` has a weak `owner_container()`
+  back-ref (set / cleared by the container); `add()` refuses an instance
+  owned by another container ("Already in another container"); a fully
+  merged instance is spent (stack 0). `remove(item, 0)` removes nothing;
+  `from_dict` skips counts ≤ 0 and never loads past capacity (warnings).
+- Convention: anything holding items exposes it as `inventory`
+  (`Player`, `LootContainer`, `ZombieCorpse`); `LootContainer.inventory_of(node)`
+  duck-types it.
+
+### Loot (loot/, R5)
+- `LootTable` (Resource, data/loot/**.tres; id = relative path):
+  `entries [{item_id, weight, min_count, max_count, chance, rarity}]`,
+  `rolls_min/max`, `empty_chance`, condition range, `validate()`.
+  Rarity tiers common/uncommon/rare/very_rare = ×1/0.6/0.3/0.1 chance.
+- `LootResolver` (static, deterministic): `roll(table, rng, world_age)`,
+  `age_multiplier` = max(0.2, 1 − age/60), `effective_chance`,
+  `pick_weighted`, `seed_for(world_seed, stable_id)`,
+  `table_candidates(building, room, container)` (fallback chain).
+  The rng is consumed identically whatever a gate decides, so an older
+  world only removes items from a container's day-0 contents.
+- `LootTableDB` (autoload, like ItemDB): scans data/loot recursively,
+  `resolve(b, r, c)`.
+- Per roll the main rng draws only the weighted pick and a seed for a
+  sub-rng (gate, count, conditions): gate outcomes never shift later
+  rolls, so an older world's roll is a sub-multiset of the day-0 roll.
+
+### `LootContainer` (interaction/loot_container.gd, StaticBody3D, R5)
+- Layers 1+4 (+6 when ≥ 1.2 m), group `container` + `persistent`.
+  Lazily rolls `inventory` on first open (fixed_items + table), seeded by
+  world seed + `persist_id` ("HouseA/kitchen/0", "corpse/<spawner path>/<spawn counter>",
+  "Map/SupplyCrate"); `searched` flag. "Search <name>" → actor busy
+  tween (`begin_busy(&"search")`, 1 s first / 0.5 s later, 3 m sound,
+  damage cancels) → `open()` (lid tween, `container_opened`). "Close"
+  while open; > `max_open_distance` (2 m, flat distance to its box),
+  death, tree exit → `close()` (`container_closed`). `take/put/take_all/
+  put_all(actor, …)` emit `item_transferred(from, to, item)` and
+  `interaction_refused` reasons. LootContainer is only the interaction
+  provider + loot roll + persistence glue: rummaging and the transfer
+  rules live in `ContainerAccess` (inventory/, owned RefCounted; outgoing
+  items ask the actor's `can_release_item(item)` — the player refuses its
+  equipped / swung weapon "Mid-swing"), the look in `ContainerVisual`
+  (child "Visual": box + front door / top lid tween) built when `size`
+  is set. `ZombieCorpse extends LootContainer`
+  (layer 4 only, "Search corpse").
+- `WorldConfig` (world/, node "World" in the map, group `world_config`):
+  `world_seed`, `world_age_days`, owns a `WorldState` (persist registry:
+  snapshot/apply by `persist_id`, pending entries for late nodes; Round
+  10 serializes it).
+
+### `LootWindow` (ui/inventory/loot_window.gd, CanvasLayer 2, R5)
+- Built in code. Top-left panel = player inventory ("Inventory" · Transfer
+  All · "W / 15 kg"), top-right = open container (Loot All · name ·
+  "W / Cap kg"); rows = stacks (colour square, name, type, ×count, kg,
+  cond%), pooled per list and bound to their ItemInstance (not the
+  index).
+  Click → stack, Shift-click → one; rows that don't fit greyed with a
+  "Too heavy" tooltip; footer status line. E / Esc close, Tab toggles the
+  player panel alone. Listens to container_opened / closed,
+  inventory_changed (deferred refresh), interaction_refused,
+  item_transferred. Test API `transfer_index / loot_all / transfer_all /
+  rows / row_enabled`.
+- `Player.inventory: ItemContainer` (15 kg, `inventory_capacity`);
+  `pick_up_item` adds to it; `held_weapons()` / X cycle read it; a
+  weapon leaving it is unequipped. `InjuryComponent.bandage_worst()`
+  consumes the best dressing from `character.inventory` ("No bandages").
 
 ### `MeleeCombat` (combat/melee_combat.gd, child `Combat`, R4)
 - Facade for any Character over two RefCounted helpers:
@@ -341,12 +433,18 @@ weapon_broken(actor, item)`, `item_picked_up(actor, item)`,
 `zombie_knocked_down(zombie, source)`, `zombie_got_up(zombie)`,
 `bandage_interrupted(character, region)`,
 `infection_stage_changed(character, stage)`.
+Round 5: `inventory_changed(owner)`, `container_opened(actor,
+container)`, `container_closed(actor, container)`, `item_transferred(from,
+to, item)`, `timed_action_started(actor, action, label, seconds)`,
+`timed_action_finished(actor, action, completed)`,
+`wound_reopened(character, region)`.
 
 ## Physics layers
 1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders ·
 7 doors · 8 window_panes
 
-World items (`WorldItem`): layer 4, mask 0. Melee target query: layer 3;
+World items (`WorldItem`): layer 4, mask 0. Loot containers /
+furniture (R5): 1+4 (+6 when tall); plain furniture 1 (+6); corpses 4. Melee target query: layer 3;
 melee LOS: 1+7+8. Walls: 1+6. Windows: sill + header body 1+4+6, glass child body 8 while
 closed (0 once open / smashed). Door leaves: 7+4+6 — never on 1, so the
 navmesh (baked from layer 1) passes through doorways; broken doors: 4
@@ -359,7 +457,8 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `player`, `isometric_camera`, `occlusion_manager`, `building`, `room`,
 `wall`, `roof`, `floor`, `door`, `window`, `occluder`, `interactable`,
 `breakable` (doors: `take_damage` + `blocks_path`), `zombie`, `corpse`,
-`world_item`, `blood_decals` (R4),
+`world_item`, `blood_decals` (R4), `container`, `persistent`,
+`furniture`, `world_config` (R5),
 `navigation_mesh_source_group` (the map root; parsed by NavBaker).
 
 ## Testing

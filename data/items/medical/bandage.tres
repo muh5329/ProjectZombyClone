@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MedicalData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/medical_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bandage"
+display_name = "Bandage"
+description = "A clean sterile bandage. Stops bleeding."
+category = 2
+weight = 0.1
+max_stack = 5
+color = Color(0.95, 0.95, 0.92, 1)
+bandage_quality = 1.0
+world_size = Vector3(0.1, 0.05, 0.1)
+tags = Array[StringName]([&"dressing"])

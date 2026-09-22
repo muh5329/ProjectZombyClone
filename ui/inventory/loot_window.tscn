@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://c0lootwindow001"]
+
+[ext_resource type="Script" path="res://ui/inventory/loot_window.gd" id="1_loot"]
+
+[node name="LootWindow" type="CanvasLayer"]
+layer = 2
+script = ExtResource("1_loot")

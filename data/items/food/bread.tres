@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FoodData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/food_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bread"
+display_name = "Bread"
+description = "Fresh bread. Goes stale in a few days."
+category = 0
+weight = 0.3
+max_stack = 2
+calories = 1200.0
+hunger = 25.0
+thirst = -3.0
+spoil_days = 5.0
+color = Color(0.85, 0.65, 0.4, 1)
+world_size = Vector3(0.3, 0.12, 0.14)
+tags = Array[StringName]([&"fresh"])

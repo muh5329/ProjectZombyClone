@@ -198,6 +198,7 @@ func _run() -> void:
 	await _shot("13_damage_flash")
 
 	await _round4(inst, player, cam, spawner, hud)
+	await _round5(inst, player, cam, spawner, hud)
 
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
@@ -355,7 +356,9 @@ func _round4(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) 
 	player.global_position = Vector3(-17.5, 0.1, -0.5)
 	await _frames(20)
 	await _shot("17_injury_panel")
-	# B: bandage the worst bleeding wound (4 s).
+	# B: bandage the worst bleeding wound (4 s). Round 5: bandages are
+	# consumables — stage two in the pack (as if looted from a bathroom).
+	player.inventory.add_id(&"bandage", 2)
 	await _tap(&"bandage")
 	await _frames(60)
 	if not injuries.is_bandaging():
@@ -372,6 +375,111 @@ func _round4(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) 
 		any_bandaged = any_bandaged or inj.bandaged
 	if not any_bandaged:
 		_problems.append("no wound bandaged after 4 s")
+
+
+# --- Round 5: containers, loot window, corpse search ----------------------
+func _round5(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) -> void:
+	var window: Node = inst.get_node("LootWindow")
+	# The showcase cabinet: its (food-heavy, 2-3 roll) table always has
+	# something on the default world seed (unit-tested).
+	var cabinet: Node3D = null
+	for c in get_nodes_in_group(&"container"):
+		if c.persist_id == "HouseA/kitchen/0":
+			cabinet = c
+	if cabinet == null:
+		_problems.append("kitchen cabinet HouseA/kitchen/0 missing")
+		return
+	player.get_node("Health").heal(100.0)
+	# Stand in front of the cabinet (front faces +X), facing it.
+	var front: Vector3 = cabinet.global_basis.z
+	player.global_position = cabinet.global_position + front * 1.05 + Vector3.UP * 0.1
+	player.movement.facing = atan2(front.x, front.z)  # yaw facing -front
+	await _frames(30)
+	var interaction: Node = player.get_node("Interaction")
+	if interaction.current_target == null or interaction.current_target.body() != cabinet:
+		_problems.append("kitchen cabinet not targeted (target %s)" % str(interaction.current_target))
+	elif not String(interaction.current_actions[0].label).begins_with("Search"):
+		_problems.append("cabinet action is '%s'" % interaction.current_actions[0].label)
+	await _tap(&"interact")
+	await _frames(10)
+	if not player.is_busy:
+		_problems.append("E did not start rummaging the cabinet")
+	for i in 90:
+		await physics_frame
+		if cabinet.is_open():
+			break
+	await _frames(20)
+	if not window.is_open():
+		_problems.append("loot window did not open for the kitchen cabinet")
+	elif cabinet.inventory.is_empty():
+		_problems.append("kitchen cabinet rolled empty (seed 1337)")
+	else:
+		# Real mouse click on the first container row: moves the stack.
+		var row: Control = window.row_node(&"container", 0)
+		var at: Vector2 = row.get_viewport().get_final_transform() * row.get_global_rect().get_center()
+		var n0: int = player.inventory.item_count()
+		_mouse_to(at)
+		await _frames(2)
+		await _click(at)
+		await _frames(10)
+		if player.inventory.item_count() <= n0:
+			_problems.append("clicking a loot row did not move the item")
+		_mouse_to(Vector2(640, 600))
+	await _frames(10)
+	await _shot("19_loot_window")
+	# Walk away: the window closes (> 2 m).
+	_press(&"move_back")
+	await _frames(60)
+	_release(&"move_back")
+	await _frames(10)
+	if window.is_open():
+		_problems.append("loot window still open after walking away")
+	# A zombie dies in the open; search its pockets.
+	player.global_position = Vector3(10, 0.1, 12)
+	await _frames(20)
+	var z: Node3D = spawner.spawn_at(player.global_position + Vector3(0.6, 0, -1.2))
+	z.senses.enabled = false
+	await _frames(5)
+	z.take_damage(999.0, player, {})
+	await _frames(10)
+	var corpse: Node3D = null
+	for c in get_nodes_in_group(&"corpse"):
+		corpse = c
+	if corpse == null:
+		_problems.append("no corpse after killing the zombie")
+		return
+	corpse.inventory.add_id(&"rag", 1)  # staging: never an empty pocket shot
+	var to: Vector3 = corpse.global_position - player.global_position
+	player.movement.facing = atan2(-to.x, -to.z)
+	await _frames(10)
+	await _tap(&"interact")
+	for i in 120:
+		await physics_frame
+		if corpse.is_open():
+			break
+	await _frames(15)
+	if not window.is_open() or String(window.container_title.text) != "Zombie corpse":
+		_problems.append("corpse loot window not open (title '%s')" % window.container_title.text)
+	await _shot("20_corpse_loot")
+	await _tap(&"interact")
+	await _frames(5)
+	if window.is_open():
+		_problems.append("E did not close the loot window")
+
+
+func _click(p: Vector2) -> void:
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.button_mask = MOUSE_BUTTON_MASK_LEFT
+	ev.pressed = true
+	ev.position = p
+	ev.global_position = p
+	Input.parse_input_event(ev)
+	await process_frame
+	var up := ev.duplicate() as InputEventMouseButton
+	up.pressed = false
+	up.button_mask = 0
+	Input.parse_input_event(up)
 
 
 func _mouse_to(p: Vector2) -> void:

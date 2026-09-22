@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="FoodData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/food_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"water_bottle"
+display_name = "Water Bottle"
+description = "Clean drinking water."
+category = 1
+weight = 1.0
+max_stack = 4
+calories = 0.0
+hunger = 0.0
+thirst = 40.0
+spoil_days = 0.0
+color = Color(0.45, 0.7, 0.95, 1)
+world_size = Vector3(0.08, 0.25, 0.08)
+tags = Array[StringName]([&"water"])

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ItemData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/item_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"plank"
+display_name = "Plank"
+description = "A sturdy wooden plank. Barricades and carpentry."
+category = 5
+weight = 3.0
+max_stack = 5
+color = Color(0.72, 0.55, 0.35, 1)
+world_size = Vector3(1.2, 0.04, 0.2)
+tags = Array[StringName]([&"wood"])

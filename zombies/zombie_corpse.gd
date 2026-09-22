@@ -1,14 +1,26 @@
 class_name ZombieCorpse
-extends StaticBody3D
+extends LootContainer
 ## What a dead zombie leaves behind: a static body on layer 4
 ## (interactables) only — it blocks nobody and is walked over — with the
-## collapsed ZombieVisual and an Interactable provider offering
-## "Search corpse" (disabled until inventory, Round 5).
-## Group "corpse".
+## collapsed ZombieVisual. Round 5: it is a LootContainer of type
+## &"zombie_corpse": "Search corpse" rolls the pockets lazily from the
+## data/loot/zombie_corpse table (seeded by the world seed + the zombie's
+## persist id "corpse/<ai_seed>"). Group "corpse".
 
-const LAYER_INTERACTABLES := 1 << 3
 
 var killer: Node = null
+
+
+func _init() -> void:
+	super._init()
+	container_type = &"zombie_corpse"
+	display_name = "Zombie corpse"
+	capacity = 25.0
+	prompt_height = 0.4
+	search_label = "Search corpse"
+	search_noise_radius = 0.0
+	room_type = &""
+	building_type = &""
 
 
 func _ready() -> void:
@@ -23,10 +35,7 @@ func _ready() -> void:
 		shape.shape = box
 		shape.position = Vector3(0, 0.25, -0.5)
 		add_child(shape)
-	if Interactable.of(self) == null:
-		var it := Interactable.new()
-		it.name = "Interactable"
-		add_child(it)
+	super._ready()
 
 
 ## Adopt the zombie's visual node (re-parented) and collapse it.
@@ -45,23 +54,3 @@ func take_damage(_amount: float, _source: Node = null, _info: Dictionary = {}) -
 
 func is_dead() -> bool:
 	return true
-
-
-# --- Interactable provider API --------------------------------------------
-
-func interaction_display_name() -> String:
-	return "Zombie corpse"
-
-
-func interaction_prompt_position() -> Vector3:
-	return global_position + Vector3.UP * 0.4
-
-
-func interaction_actions(_actor: Node) -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	out.append(Interactable.action(&"search", "Search corpse", false, "No inventory yet"))
-	return out
-
-
-func interaction_perform(_action_id: StringName, _actor: Node) -> Dictionary:
-	return {"ok": false, "reason": "No inventory yet"}

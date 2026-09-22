@@ -280,7 +280,8 @@ func test_zombie_death_leaves_interactable_corpse() -> void:
 	var it := Interactable.of(corpse)
 	check(it != null, "corpse interactable")
 	var acts := it.get_actions(player)
-	check(acts.size() == 1 and acts[0].label == "Search corpse" and not acts[0].enabled and acts[0].reason == "No inventory yet", "search corpse disabled with reason")
+	# Round 5: the corpse is a LootContainer — searching works now.
+	check(acts.size() == 1 and acts[0].label == "Search corpse" and acts[0].enabled, "search corpse enabled (R5)")
 	# The player targets it and can walk over it.
 	var interaction: PlayerInteraction = player.get_node("Interaction")
 	ctrl.scripted_direction = Vector3.FORWARD

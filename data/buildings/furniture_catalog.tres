@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="FurnitureCatalog" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://buildings/furniture_catalog.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+types = {
+&"counter": {"size": Vector3(1.2, 0.9, 0.6), "color": Color(0.78, 0.74, 0.66, 1), "container_type": &"counter", "capacity": 15.0, "name": "Counter"},
+&"kitchen_cabinet": {"size": Vector3(1.0, 0.9, 0.6), "color": Color(0.62, 0.46, 0.3, 1), "container_type": &"kitchen_cabinet", "capacity": 15.0, "name": "Kitchen cabinet"},
+&"fridge": {"size": Vector3(0.7, 1.8, 0.7), "color": Color(0.93, 0.93, 0.95, 1), "container_type": &"fridge", "capacity": 20.0, "name": "Fridge"},
+&"bathroom_cabinet": {"size": Vector3(0.8, 0.9, 0.45), "color": Color(0.86, 0.86, 0.8, 1), "container_type": &"bathroom_cabinet", "capacity": 8.0, "name": "Bathroom cabinet"},
+&"dresser": {"size": Vector3(1.0, 0.9, 0.5), "color": Color(0.5, 0.35, 0.25, 1), "container_type": &"dresser", "capacity": 15.0, "name": "Dresser"},
+&"wardrobe": {"size": Vector3(1.1, 1.9, 0.6), "color": Color(0.45, 0.32, 0.22, 1), "container_type": &"wardrobe", "capacity": 20.0, "name": "Wardrobe"},
+&"shelf": {"size": Vector3(1.2, 1.4, 0.4), "color": Color(0.55, 0.42, 0.3, 1), "container_type": &"shelf", "capacity": 12.0, "name": "Shelf", "lid": &"none"},
+&"crate": {"size": Vector3(0.8, 0.7, 0.7), "color": Color(0.55, 0.4, 0.25, 1), "container_type": &"crate", "capacity": 30.0, "name": "Crate", "lid": &"top"},
+&"tool_crate": {"size": Vector3(0.9, 0.6, 0.6), "color": Color(0.35, 0.45, 0.3, 1), "container_type": &"tool_crate", "capacity": 25.0, "name": "Tool crate", "lid": &"top"},
+&"workbench": {"size": Vector3(1.6, 0.9, 0.7), "color": Color(0.5, 0.4, 0.28, 1)},
+&"bed": {"size": Vector3(1.4, 0.5, 2.0), "color": Color(0.55, 0.6, 0.75, 1), "detail": &"pillow"},
+&"sofa": {"size": Vector3(1.8, 0.45, 0.85), "color": Color(0.45, 0.3, 0.3, 1), "detail": &"backrest"},
+&"toilet": {"size": Vector3(0.45, 0.45, 0.65), "color": Color(0.95, 0.95, 0.95, 1)},
+&"table": {"size": Vector3(1.0, 0.75, 0.8), "color": Color(0.6, 0.48, 0.34, 1)}
+}

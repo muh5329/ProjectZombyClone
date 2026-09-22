@@ -6,7 +6,8 @@
 script = ExtResource("1")
 id = &"shove"
 display_name = "Shove"
-category = &"weapon"
+description = "Push them away."
+category = 3
 weight = 0.0
 max_stack = 1
 max_condition = 0
@@ -30,3 +31,4 @@ knockdown_chance_vs_windup = 0.5
 is_shove = true
 windup_fraction = 0.2
 active_fraction = 0.3
+tags = Array[StringName]([&"internal"])

@@ -109,6 +109,11 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
   physics-time tween); "You died / Press R to restart" overlay on
   `character_died`.
 
+- Round 5: generic timed-action bar + label (`timed_action_started /
+  finished`: "Rummaging in kitchen cabinet…"), "Wound on … reopened!",
+  "No bandages", hint "Tab inventory". The loot window is its own
+  CanvasLayer (`ui/inventory/`).
+
 ## Zombies ✅ (Round 3, basic AI)
 
 Data: `data/zombies/zombie_profile.gd` + `zombie_basic.tres`. Shamble
@@ -152,8 +157,8 @@ search, attack_door) / red (chase, attack) / white flash (swing) / dark
 (dead).
 
 Death (`Zombie.die`): a `ZombieCorpse` (StaticBody3D, layer 4 only, group
-`corpse`) takes over the collapsed visual where the body stood, with an
-`Interactable` "Search corpse" disabled ("No inventory yet", R5);
+`corpse`) takes over the collapsed visual where the body stood; since
+Round 5 it is a `LootContainer` ("Search corpse", zombie_corpse table);
 `zombie_died(zombie, killer)` fires and the zombie node is freed.
 
 ### Senses (`zombies/zombie_senses.gd`)
@@ -319,7 +324,11 @@ Weapons are data: `WeaponData extends ItemData` in
   which health drains 0.5/s.
 - **B** bandages the worst wound (fastest bleeder, else most painful):
   4 s busy (the Character owns the tween; no movement, no swings) →
-  bleeding stops, heals ×2. Only bleeding wounds qualify, by
+  bleeding stops, heals ×2. Round 5: it **consumes** the best dressing in
+  the inventory (bandage before rag; "No bandages" otherwise; returned
+  if interrupted). A rag (quality 0.5) heals slower (×1.5) and has a 50 %
+  chance that the wound bleeds again after 60 s (`wound_reopened`, HUD
+  notice). Only bleeding wounds qualify, by
   `bandage_priority` (deep wound > bite > laceration > scratch); fractures
   and burns never ("Nothing to bandage"). Taking damage interrupts it
   (`bandage_interrupted`, HUD "Interrupted"). HUD progress bar.
@@ -328,15 +337,101 @@ Weapons are data: `WeaponData extends ItemData` in
 - Events: `injuries_changed(character, summary)`, `bandage_started`,
   `bandage_finished`, `blood_spilled`, `health_changed`.
 
-## Items (Round 4 minimal) 🔶
+## Items ✅ (Round 4 weapons, Round 5 catalogue)
 
-`ItemData` (id, name, category, weight, max_stack, max_condition, colour,
-world size) → `ItemInstance` (condition, stack, to/from dict).
-`WorldItem` (StaticBody3D, layer 4, group `world_item`) offers "Pick up
-<name>" → `actor.pick_up_item(item)`. The map has a baseball bat in the
-living room and a kitchen knife in the kitchen. `Player.held_items` is a
-stopgap list until the Round-6 inventory; X cycles fists → held weapons;
-picking a weapon up with empty hands equips it.
+41 `ItemData` resources under `data/items/<category>/` (39 lootable +
+fists / shove tagged `internal`), indexed by the `ItemDB` autoload
+(recursive scan, unique ids enforced with `push_error`). Every item has
+an enum category (food, drink, medical, weapon, tool, material,
+clothing, container, misc), tags, a description, weight, max stack and
+a blockout colour (also its UI icon).
+
+| Category | Items |
+|---|---|
+| Food (`FoodData`: kcal, hunger, thirst, spoil days, needs opener) | canned beans, chips, bread, apple, peanut butter, cereal, candy bar |
+| Drink | water bottle, soda, milk, orange juice |
+| Medical (`MedicalData`) | bandage (quality 1), rag (0.5, 50 % rebleed after 60 s), disinfectant, painkillers, splint |
+| Weapon (`WeaponData`, R4) | baseball bat, crowbar, kitchen knife, hammer, lead pipe |
+| Tool | screwdriver, saw, tin opener, wrench |
+| Material | nails (stack 100), box of nails, plank, duct tape, bed sheet |
+| Clothing | t-shirt, jacket, socks (data only, worn in R6) |
+| Container (`ContainerItemData`) | school bag (18 kg, −60 %), duffel bag (18 kg, −40 %) — worn in R6 |
+| Misc | lighter, newspaper, matches, small change (stack 100) |
+
+Food / drink numbers are consumed by the needs system in Round 7.
+
+## Inventory 🔶 (Round 5 minimal; Round 6 full)
+
+`ItemContainer` (pure data): weight capacity, stacks merge by id up to
+`max_stack` (items with a condition never stack), `split_stack`,
+`transfer_to` moves as much as fits ("Too heavy" when nothing fits),
+`to_dict/from_dict`. The player carries one (`Player.inventory`,
+**15 kg**, refusals instead of encumbrance until R6). Picking up a
+`WorldItem` adds to it (auto-equips a weapon when the hands are empty);
+X cycles fists → carried weapons; storing / losing the equipped weapon
+unequips it; a broken weapon is removed.
+
+## Loot tables ✅ (Round 5)
+
+- **Scarcity**: most furniture rolls 1–2 (some 0–2) with 30–40 % empty
+  containers and per-entry chances 0.5–0.95; nails come 5–20; a corpse
+  carries a bandage ≈ 5 % of the time. Kitchen cabinets are pantries
+  (food only, 2–3 rolls, never empty). A whole House A averages 5–11
+  pickups over 50 world seeds (unit test).
+- Tables are data (`data/loot/**.tres`, id = relative path): weighted
+  entries with count range, chance and rarity tier (common ×1, uncommon
+  ×0.6, rare ×0.3, very rare ×0.1), 0–N rolls, empty chance.
+- `LootResolver.roll(table, rng, world_age)` is pure and deterministic.
+  **World age** thins loot: every entry's chance × max(0.2, 1 − age/60)
+  (day 30 = half, floor 20 % from day 48); an older world's container
+  holds a subset of its day-0 contents.
+- **Selection** by (building type, room type, container type), most
+  specific first: `b/r/c`, `r/c`, `b/c`, `r_c`, `b_c`, `c`, `b/r`, `r`,
+  `b`, `default`. Shipped: kitchen_cabinet, counter, fridge,
+  bathroom_cabinet, bedroom_dresser, wardrobe, living_room_shelf, shelf,
+  crate, garage/tool_crate, garage/shelf, zombie_corpse (small change,
+  rag, sometimes a bandage / snack), convenience_store_shelf, default.
+
+## Containers ✅ (Round 5)
+
+`LootContainer` (interaction/): furniture boxes on layers 1+4. Loot is
+rolled **the first time it is opened** (PZ style) from its table, seeded
+by `WorldConfig.world_seed` + the container's stable `persist_id` — the
+same world always has the same loot, reopening never re-rolls, and a
+save only needs the `searched` flag + contents (`to_dict`).
+
+| Action | Effect |
+|---|---|
+| Search <name> | 1.0 s busy "Rummaging…" (0.5 s on later opens; HUD bar), 3 m noise; getting hurt interrupts. Then the lid / door swings open and the loot window opens. |
+| Close (or E / Esc / Tab, or walk > 2 m away, or die) | lid closes, window closes |
+
+Events: `container_opened`, `container_closed`, `item_transferred(from,
+to, item)`, `inventory_changed`. Zombie corpses are containers too
+("Search corpse", `zombie_corpse` table, id `corpse/<spawner>/<n>` from
+the spawner's monotonic counter — unique even for two spawners on one seed).
+
+**Placement**: `BuildingPlan` rooms carry `room_type`; `furniture`
+entries (type, room, position, rotation, optional container_type /
+overrides / fixed items) reference `data/buildings/furniture_catalog.tres`.
+House A: bed, dresser, wardrobe (bedroom); bathroom cabinet, toilet;
+2 kitchen cabinets, counter, fridge (kitchen); sofa, shelf (living room)
+— 8 containers. A 4×3 m garage (`shed_a.tres`, building type `shed`) at
+(6, −16) with a tool crate, workbench and shelf, and a standalone
+"Supply crate" at (10.9, −12.2).
+
+## Loot window ✅ (Round 5, reference 4)
+
+Two panels along the top: left **Inventory** ("Transfer All", "1.80 / 15
+kg"), right the container ("Loot All", "<name>", "W / cap kg"). Rows:
+colour-square icon, name, type (Food / Drink / Med / Weapon / Tool / Mat
+/ Cloth / Bag / Misc), ×count, kg, condition %. The HUD room label now
+sits bottom-left above the status panel, never under the window.
+The equipped weapon cannot be stored mid-swing ("Mid-swing"; Transfer
+All skips it). Click = move the
+stack, Shift-click = move one; rows that won't fit on the other side are
+greyed with a "Too heavy" tooltip and refused with a footer notice.
+Lists grow to 11 rows then scroll. Tab alone toggles the inventory
+panel. Buttons never take keyboard focus (WASD keeps working).
 
 ## Blood decals (Round 4)
 
@@ -356,8 +451,8 @@ action reloads the scene) and zombies lose interest.
 
 ## Planned (see MASTER_PLAN for order)
 
-Sound propagation ⬜ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ⬜ ·
-Loot tables ⬜ · Needs (hunger/thirst/fatigue/temperature) ⬜ ·
+Sound propagation ⬜ · Combat ✅ (melee) · Health & injuries ✅ · Inventory 🔶 ·
+Loot tables ✅ · Needs (hunger/thirst/fatigue/temperature) ⬜ ·
 Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ⬜ · Vehicles ⬜ ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·
 World streaming ⬜ · NPC survivors ⬜

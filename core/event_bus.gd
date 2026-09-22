@@ -58,6 +58,8 @@ signal bandage_finished(character: Node, region: StringName)
 signal bandage_interrupted(character: Node, region: StringName)
 ## Visible infection stage changed: &"none" (hidden), &"feverish", &"infected".
 signal infection_stage_changed(character: Node, stage: StringName)
+## A makeshift dressing (rag) gave way: the wound on [region] bleeds again.
+signal wound_reopened(character: Node, region: StringName)
 ## Blood hit the ground (decals). amount 0..1.
 signal blood_spilled(position: Vector3, amount: float)
 
@@ -76,6 +78,22 @@ signal weapon_condition_changed(actor: Node, item: Dictionary)
 signal weapon_broken(actor: Node, item: Dictionary)
 ## A world item was picked up. item: {id, name}.
 signal item_picked_up(actor: Node, item: Dictionary)
+
+# --- Inventory / containers (Round 5) ----------------------------------------
+## An ItemContainer's contents changed. owner = the node exposing it as
+## `inventory` (the player, a LootContainer, a corpse).
+signal inventory_changed(owner: Node)
+## [actor] opened / closed [container] (a LootContainer). The loot window
+## listens; the HUD never needs to know about containers.
+signal container_opened(actor: Node, container: Node)
+signal container_closed(actor: Node, container: Node)
+## Items moved between two inventory owners. item: {id, name, count}
+## (id &"" for a bulk "Loot All" / "Transfer All").
+signal item_transferred(from: Node, to: Node, item: Dictionary)
+## A generic timed action ("Rummaging…") started / ended on [actor]
+## (busy for [seconds]). The HUD shows a progress bar + label.
+signal timed_action_started(actor: Node, action: StringName, label: String, seconds: float)
+signal timed_action_finished(actor: Node, action: StringName, completed: bool)
 
 # --- Sound (stub; Round 8 adds propagation / occlusion) --------------------
 ## Something made a noise. radius in metres, intensity 0..1, category e.g.

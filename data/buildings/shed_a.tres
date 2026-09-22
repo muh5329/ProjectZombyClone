@@ -1,0 +1,64 @@
+[gd_resource type="Resource" script_class="BuildingPlan" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://buildings/building_plan.gd" id="1_plan"]
+
+[resource]
+script = ExtResource("1_plan")
+display_name = "Garage"
+building_type = &"shed"
+footprint = Vector2(4, 3)
+wall_height = 2.5
+wall_thickness = 0.2
+door_width = 0.9
+window_width = 1.0
+wall_color = Color(0.5, 0.52, 0.55, 1)
+interior_wall_color = Color(0.6, 0.6, 0.6, 1)
+floor_color = Color(0.4, 0.4, 0.42, 1)
+roof_color = Color(0.3, 0.32, 0.35, 1)
+rooms = Array[Dictionary]([{
+"name": "Garage",
+"room_type": &"garage",
+"rect": Rect2(0, 0, 4, 3)
+}])
+walls = Array[Dictionary]([{
+"from": Vector2(0, 3),
+"openings": [{
+"at": 2.0,
+"type": "door"
+}],
+"outward": Vector2(0, 1),
+"to": Vector2(4, 3)
+}, {
+"from": Vector2(0, 0),
+"outward": Vector2(0, -1),
+"to": Vector2(4, 0)
+}, {
+"from": Vector2(0, 0),
+"openings": [{
+"at": 1.5,
+"type": "window",
+"width": 0.8
+}],
+"outward": Vector2(-1, 0),
+"to": Vector2(0, 3)
+}, {
+"from": Vector2(4, 0),
+"outward": Vector2(1, 0),
+"to": Vector2(4, 3)
+}])
+furniture = Array[Dictionary]([{
+"type": &"tool_crate",
+"room": "Garage",
+"position": Vector2(0.65, 0.45),
+"rotation": 0.0
+}, {
+"type": &"workbench",
+"room": "Garage",
+"position": Vector2(2.6, 0.45),
+"rotation": 0.0
+}, {
+"type": &"shelf",
+"room": "Garage",
+"position": Vector2(3.7, 1.8),
+"rotation": -90.0
+}])

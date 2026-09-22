@@ -35,6 +35,11 @@ var bleed_left: float = INF
 var heal_left: float = 60.0
 var heal_total: float = 60.0
 var bandaged: bool = false
+## Quality of the dressing (MedicalData.bandage_quality: 1 bandage, 0.5
+## rag). Only meaningful while bandaged; scales the heal speed-up.
+var bandage_quality: float = 1.0
+## Seconds until a makeshift dressing gives way (-1 = it holds).
+var rebleed_left: float = -1.0
 ## Carries the zombie infection (rolled once when inflicted).
 var infected: bool = false
 ## Seconds since inflicted.
@@ -67,6 +72,7 @@ func to_dict() -> Dictionary:
 		"region": region_id(), "type": type_id(), "label": label(),
 		"region_label": REGION_LABELS[region], "type_label": TYPE_LABELS[type],
 		"bleeding": bleeding, "bandaged": bandaged, "infected": infected,
+		"bandage_quality": bandage_quality,
 		"heal_fraction": 1.0 - (heal_left / heal_total if heal_total > 0.0 else 0.0),
 	}
 
