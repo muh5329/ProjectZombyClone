@@ -46,6 +46,10 @@ class Stat:
 
 
 var _stats: Dictionary = {}
+## Per stat: {source: multiplier} applied to NEGATIVE rates only (drains)
+## in tick() — e.g. encumbrance makes stamina drain faster without
+## touching regeneration. Product of all sources.
+var _drain_multipliers: Dictionary = {}
 ## Owner character (the node whose stats these are), used for EventBus payloads.
 var character: Node = null
 
@@ -137,6 +141,27 @@ func modify(id: StringName, delta: float) -> void:
 	set_value(id, get_value(id) + delta)
 
 
+## Set (1.0 = clear) the drain multiplier of [source] on [stat].
+func set_drain_multiplier(stat: StringName, source: StringName, mult: float) -> void:
+	var d: Dictionary = _drain_multipliers.get(stat, {})
+	if is_equal_approx(mult, 1.0):
+		d.erase(source)
+	else:
+		d[source] = mult
+	if d.is_empty():
+		_drain_multipliers.erase(stat)
+	else:
+		_drain_multipliers[stat] = d
+
+
+## Product of the drain multipliers on [stat] (1.0 when none).
+func drain_multiplier(stat: StringName) -> float:
+	var m := 1.0
+	for v: float in (_drain_multipliers.get(stat, {}) as Dictionary).values():
+		m *= v
+	return maxf(m, 0.0)
+
+
 ## Apply the per-second rate for [context] to every stat. Call once per
 ## physics tick with the character's current activity context
 ## (e.g. &"idle", &"walk", &"jog", &"sprint"). [scale] lets callers apply
@@ -145,6 +170,8 @@ func tick(delta: float, context: StringName, scale: float = 1.0) -> void:
 	for id: StringName in _stats:
 		var s: Stat = _stats[id]
 		var rate: float = s.rates.get(context, 0.0)
+		if rate < 0.0 and _drain_multipliers.has(id):
+			rate *= drain_multiplier(id)
 		if rate != 0.0:
 			modify(id, rate * delta * scale)
 

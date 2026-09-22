@@ -284,24 +284,26 @@ static func inventory_of(node: Node) -> ItemContainer:
 	return ContainerAccess.inventory_of(node)
 
 
-## Container → actor: [count] (< 0 = whole stack) of the stack [item].
-func take(actor: Node, item: ItemInstance, count: int = -1) -> Dictionary:
-	return access.take(actor, item, count)
+## Container → actor: [count] (< 0 = whole stack) of the stack [item],
+## into [into] (one of the actor's containers; default main inventory).
+func take(actor: Node, item: ItemInstance, count: int = -1, into: ItemContainer = null) -> Dictionary:
+	return access.take(actor, item, count, into)
 
 
-## Actor → container.
+## Actor → container (from wherever the actor keeps [item]).
 func put(actor: Node, item: ItemInstance, count: int = -1) -> Dictionary:
 	return access.put(actor, item, count)
 
 
-## "Loot All": everything that fits goes to the actor.
-func take_all(actor: Node) -> Dictionary:
-	return access.take_all(actor)
+## "Loot All": everything that fits goes to the actor ([into]).
+func take_all(actor: Node, into: ItemContainer = null) -> Dictionary:
+	return access.take_all(actor, into)
 
 
-## "Transfer All": everything the actor may let go of goes in here.
-func put_all(actor: Node) -> Dictionary:
-	return access.put_all(actor)
+## "Transfer All": everything in [from] (default the actor's main
+## inventory) the actor may let go of goes in here.
+func put_all(actor: Node, from: ItemContainer = null) -> Dictionary:
+	return access.put_all(actor, from)
 
 
 func _on_inventory_changed() -> void:

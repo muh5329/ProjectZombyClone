@@ -109,6 +109,12 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
   physics-time tween); "You died / Press R to restart" overlay on
   `character_died`.
 
+- Round 6: "Carrying W / 8 kg — <state>" readout (state colour) + state
+  notices, "Too heavy" sprint refusal, "Dropped …", "Wearing …",
+  bottom-centre hotbar (3 slots). Layout: notices moved below the
+  player (y 428) with an outline so they never sit under the inventory
+  panels; the key-hint strip is a bottom-right block; prompt / aim /
+  charge moved up above the hotbar.
 - Round 5: generic timed-action bar + label (`timed_action_started /
   finished`: "Rummaging in kitchen cabinet…"), "Wound on … reopened!",
   "No bandages", hint "Tab inventory". The loot window is its own
@@ -204,7 +210,8 @@ with priority-bracketed probe nodes): **calm/loud ≈ 5 ms** (budget 8),
 
 `EventBus.sound_emitted(position, radius, intensity, category, source)`.
 Emitters: player footsteps at 1 Hz while moving (`FootstepEmitter`:
-sneak 2 m, walk 4 m, jog 8 m, sprint 14 m), door open/close 6 m, door
+sneak 2 m, walk 4 m, jog 8 m, sprint 14 m; × encumbrance 1.2 heavy /
+1.35 overloaded), door open/close 6 m, door
 bang 10 m (+ `door_banged`), door break 18 m, window open/close 5 m,
 window smash 18 m, melee hit = weapon noise radius (bat 8 m, knife 2 m,
 shove 2 m). Listener side (`ZombieSenses`): radius test, halved
@@ -355,21 +362,105 @@ a blockout colour (also its UI icon).
 | Tool | screwdriver, saw, tin opener, wrench |
 | Material | nails (stack 100), box of nails, plank, duct tape, bed sheet |
 | Clothing | t-shirt, jacket, socks (data only, worn in R6) |
-| Container (`ContainerItemData`) | school bag (18 kg, −60 %), duffel bag (18 kg, −40 %) — worn in R6 |
+| Container (`ContainerItemData`: `capacity_kg`, `weight_reduction`, `worn_speed_multiplier`) | school bag (0.7 kg, 7 kg, contents count 70 %), duffel bag (1.8 kg, 18 kg, contents count 60 %, ×0.97 speed while worn) — worn on the back (R6) |
 | Misc | lighter, newspaper, matches, small change (stack 100) |
 
 Food / drink numbers are consumed by the needs system in Round 7.
 
-## Inventory 🔶 (Round 5 minimal; Round 6 full)
+## Inventory ✅ (Round 5 model, Round 6 equipment / bags / encumbrance)
 
 `ItemContainer` (pure data): weight capacity, stacks merge by id up to
 `max_stack` (items with a condition never stack), `split_stack`,
 `transfer_to` moves as much as fits ("Too heavy" when nothing fits),
-`to_dict/from_dict`. The player carries one (`Player.inventory`,
-**15 kg**, refusals instead of encumbrance until R6). Picking up a
-`WorldItem` adds to it (auto-equips a weapon when the hands are empty);
-X cycles fists → carried weapons; storing / losing the equipped weapon
-unequips it; a broken weapon is removed.
+`to_dict/from_dict`. The player's **main inventory** is a hard 20 kg
+(`CharacterStatsProfile.inventory_capacity`); bags add their own
+capacity; **encumbrance** (below) is what hurts, not the hard cap.
+
+**Nested containers.** Every `ItemInstance` of a `ContainerItemData`
+owns an `ItemContainer` (`contents`, `capacity_kg`). A bag weighs its
+contents (`unit_weight` / `total_weight`), so capacity checks see a full
+bag as heavy. Rules (`ItemContainer.accept_reason`): a bag never ends
+up inside itself at any depth ("Can't put a bag inside itself"); a worn
+bag never goes into another bag ("Take the bag off first"). Only the
+worn bag's contents and a bag lying on the ground are accessible (a bag
+inside the main inventory is a closed, full-weight item) — this keeps
+every container's capacity invariant. `to_dict` nests `contents`.
+
+**Picking up**: into the main inventory; when that is full, a weapon /
+tool goes straight into empty hands and a bag onto an empty back.
+A weapon is auto-equipped when the hands are empty.
+
+## Equipment ✅ (Round 6)
+
+`Equipment` (inventory/equipment.gd, child of the Player). Slots are
+unlimited ItemContainers tagged with their slot id, so equipped items
+are **out of the inventory** and every generic transfer works on them.
+
+| Slot | Holds | Notes |
+|---|---|---|
+| primary_hand | weapons, tools, `&"hand"`-tagged items | MeleeCombat swings it. **Two-handed** weapons (`WeaponData.two_handed`: baseball bat) occupy both hands. |
+| secondary_hand | one-handed items | Equipping here displaces a two-hander. |
+| back | bags only ("Only bags go on the back"; "Bags go on the back" for hands) | Its contents are carried storage with the bag's weight reduction; the loot window gets a tab for it. |
+| hotbar 1-3 | `Hotbar` (inventory/hotbar.gd): references to equippable items | Keys **1-3** (with any modifier held: sprint / sneak / walk) equip / put away. A dropped / stored item keeps its slot (greyed, "Not carried") and works again once that same item is picked back up. |
+
+- Equip takes one item of a stack; whatever is in the way goes to the
+  main inventory, else the worn bag — or the whole equip is refused
+  ("No room in inventory"; the new item's weight leaving the pack is
+  counted first). Unequip → main inventory, else worn bag, else refused.
+- `Player.can_release_item` guards everything leaving a slot (the
+  swung weapon: "Mid-swing").
+- **X** cycles fists → every carried weapon (hands, pack, bag) in
+  creation order (`ItemInstance.uid`) → fists.
+- A broken weapon is destroyed from its slot (`on_weapon_broken`).
+- Events: local `equipped_changed(slot, item)` (MeleeCombat mirrors the
+  primary hand, MeleeVisuals rebuilds), `EventBus.equipment_changed`,
+  `EventBus.hotbar_changed`. `to_dict/from_dict` (bags with nested
+  contents; hotbar as references into slots / main / bag);
+  `Player.carried_to_dict/carried_from_dict` wraps inventory + equipment.
+
+**Keys:** 1-3 hotbar (any modifiers — Shift / Ctrl / Alt are sprint /
+sneak / walk and may be held). **Interaction alternatives are on keys
+4-7** (the prompt reads "[5] Smash window"): number keys 1-3 are always
+the hotbar, so pressing 1 next to a door in a fight draws a weapon.
+Taking off the worn bag with no room for it drops it at the feet
+("No room: dropped School Bag at your feet"). `from_dict` goes through
+the same slot rules (a two-hander only in the primary hand; a one-hander
+next to a two-hander or a bag in a hand is rejected with a warning).
+Save entries use one key, `count` (the old `stack` is still read).
+
+## Encumbrance ✅ (Round 6)
+
+`Encumbrance` (inventory/encumbrance.gd, child of the Player).
+Carried weight = main inventory (a bag inside counts in full) + hand
+items + worn bag weight + its contents × (1 − `weight_reduction`).
+Thresholds and effects live in `CharacterStatsProfile` ("Carrying";
+strength-based later):
+
+| State | Carried | Speed (`encumbrance` modifier) | Stamina drain | Footsteps | Sprint |
+|---|---|---|---|---|---|
+| ok | ≤ 8 kg (`carry_capacity`) | ×1 | ×1 | ×1 | yes |
+| light | 8 – 12 kg | ×0.92 | ×1.15 | ×1 | yes |
+| heavy | 12 – 15 kg | ×0.85 | ×1.3 | ×1.2 | yes |
+| overloaded | > 15 kg | ×0.65 | ×1.7 | ×1.35 | refused "Too heavy" |
+
+Effects go through existing hooks only: `MovementComponent` modifier,
+`StatsComponent.set_drain_multiplier` (scales negative rates only —
+regeneration is untouched), `FootstepEmitter.set_multiplier`,
+`Character.set_sprint_lock` (+ `sprint_denied_reason()`; the HUD shows
+it); a worn duffel adds the `worn_bag` modifier ×0.97. Recompute is
+**coalesced**: container changes mark it dirty, one recompute runs at
+the end of the frame (reading `state` / `weight` flushes early), and
+`EventBus.encumbrance_changed(character, state, weight)` fires only when
+the final weight or state differs — equipping from the pack at 15.7 kg
+never flickers through "heavy". Nested bags anywhere (in the pack, in a
+bag in the pack) re-emit their container's `changed`, so the weight is
+always current; container weights are cached and updated incrementally. HUD: "Carrying 12.4 / 8 kg — Heavy load" in the status panel,
+coloured (grey / yellow / orange / red), plus a notice on state change.
+The inventory screen shows the same **load** ("Carrying 6.9 / 8 kg")
+under its tabs; its panel headers show **storage** as "Space 4.70 / 20
+kg" — two different numbers, labelled differently. The worn bag's row
+shows "School Bag 1.4→0.98" (weighs → counts).
+Swing stamina costs are not scaled (only per-second drains).
 
 ## Loot tables ✅ (Round 5)
 
@@ -419,9 +510,40 @@ House A: bed, dresser, wardrobe (bedroom); bathroom cabinet, toilet;
 (6, −16) with a tool crate, workbench and shelf, and a standalone
 "Supply crate" at (10.9, −12.2).
 
-## Loot window ✅ (Round 5, reference 4)
+## Inventory screen / loot window ✅ (Round 5, Round 6 — reference 4)
 
-Two panels along the top: left **Inventory** ("Transfer All", "1.80 / 15
+Round 6: **Tab** opens the player panel alone as the inventory screen.
+The player panel has a **container column** (tabs: Inventory, the worn
+bag) — the active tab is the list shown AND the target of everything
+taken from a container (click a tab to loot into the bag). The
+Inventory tab lists the equipped items first (gold; Type = Hands /
+Both / Back / Hand 2), then the stacks grouped under category headers.
+Interactions: click (container open: move; else select), Shift+click
+one, **Ctrl+click splits half into a new stack in the same container**,
+**right-click context menu** (`ItemActions`: Equip / Equip in secondary
+hand / Wear on back / Unequip / Take off / Use (dressings bandage the
+worst wound with THAT dressing; Eat / Drink are disabled "Round 7"
+stubs) / Split stack / Drop / Drop one / Assign to hotbar 1-3; container
+rows: Take / Take one), **G** drops the hovered (else selected) row at
+the player's feet as a `WorldItem` (layer 4, child of the map — stays
+in the scene), **drag and drop** (Control drag API) between the panels,
+onto a container tab, or onto the player list. Clicks on the world do
+not attack while the screen is open (nor any press that starts over
+GUI). Taking into an equipment slot container is refused ("Use
+Equip"). Rows are pooled and reconciled by item (only changed rows
+rebind, no zebra striping so a removal re-styles nothing): refresh with
+200 + 200 rows ≈ 7 ms, Loot All of 199 stacks ≈ 2 ms as one
+transaction (`ItemContainer.begin_batch/end_batch`: one `changed` per
+side, one encumbrance update) — `tests/integration/test_inventory_perf.gd`.
+A **bag on the ground**
+("Open School Bag" next to "Pick up") opens in the container panel like
+furniture (instant, closes > 2 m away / on pickup). Bottom-centre
+**hotbar widget** (3 slots, equipped one gold). Right-click on the UI
+never starts aiming; clicks on the UI never attack.
+
+Round 5 (unchanged):
+
+Two panels along the top: left **Inventory** ("Transfer All", "1.80 / 20
 kg"), right the container ("Loot All", "<name>", "W / cap kg"). Rows:
 colour-square icon, name, type (Food / Drink / Med / Weapon / Tool / Mat
 / Cloth / Bag / Misc), ×count, kg, condition %. The HUD room label now
@@ -451,7 +573,7 @@ action reloads the scene) and zombies lose interest.
 
 ## Planned (see MASTER_PLAN for order)
 
-Sound propagation ⬜ · Combat ✅ (melee) · Health & injuries ✅ · Inventory 🔶 ·
+Sound propagation ⬜ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
 Loot tables ✅ · Needs (hunger/thirst/fatigue/temperature) ⬜ ·
 Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ⬜ · Vehicles ⬜ ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·

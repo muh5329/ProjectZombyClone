@@ -10,7 +10,8 @@ extends Node3D
 ## layer 1 (world) rejects objects behind a wall.
 ##
 ## Input: `interact` (E) performs the first enabled action; `action_1..4`
-## pick an alternative from the current action list. All object-specific
+## (keys 4-7 since Round 6 — 1-3 are the equipment hotbar) pick an
+## alternative from the current action list. All object-specific
 ## behaviour lives in the objects (see Interactable); nothing here knows
 ## what a door is. Input is ignored while the character is busy.
 

@@ -33,7 +33,7 @@ func test_item_db_loads_catalogue() -> void:
 	check(rag.bandage_quality < 1.0 and is_equal_approx(rag.rebleed_chance, 0.5) and is_equal_approx(rag.rebleed_after, 60.0), "rag: worse dressing, 50 % rebleed after 60 s")
 	check((_d(&"disinfectant") as MedicalData).disinfectant > 0.0, "disinfectant strength")
 	var bp := _d(&"backpack") as ContainerItemData
-	check(bp != null and is_equal_approx(bp.capacity, 18.0) and is_equal_approx(bp.weight_reduction, 0.6), "backpack 18 / 0.6")
+	check(bp != null and is_equal_approx(bp.capacity_kg, 7.0) and is_equal_approx(bp.weight_reduction, 0.3), "school bag 7 kg / contents count 70 %")
 	check(_d(&"duffel_bag") is ContainerItemData, "duffel bag is a container item")
 	check(_d(&"hammer").has_tag(&"hammer") and _d(&"hammer") is WeaponData, "hammer is a weapon tagged hammer")
 	check_eq(_d(&"hammer").category_id(), &"weapon", "category_id")

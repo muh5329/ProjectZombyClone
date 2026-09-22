@@ -1,23 +1,30 @@
 class_name Player
 extends Character
 ## The player-controlled survivor. Thin: registers itself and hosts the
-## controller / interaction / combat child nodes. Gameplay logic lives in
-## those nodes and in the shared Character/components.
+## controller / interaction / combat / equipment child nodes. Gameplay
+## logic lives in those nodes and in the shared Character/components.
 ##
-## Round 5: carried items live in [inventory] (an ItemContainer,
-## [inventory_capacity] kg; refusals say "Too heavy"). Weapons are
-## equipped from it; X cycles fists → carried weapons; a weapon that
-## leaves the inventory leaves the hands. Round 6 adds equipment slots,
-## bags and encumbrance on top.
+## Carrying (Round 6):
+## - [inventory]: the main inventory, a hard-capped ItemContainer
+##   (profile.inventory_capacity, 20 kg).
+## - Equipment child: hands (primary / secondary, two-handers take both),
+##   back (a bag whose contents are extra storage), hotbar 1-3. Equipped
+##   items are out of the inventory.
+## - Encumbrance child: carried weight → ok / light / heavy / overloaded
+##   → speed, stamina drain, footstep noise, sprint.
+## Item verbs the UI / input call (all return {ok, reason?} and surface
+## refusals via EventBus.interaction_refused): pick_up_item, equip_item,
+## unequip_item, move_item, drop_item, split_item, use_item, use_hotbar,
+## cycle_weapon. Anything leaving the player asks can_release_item first.
 
-## Carrying capacity in kg (Round 6 turns this into encumbrance).
-@export var inventory_capacity: float = 15.0
 ## Items granted on _ready as {id: count} (debug starts / tests).
 @export var starting_items: Dictionary = {}
 
-var inventory: ItemContainer = ItemContainer.new(15.0)
+var inventory: ItemContainer = ItemContainer.new(20.0)
 
 @onready var combat: MeleeCombat = get_node_or_null("Combat")
+@onready var equipment: Equipment = get_node_or_null("Equipment")
+@onready var encumbrance: Encumbrance = get_node_or_null("Encumbrance")
 
 
 func _enter_tree() -> void:
@@ -32,38 +39,55 @@ func _exit_tree() -> void:
 
 func _ready() -> void:
 	super._ready()
-	inventory.capacity = inventory_capacity
-	if not inventory.changed.is_connected(_on_inventory_changed):
-		inventory.changed.connect(_on_inventory_changed)
+	if profile:
+		inventory.capacity = profile.inventory_capacity
+	if equipment:
+		equipment.character = self
+		equipment.contents_changed.connect(_on_carried_changed)
+	elif not inventory.changed.is_connected(_on_carried_changed):
+		inventory.changed.connect(_on_carried_changed)
+	if encumbrance:
+		encumbrance.setup(self)
 	for id in starting_items:
 		inventory.add_id(StringName(id), int(starting_items[id]))
 
 
-func _on_inventory_changed() -> void:
-	if combat and combat.equipped != null and not inventory.has(combat.equipped):
-		combat.equip(null)
+func _on_carried_changed() -> void:
+	if encumbrance:
+		encumbrance.mark_dirty()  # coalesced: one recompute per frame
 	EventBus.inventory_changed.emit(self)
 
 
-## Pick up [item] (WorldItem calls this). Refused "Too heavy" when it
-## does not fit. Auto-equips a weapon when the hands are empty.
-func pick_up_item(item: ItemInstance) -> Dictionary:
-	if item == null or item.data == null:
-		return {"ok": false, "reason": "Nothing there"}
-	if is_dead() or is_busy:
-		return {"ok": false, "reason": "Busy"}
-	var r := inventory.add(item)
-	if not r.ok:
-		return r
-	EventBus.item_picked_up.emit(self, {"id": item.id(), "name": item.display_name()})
-	if combat and combat.equipped == null and item.is_weapon() and inventory.has(item):
-		combat.equip(item)
-	return {"ok": true}
+# --- Queries ---------------------------------------------------------------------
+
+## Carried storage: main inventory (+ the worn bag's contents).
+func carried_storage() -> Array[ItemContainer]:
+	if equipment:
+		return equipment.storage()
+	var out: Array[ItemContainer] = [inventory]
+	return out
 
 
-## {ok, reason} — may [item] leave the inventory right now? Every path
-## that takes something out of the player's hands / pack (container put,
-## Transfer All, future drop) asks this first: the equipped or swung
+## True for the player's own containers (storage and equipment slots).
+func owns_container(c: ItemContainer) -> bool:
+	if equipment:
+		return equipment.owns_container(c)
+	return c == inventory
+
+
+## True when [item] is on the player (equipped or stored).
+func carries(item: ItemInstance) -> bool:
+	return item != null and item.stack > 0 and owns_container(item.owner_container())
+
+
+## Carried weight (kg) as encumbrance sees it.
+func carried_weight() -> float:
+	return encumbrance.weight if encumbrance else inventory.total_weight()
+
+
+## {ok, reason} — may [item] leave where it is right now? Every path that
+## takes something out of the player's hands / pack (container put,
+## Transfer All, unequip, drop) asks this first: the equipped or swung
 ## weapon cannot go mid-swing (it would dodge its wear / vanish from the
 ## swing).
 func can_release_item(item: ItemInstance) -> Dictionary:
@@ -76,18 +100,145 @@ func can_release_item(item: ItemInstance) -> Dictionary:
 	return {"ok": true}
 
 
-## Carried, unbroken weapons in inventory order.
+## Carried, unbroken weapons (hands + storage), in creation order.
 func held_weapons() -> Array[ItemInstance]:
 	var out: Array[ItemInstance] = []
-	for it in inventory.items:
-		if it.is_weapon() and not it.is_broken():
+	var sources: Array = []
+	if equipment:
+		sources.append_array(equipment.hand_items())
+	for c in carried_storage():
+		sources.append_array(c.items)
+	for it in sources:
+		if it.is_weapon() and not it.is_broken() and not out.has(it):
 			out.append(it)
+	out.sort_custom(func(a: ItemInstance, b: ItemInstance): return a.uid < b.uid)
 	return out
 
 
+# --- Verbs -------------------------------------------------------------------------
+
+## Pick up [item] (WorldItem calls this): into the main inventory, or —
+## when that is full — straight into empty hands (weapons / tools) or
+## onto an empty back (bags). Auto-equips a weapon when the hands are
+## empty.
+func pick_up_item(item: ItemInstance) -> Dictionary:
+	if item == null or item.data == null:
+		return {"ok": false, "reason": "Nothing there"}
+	if is_dead() or is_busy:
+		return {"ok": false, "reason": "Busy"}
+	var r := inventory.add(item)
+	if not r.ok and equipment:
+		var slot := Equipment.default_slot(item)
+		if equipment.item_in(slot) == null and Equipment.slot_rule(item, slot) == "":
+			var e := equipment.equip(item, slot)
+			if e.ok:
+				r = {"ok": true, "equipped": slot}
+	if not r.ok:
+		return r
+	EventBus.item_picked_up.emit(self, {"id": item.id(), "name": item.display_name()})
+	if equipment and equipment.primary() == null and item.is_weapon() and inventory.has(item):
+		equipment.equip(item, Equipment.PRIMARY)
+	elif combat and not equipment and combat.equipped == null and item.is_weapon():
+		combat.equip(item)
+	return {"ok": true}
 
 
-## X: fists → first carried weapon → … → fists.
+## Equip [item] (slot &"" = its default: bags on the back, else hands).
+func equip_item(item: ItemInstance, slot: StringName = &"") -> Dictionary:
+	if equipment == null:
+		return _refuse("Can't equip")
+	if is_dead() or is_busy:
+		return _refuse("Busy")
+	return _report(equipment.equip(item, slot))
+
+
+## Put an equipped item away. Taking off the worn bag when there is no
+## room for it drops it at the feet instead (PZ), with a notice.
+func unequip_item(item: ItemInstance) -> Dictionary:
+	if equipment == null:
+		return _refuse("Can't unequip")
+	if is_dead() or is_busy:
+		return _refuse("Busy")
+	var r := equipment.unequip(item)
+	if not r.ok and r.reason == Equipment.REASON_NO_ROOM and item != null and item == equipment.back_bag():
+		var d := drop_item(item)
+		if d.ok:
+			EventBus.interaction_refused.emit(self, null, "No room: dropped %s at your feet" % item.display_name())
+			return {"ok": true, "dropped": true, "world_item": d.world_item}
+	return _report(r)
+
+
+## Move [count] (< 0 = all) of [item] between the player's own
+## containers (inventory ↔ worn bag; out of a slot unequips).
+func move_item(item: ItemInstance, to: ItemContainer, count: int = -1) -> Dictionary:
+	if item == null or not carries(item):
+		return _refuse("Not here")
+	if not owns_container(to) or to.equipment_slot != &"":
+		return _refuse("Can't put it there")
+	var from := item.owner_container()
+	if from == to:
+		return {"ok": false, "reason": "Already there"}
+	var rel := can_release_item(item)
+	if not rel.ok:
+		return _refuse(String(rel.reason))
+	return _report(from.transfer_to(to, item, count))
+
+
+## Drop [count] (< 0 = the stack) of [item] at the player's feet as a
+## WorldItem (layer 4) that stays in the scene.
+func drop_item(item: ItemInstance, count: int = -1) -> Dictionary:
+	if item == null or not carries(item):
+		return _refuse("Not here")
+	if is_dead():
+		return _refuse("Dead")
+	if is_busy:
+		return _refuse("Busy")
+	var rel := can_release_item(item)
+	if not rel.ok:
+		return _refuse(String(rel.reason))
+	var from := item.owner_container()
+	var inst := from.remove(item, count)
+	if inst == null:
+		return _refuse("Nothing there")
+	var w := WorldItem.drop(inst, self)
+	EventBus.item_dropped.emit(self, {"id": inst.id(), "name": inst.display_name(), "count": inst.stack})
+	return {"ok": true, "world_item": w}
+
+
+## Split half of a stack into a new stack in the same container.
+func split_item(item: ItemInstance) -> Dictionary:
+	if item == null or not carries(item):
+		return _refuse("Not here")
+	if item.stack < 2:
+		return _refuse("Can't split one item")
+	var out := item.owner_container().split_stack(item, item.stack / 2)
+	return {"ok": out != null, "item": out}
+
+
+## Use [item]: dressings bandage the worst wound; food / drink wait for
+## Round 7 (needs).
+func use_item(item: ItemInstance) -> Dictionary:
+	if item == null or not carries(item):
+		return _refuse("Not here")
+	var med := item.data as MedicalData
+	if med != null and med.bandage_quality > 0.0:
+		if injuries == null:
+			return _refuse("Can't bandage")
+		return injuries.bandage_worst(item)
+	var why := ItemActions.use_block_reason(item.data)
+	return _refuse(why if why != "" else "Can't use that")
+
+
+## Hotbar key [index] (0-based): equip the assigned item / put it away.
+func use_hotbar(index: int) -> Dictionary:
+	if equipment == null:
+		return _refuse("No hotbar")
+	if is_dead() or is_busy:
+		return _refuse("Busy")
+	return _report(equipment.use_hotbar(index))
+
+
+## X: fists → carried weapons (creation order) → fists.
 func cycle_weapon() -> bool:
 	if combat == null:
 		return false
@@ -95,15 +246,60 @@ func cycle_weapon() -> bool:
 		# No swapping mid-swing (the swing would dodge its own wear).
 		EventBus.attack_refused.emit(self, "Mid-swing")
 		return false
+	if equipment == null:
+		var opts: Array = [null]
+		opts.append_array(held_weapons())
+		combat.equip(opts[(opts.find(combat.equipped) + 1) % opts.size()])
+		return true
 	var options: Array = [null]
 	options.append_array(held_weapons())
-	var i := options.find(combat.equipped)
-	combat.equip(options[(i + 1) % options.size()])
+	var cur := equipment.primary()
+	var i := options.find(cur if cur != null and cur.is_weapon() else null)
+	var next: ItemInstance = options[(i + 1) % options.size()]
+	var r: Dictionary
+	if next == null:
+		r = equipment.unequip(Equipment.PRIMARY) if cur != null else {"ok": true}
+	else:
+		r = equipment.equip(next, Equipment.PRIMARY)
+	if not r.ok:
+		EventBus.attack_refused.emit(self, String(r.reason))
+		return false
 	return true
 
 
-## MeleeCombat calls this when the equipped weapon breaks: it is dropped
-## (removed from the inventory).
+## MeleeCombat calls this when the equipped weapon breaks: it is gone.
 func on_weapon_broken(item: ItemInstance) -> void:
-	if inventory.has(item):
-		inventory.remove(item)
+	if equipment and equipment.destroy(item):
+		return
+	var c := item.owner_container()
+	if c != null and owns_container(c):
+		c.remove(item)
+
+
+func _report(r: Dictionary) -> Dictionary:
+	if not r.get("ok", false):
+		EventBus.interaction_refused.emit(self, null, String(r.get("reason", "Can't")))
+	return r
+
+
+func _refuse(reason: String) -> Dictionary:
+	EventBus.interaction_refused.emit(self, null, reason)
+	return {"ok": false, "reason": reason}
+
+
+# --- Save --------------------------------------------------------------------------
+
+## Inventory + equipment (bags with their nested contents, hotbar refs).
+func carried_to_dict() -> Dictionary:
+	var d := {"inventory": inventory.to_dict()}
+	if equipment:
+		d["equipment"] = equipment.to_dict()
+	return d
+
+
+func carried_from_dict(d: Dictionary) -> void:
+	inventory.from_dict(d.get("inventory", {}))
+	if profile:
+		inventory.capacity = profile.inventory_capacity
+	if equipment and d.has("equipment"):
+		equipment.from_dict(d.equipment)

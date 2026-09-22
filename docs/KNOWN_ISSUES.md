@@ -5,15 +5,35 @@ that fixed them.
 
 ## Open
 
+0000. **Round-6 inventory / equipment gaps** (ordered):
+   - **Only the worn bag and bags on the ground are accessible**: a bag
+     carried inside the main inventory (or in a container) is a closed,
+     full-weight item — no tab for it. Deliberate (keeps every capacity
+     invariant), but PZ lets you open any carried bag.
+   - **Dropped items are not persisted**: they are children of the map
+     (they stay for the session), but not registered in `WorldState`;
+     Round 10 must add them (and the player's `carried_to_dict`) to the
+     save.
+   - **No attacking while the inventory screen is open** (by design since
+     the Round-6 critic); shove (Space) still works.
+   - **Clothing is not wearable** yet (t-shirt / jacket / socks have no
+     slots); only hands + back exist. No belt / holster slots.
+   - **Encumbrance thresholds are fixed numbers** in the profile (8 / 12 /
+     15 kg), not strength / traits based; swing stamina costs are not
+     scaled by load (only per-second drains are).
+   - **Rows are not zebra-striped** (a removal would re-style every row
+     below it); refresh cost is ~7 ms for 400 rows on the dev box, of
+     which most is building row data, not nodes.
+   - **Hotbar is keys only**: slots are not clickable and cannot be
+     dragged onto; assignment is via the context menu.
+   - **Identical non-stackables still take one row each** (no "×2
+     (expand)" grouping).
+   - The context menu is a Godot `PopupMenu` (keyboard focus while open;
+     clicking outside closes it).
 000. **Round-5 containers / loot gaps** (ordered):
-   - **Player inventory is a flat 15 kg list with hard refusals**: no
-     encumbrance, equipment slots, worn bags or nested containers (the
-     backpack / duffel bag are data only) — Round 6.
-   - **Rows are stacks, not grouped by item**: non-stackable items (tin
-     openers, weapons) each take a row; there is no drag & drop, no
-     context menu (eat / drop / equip), no drop-to-floor.
-   - **Loot window is laid out for 1280×720** (left of the body panel);
-     not scaled for other resolutions.
+   - **Loot window is laid out for 1280×720** (x 150–930, left of the
+     body panel); not scaled for other resolutions; a very long list
+     scrolls (max 264 px).
    - **Rummage noise is a flat 3 m** `search` sound for every container;
      corpses are silent.
    - **Containers do not respawn / refill**; world age only thins the
@@ -21,8 +41,6 @@ that fixed them.
    - **Furniture blocks windows only by placement** (the plan validator
      checks the room rect, not overlaps with doors / windows / other
      pieces).
-   - **Identical non-stackables are not grouped** ("Hammer ×2
-     (expand)"): each takes a row.
    - **Save / load** only has `to_dict/from_dict` + `WorldState`
      snapshots; nothing writes them to disk until Round 10.
 00. **Round-4 combat / injury gaps** (ordered):

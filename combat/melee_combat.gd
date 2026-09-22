@@ -12,10 +12,16 @@ extends Node
 ##   knockback / knockdown / shove, wear of the swung ItemInstance, events.
 ## This node owns what touches the character: stamina (paid at swing
 ## start; refused with EventBus.attack_refused "Too tired to swing"),
-## movement modifiers, facing, aiming, equipment, pain effects
+## movement modifiers, facing, aiming, pain effects
 ## (InjuryComponent.pain_combat_modifiers) and the local signals the
 ## visuals listen to. Shared tuning: CombatProfile
 ## (data/combat/combat_profile.tres); per weapon: WeaponData.
+##
+## Round 6: what is held comes from the actor's Equipment (child
+## "Equipment"): [equipped] mirrors its primary hand through
+## Equipment.equipped_changed; equip() is a convenience that asks the
+## Equipment (so the slot rules / "Mid-swing" / "No room" apply). Actors
+## without an Equipment keep the old direct assignment.
 
 signal swing_started(weapon: WeaponData, direction: Vector3, charge: float)
 ## The active window opened; [hits] = [{target, damage, info}].
@@ -70,6 +76,10 @@ var _aim_accum: float = 0.0
 func _ready() -> void:
 	actor = get_parent() as Character
 	rng.randomize()
+	var eq := _equipment()
+	if eq != null:
+		eq.equipped_changed.connect(_on_equipment_changed)
+		equipped = eq.primary()
 	var exclude: Array[RID] = []
 	if actor:
 		exclude.append(actor.get_rid())
@@ -96,11 +106,32 @@ func weapon() -> WeaponData:
 	return fists
 
 
-## Equip [item] (null = fists). The swing in progress keeps its own
-## weapon and instance (wear still lands on what was swung).
-func equip(item: ItemInstance) -> void:
+## Equip [item] in the primary hand (null = put it away → fists).
+## Goes through the actor's Equipment when it has one (refusals: slot
+## rules, "Mid-swing", "No room in inventory"). The swing in progress
+## keeps its own weapon and instance (wear still lands on what was swung).
+func equip(item: ItemInstance) -> Dictionary:
 	if item != null and not item.is_weapon():
-		return
+		return {"ok": false, "reason": "Not a weapon"}
+	var eq := _equipment()
+	if eq != null:
+		if item == null:
+			return eq.unequip(Equipment.PRIMARY) if eq.primary() != null else {"ok": true}
+		return eq.equip(item, Equipment.PRIMARY)
+	_set_equipped(item)
+	return {"ok": true}
+
+
+func _equipment() -> Equipment:
+	return actor.get_node_or_null("Equipment") as Equipment if actor else null
+
+
+func _on_equipment_changed(slot: StringName, item: ItemInstance) -> void:
+	if slot == Equipment.PRIMARY:
+		_set_equipped(item)
+
+
+func _set_equipped(item: ItemInstance) -> void:
 	equipped = item
 	equipped_changed.emit(equipped)
 	EventBus.weapon_equipped.emit(actor, item_summary())
@@ -359,9 +390,8 @@ func _on_item_worn(item: ItemInstance, broke: bool) -> void:
 		return
 	var w := item.data
 	EventBus.weapon_broken.emit(actor, {"id": w.id, "name": w.display_name, "condition": 0, "max_condition": w.max_condition})
-	if equipped == item:
-		equipped = null
-		equipped_changed.emit(null)
-		EventBus.weapon_equipped.emit(actor, item_summary())
+	# The owner removes it (Equipment → equipped_changed → fists).
 	if actor.has_method(&"on_weapon_broken"):
 		actor.call(&"on_weapon_broken", item)
+	if equipped == item:
+		_set_equipped(null)

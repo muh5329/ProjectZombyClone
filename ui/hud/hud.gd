@@ -11,6 +11,8 @@ const COL_EXHAUSTED := Color(0.95, 0.45, 0.2)
 const COL_HEALTH := Color(0.6, 0.08, 0.06)
 const COL_FEVER := Color(1.0, 0.6, 0.2)
 const COL_INFECTED := Color(1.0, 0.25, 0.2)
+## Encumbrance readout colours by state.
+const ENC_COLORS := {&"ok": Color(0.85, 0.9, 0.85), &"light": Color(0.95, 0.88, 0.45), &"heavy": Color(1.0, 0.6, 0.2), &"overloaded": Color(1.0, 0.25, 0.2)}
 
 @onready var health_bar: ProgressBar = %HealthBar
 @onready var health_label: Label = %HealthLabel
@@ -53,6 +55,11 @@ var _infection_stage: StringName = &"none"
 var _idle: bool = true
 ## Generic timed action (rummaging…): progress bar created in code.
 var action_bar: ProgressBar
+## Carried weight readout ("Carrying 12.4 / 8 kg — Heavy load"), state-coloured.
+var weight_label: Label
+## Bottom-centre quick-equip bar (keys 1-3).
+var hotbar: HotbarWidget
+var _enc_state: StringName = &""
 var _action_start_frame: int = -1
 var _action_seconds: float = 0.0
 
@@ -84,7 +91,12 @@ func _ready() -> void:
 	EventBus.timed_action_started.connect(_on_timed_action_started)
 	EventBus.timed_action_finished.connect(_on_timed_action_finished)
 	EventBus.wound_reopened.connect(_on_wound_reopened)
+	EventBus.encumbrance_changed.connect(_on_encumbrance_changed)
+	EventBus.item_dropped.connect(_on_item_dropped)
+	EventBus.equipment_changed.connect(_on_equipment_changed)
 	_build_action_bar()
+	_build_weight_label()
+	_build_hotbar()
 	charge_bar.visible = false
 	bandage_bar.visible = false
 	danger_label.text = ""
@@ -92,7 +104,7 @@ func _ready() -> void:
 	health_bar.modulate = COL_HEALTH
 	health_label.add_theme_color_override(&"font_color", Color.WHITE)
 	_set_flash(0.0)
-	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 1-4 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · B bandage · Tab inventory · Q/R rotate · Wheel zoom · F3 debug"
+	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 4-7 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · 1-3 hotbar · B bandage · Tab inventory · G drop · Q/R rotate · Wheel zoom · F3 debug"
 	aim_label.text = ""
 	_on_weapon_changed(GameManager.player, {"name": "Fists", "max_condition": 0})
 	_refresh_body()
@@ -159,7 +171,8 @@ func _on_mode_changed(c: Node, mode: StringName) -> void:
 
 func _on_sprint_denied(c: Node) -> void:
 	if _is_player(c):
-		_notice("Too winded to sprint", 1.5)
+		var why := String(c.call(&"sprint_denied_reason")) if c.has_method(&"sprint_denied_reason") else ""
+		_notice(why if why != "" else "Too winded to sprint", 1.5)
 
 
 func _on_interaction_target_changed(actor: Node, target: Node, actions: Array) -> void:
@@ -182,8 +195,8 @@ func _on_interaction_refused(actor: Node, _target: Node, reason: String) -> void
 		_notice(reason, 1.5)
 
 
-## Pure formatter. Enabled: "E: Open door   [2] Smash window"; disabled
-## actions are greyed via BBCode-free brackets: "[3] Climb through (Window is closed)".
+## Pure formatter. Enabled: "E: Open door   [5] Smash window"; disabled
+## actions are greyed via BBCode-free brackets: "[6] Climb through (Window is closed)".
 ## (Label has no rich text; the parenthesised reason is the greying.)
 static func format_prompt(target_name: String, actions: Array) -> String:
 	if actions.is_empty():
@@ -200,7 +213,7 @@ static func format_prompt(target_name: String, actions: Array) -> String:
 			key = "E"
 			primary_done = true
 		elif i < 4:
-			key = "[%d]" % (i + 1)
+			key = "[%d]" % (i + 4)
 		else:
 			continue
 		if not enabled:
@@ -338,6 +351,79 @@ func _on_bandage_started(c: Node, region: StringName, seconds: float) -> void:
 func _on_bandage_finished(c: Node, region: StringName) -> void:
 	if _is_player(c):
 		_notice("Bandaged %s" % Injury.REGION_LABELS[maxi(Injury.region_from_id(region), 0)].to_lower(), 1.5)
+
+
+# --- Carrying (Round 6) -----------------------------------------------------------
+
+func _build_weight_label() -> void:
+	weight_label = Label.new()
+	weight_label.name = "WeightLabel"
+	weight_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var vbox := stamina_bar.get_parent()
+	vbox.add_child(weight_label)
+	var p := GameManager.player
+	var enc := p.get_node_or_null("Encumbrance") as Encumbrance if p else null
+	if enc:
+		_show_weight(enc.state, enc.weight, enc.capacity())
+		_enc_state = enc.state
+	else:
+		weight_label.text = ""
+
+
+func _build_hotbar() -> void:
+	hotbar = HotbarWidget.new()
+	hotbar.anchor_left = 0.5
+	hotbar.anchor_right = 0.5
+	hotbar.anchor_top = 1.0
+	hotbar.anchor_bottom = 1.0
+	hotbar.offset_left = -106.0
+	hotbar.offset_right = 106.0
+	hotbar.offset_top = -68.0
+	hotbar.offset_bottom = -10.0
+	hotbar.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	add_child(hotbar)
+
+
+## Pure: "Carrying 12.4 / 8 kg — Heavy load" ("Carrying 3.1 / 8 kg" when ok).
+static func format_weight(state: StringName, weight: float, capacity: float) -> String:
+	var t := "Carrying %.1f / %s kg" % [weight, ("%d" % int(capacity)) if is_equal_approx(capacity, roundf(capacity)) else ("%.1f" % capacity)]
+	if state != &"ok":
+		t += " — " + Encumbrance.state_label(state)
+	return t
+
+
+func _show_weight(state: StringName, weight: float, capacity: float) -> void:
+	weight_label.text = format_weight(state, weight, capacity)
+	weight_label.add_theme_color_override(&"font_color", ENC_COLORS.get(state, Color.WHITE))
+
+
+func _on_encumbrance_changed(c: Node, state: StringName, weight: float) -> void:
+	if not _is_player(c):
+		return
+	var enc := c.get_node_or_null("Encumbrance") as Encumbrance
+	_show_weight(state, weight, enc.capacity() if enc else 8.0)
+	if state != _enc_state:
+		var worse := Encumbrance.STATES.find(state) > Encumbrance.STATES.find(_enc_state)
+		if _enc_state != &"":
+			if state == &"ok":
+				_notice("Load is fine again", 1.5)
+			elif worse:
+				_notice("%s!%s" % [Encumbrance.state_label(state), "  (can't sprint)" if state == &"overloaded" else ""], 2.0)
+			else:
+				_notice(Encumbrance.state_label(state), 1.5)
+		_enc_state = state
+
+
+func _on_item_dropped(c: Node, item: Dictionary) -> void:
+	if _is_player(c):
+		var n := int(item.get("count", 1))
+		_notice("Dropped %s%s" % [String(item.get("name", "item")), " ×%d" % n if n > 1 else ""], 1.5)
+
+
+func _on_equipment_changed(c: Node, slot: StringName, item: Dictionary) -> void:
+	if not _is_player(c) or slot != Equipment.BACK:
+		return
+	_notice("Wearing %s" % String(item.name) if item.has("name") else "Took the bag off", 1.5)
 
 
 # --- Timed actions (Round 5) ----------------------------------------------------

@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = &"backpack"
 display_name = "School Bag"
-description = "A small school bag. Worn on the back (Round 6)."
+description = "A small school bag. Wear it on your back: its contents count 30 % lighter."
 category = 7
 weight = 0.7
-capacity = 18.0
-weight_reduction = 0.6
+capacity_kg = 7.0
+weight_reduction = 0.3
 color = Color(0.25, 0.35, 0.6, 1)
 world_size = Vector3(0.35, 0.15, 0.4)
 tags = Array[StringName]([&"back"])

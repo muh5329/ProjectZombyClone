@@ -28,6 +28,27 @@ extends Resource
 ## stamina somehow recovers faster (e.g. future items).
 @export var winded_min_seconds: float = 4.0
 
+@export_group("Carrying")
+## Carried weight (kg) the character handles without penalty; above it
+## the load is "light" (Encumbrance). Strength-based later.
+@export var carry_capacity: float = 8.0
+## Above this: "heavy". Above [carry_overloaded_kg]: "overloaded".
+@export var carry_heavy_kg: float = 12.0
+@export var carry_overloaded_kg: float = 15.0
+## Hard weight limit of the main inventory (bags add their own capacity).
+@export var inventory_capacity: float = 20.0
+## Movement speed multiplier per state (light / heavy / overloaded).
+@export var encumbrance_speed_light: float = 0.92
+@export var encumbrance_speed_heavy: float = 0.85
+@export var encumbrance_speed_overloaded: float = 0.65
+## Stamina DRAIN multiplier per state (+15 % light, +30 % heavy, +70 % overloaded).
+@export var encumbrance_drain_light: float = 1.15
+@export var encumbrance_drain_heavy: float = 1.3
+@export var encumbrance_drain_overloaded: float = 1.7
+## Footstep radius multiplier per state.
+@export var encumbrance_noise_heavy: float = 1.2
+@export var encumbrance_noise_overloaded: float = 1.35
+
 @export_group("Body")
 ## Height of the eyes / interaction focus above the feet (metres).
 @export var eye_height: float = 0.9

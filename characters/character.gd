@@ -46,6 +46,9 @@ var busy_tween: Tween = null
 ## When non-zero the body faces this (XZ) direction instead of its travel
 ## direction (aiming, swinging). Set by combat; ZERO = travel facing.
 var facing_override: Vector3 = Vector3.ZERO
+## Reasons sprinting is impossible regardless of stamina, keyed by source
+## ({&"encumbrance": "Too heavy"}). Systems set / clear their own key.
+var sprint_locks: Dictionary = {}
 ## Seconds of winded time remaining (physics time).
 var _winded_left: float = 0.0
 var _last_emitted_mode: MovementComponent.Mode = MovementComponent.Mode.JOG
@@ -83,7 +86,24 @@ func speed() -> float:
 
 
 func can_sprint() -> bool:
-	return not exhausted
+	return not exhausted and sprint_locks.is_empty()
+
+
+## Block (reason != "") or allow sprinting for [source].
+func set_sprint_lock(source: StringName, reason: String) -> void:
+	if reason == "":
+		sprint_locks.erase(source)
+	else:
+		sprint_locks[source] = reason
+
+
+## Player-facing reason a sprint is refused right now ("" when it is not).
+func sprint_denied_reason() -> String:
+	if not sprint_locks.is_empty():
+		return String(sprint_locks.values()[0])
+	if exhausted:
+		return "Too winded to sprint"
+	return ""
 
 
 func is_dead() -> bool:

@@ -95,6 +95,22 @@ signal item_transferred(from: Node, to: Node, item: Dictionary)
 signal timed_action_started(actor: Node, action: StringName, label: String, seconds: float)
 signal timed_action_finished(actor: Node, action: StringName, completed: bool)
 
+# --- Equipment / encumbrance (Round 6) -------------------------------------
+## An Equipment slot changed. slot: &"primary_hand" / &"secondary_hand" /
+## &"back". item: {id, name} ({} when emptied).
+signal equipment_changed(character: Node, slot: StringName, item: Dictionary)
+## The quick-equip hotbar changed (assignments or which one is equipped).
+## slots: [{index, id, name, color, equipped, carried}] ({index} when empty).
+signal hotbar_changed(character: Node, slots: Array)
+## Carried weight or encumbrance state changed. state: &"ok" / &"light" /
+## &"heavy" / &"overloaded"; weight in kg (worn-bag reduction applied).
+signal encumbrance_changed(character: Node, state: StringName, weight: float)
+## The inventory / loot screen was shown or hidden (clicks on the world
+## do not attack while it is open).
+signal inventory_screen_toggled(visible: bool)
+## An item was dropped to the ground. item: {id, name, count}.
+signal item_dropped(character: Node, item: Dictionary)
+
 # --- Sound (stub; Round 8 adds propagation / occlusion) --------------------
 ## Something made a noise. radius in metres, intensity 0..1, category e.g.
 ## &"footstep", &"door", &"glass". source may be null.

@@ -188,7 +188,7 @@ func test_open_kitchen_cabinet_rummages_then_shows_items() -> void:
 	check_eq(window.rows(LootWindow.SIDE_CONTAINER)[0].category, LootWindow.category_short(c.inventory.items[0].data), "type column")
 	var room_label: Label = hud.room_label
 	check(not room_label.get_global_rect().intersects(window.root.get_global_rect()), "room label not hidden by the window")
-	check(window.player_weight.text.ends_with("/ 15 kg"), "player header weight (%s)" % window.player_weight.text)
+	check(window.player_weight.text.ends_with("/ 20 kg"), "player header weight (%s)" % window.player_weight.text)
 	check_eq(window.loot_all_button.text, "Loot All", "Loot All button")
 	check_eq(window.transfer_all_button.text, "Transfer All", "Transfer All button")
 	await physics_frames(20)
@@ -244,7 +244,7 @@ func test_loot_all_transfer_all_and_row_clicks() -> void:
 	check_eq(_counts(player.inventory), want, "same items")
 	await frames(2)
 	check_eq(window.visible_row_count(LootWindow.SIDE_CONTAINER), 0, "no container rows")
-	check(window._empty_labels[LootWindow.SIDE_CONTAINER].visible, "(empty) shown")
+	check(window.container_panel.empty_label.visible, "(empty) shown")
 	check_eq(window.visible_row_count(LootWindow.SIDE_PLAYER), player.inventory.items.size(), "player rows")
 	check(window.loot_all_button.disabled, "Loot All disabled when empty")
 	# Transfer All back.
@@ -319,13 +319,14 @@ func test_equipped_weapon_cannot_be_stored_mid_swing() -> void:
 	var r := c.put(player, bat)
 	check(not r.ok and r.reason == "Mid-swing", "put refused (%s)" % str(r))
 	r = window.transfer_all()
-	check_eq(r.get("reason", ""), "Mid-swing", "Transfer All skips the swung weapon (%s)" % str(r))
-	check(player.inventory.has(bat), "bat still carried")
+	check(r.ok, "Transfer All moves the pack, not the hands (%s)" % str(r))
+	check(player.equipment.primary() == bat, "bat still in hand")
 	check_eq(player.inventory.count_of(&"apple"), 0, "…the apple went in")
 	check(combat.equipped == bat, "still equipped")
 	await wait_physics_until(func(): return combat.phase == MeleeCombat.Phase.IDLE, 120)
 	check(player.can_release_item(bat).ok, "free once the swing ends")
-	check(c.put(player, bat).ok, "stored after the swing")
+	check(c.put(player, bat).ok, "stored after the swing (straight from the hand)")
+	check(combat.weapon() == combat.fists and player.equipment.primary() == null, "…and unequipped")
 
 
 func test_capacity_refusal_greys_rows() -> void:
@@ -334,9 +335,9 @@ func test_capacity_refusal_greys_rows() -> void:
 	c.inventory.clear()
 	c.inventory.add_id(&"plank", 1)
 	c.inventory.add_id(&"bandage", 1)
-	player.inventory.add_id(&"plank", 4)  # 12 of 15 kg
-	player.inventory.add_id(&"water_bottle", 1)  # 13 kg: a 3 kg plank won't fit
-	check_near(player.inventory.total_weight(), 13.0, 0.001, "13 kg carried")
+	player.inventory.add_id(&"plank", 6)  # 18 of 20 kg
+	player.inventory.add_id(&"water_bottle", 1)  # 19 kg: a 3 kg plank won't fit
+	check_near(player.inventory.total_weight(), 19.0, 0.001, "19 kg carried")
 	await frames(3)
 	var rows := window.rows(LootWindow.SIDE_CONTAINER)
 	var plank_i := c.inventory.index_of(c.inventory.find(&"plank"))
@@ -350,18 +351,19 @@ func test_capacity_refusal_greys_rows() -> void:
 	var r := window.transfer_index(LootWindow.SIDE_CONTAINER, plank_i)
 	check(not r.ok and r.reason == "Too heavy", "refused (%s)" % str(r))
 	check_eq(c.inventory.count_of(&"plank"), 1, "plank stays")
-	check_near(player.inventory.total_weight(), 13.0, 0.001, "nothing added")
+	check_near(player.inventory.total_weight(), 19.0, 0.001, "nothing added")
 	await frames(1)
 	check_eq(window.status_label.text, "Too heavy", "window notice")
 	# Loot All moves what fits and says why the rest stayed.
 	r = window.loot_all()
 	check(r.ok and r.moved == 1 and r.get("reason", "") == "Too heavy", "partial loot all (%s)" % str(r))
-	# Pickup refusal too.
-	var bat := WorldItem.for_instance(ItemInstance.new(preload("res://data/items/weapons/crowbar.tres")))
-	player.inventory.add_id(&"plank", 1)
-	var pr := player.pick_up_item(bat.item)
-	check(not pr.ok and pr.reason == "Too heavy", "pickup refused when full")
-	bat.free()
+	# Pickup with a full pack: a weapon still goes into empty hands, then
+	# the next one is refused.
+	var crowbar := ItemInstance.new(preload("res://data/items/weapons/crowbar.tres"))
+	var pr := player.pick_up_item(crowbar)
+	check(pr.ok and player.equipment.primary() == crowbar, "full pack: weapon into empty hands (%s)" % str(pr))
+	pr = player.pick_up_item(ItemInstance.new(preload("res://data/items/weapons/crowbar.tres")))
+	check(not pr.ok and pr.reason == "Too heavy", "pickup refused when full and hands busy (%s)" % str(pr))
 
 
 func test_window_closes_walking_away_and_on_e() -> void:
@@ -554,7 +556,8 @@ func test_interrupted_bandage_with_full_pack_drops_the_dressing() -> void:
 	player.inventory.add_id(&"bandage", 1)
 	injuries.add_injury(Injury.Region.LEFT_ARM, Injury.Type.LACERATION)
 	check(injuries.bandage_worst().ok, "bandaging")
-	player.inventory.add_id(&"plank", 5)  # 15 kg: the pack is now full
+	player.inventory.add_id(&"plank", 6)  # 18 kg…
+	player.inventory.add_id(&"nails", 200)  # …+ 2 kg: the 20 kg pack is full
 	var before := tree.get_nodes_in_group(&"world_item").size()
 	player.take_damage(1.0, null, {})
 	await frames(2)
@@ -616,8 +619,9 @@ func test_pickup_into_inventory_and_x_cycles() -> void:
 	await physics_frames(3)
 	check(interaction.current_target != null and interaction.current_target.display_name() == "Baseball Bat", "bat targeted")
 	check(interaction.interact().ok, "picked up")
-	check_eq(player.inventory.count_of(&"baseball_bat"), 1, "bat in the inventory")
-	check_near(player.inventory.total_weight(), 1.5, 0.001, "1.5 kg")
+	check(player.equipment.primary() != null and player.equipment.primary().id() == &"baseball_bat", "bat in the hands")
+	check_eq(player.inventory.count_of(&"baseball_bat"), 0, "equipped items are out of the pack")
+	check_near(player.carried_weight(), 1.5, 0.001, "1.5 kg carried")
 	check_eq(combat.weapon().id, &"baseball_bat", "auto-equipped")
 	player.inventory.add_id(&"hammer", 1)
 	player.inventory.add_id(&"apple", 1)
@@ -627,7 +631,7 @@ func test_pickup_into_inventory_and_x_cycles() -> void:
 	# Moving the equipped weapon out of the inventory unequips it.
 	var c := _container("HouseA/kitchen/0")
 	check(await _open(c), "open cabinet")
-	var bat := player.inventory.find(&"baseball_bat")
+	var bat := player.equipment.primary()
 	check(c.put(player, bat).ok, "stored the bat")
 	check(combat.weapon() == combat.fists, "stored weapon leaves the hands")
 	await frames(1)

@@ -16,29 +16,94 @@ extends RefCounted
 ## Pure (no scene tree): unit-tested in tests/unit/test_inventory.gd.
 ## Mutators never exceed the capacity; the UI asks can_fit() / fit_count()
 ## beforehand to grey out rows.
+##
+## Round 6 — nesting: a bag's contents are an ItemContainer whose
+## [method owner_item] is the bag (weak). Weights / fits use
+## ItemInstance.unit_weight() (a bag weighs its contents too). A bag is
+## refused when it would end up inside itself (any depth: "Can't put a
+## bag inside itself") and a worn bag (held by an Equipment slot
+## container, [member equipment_slot] != "") never goes into another bag
+## ("Take the bag off first"). Equipment slots are unlimited containers
+## tagged with their slot id.
+## A stored bag's contents changing re-emits [signal changed] here too
+## (recursively), so the owner of the outermost container always hears
+## about it; the total weight is cached and invalidated on every change.
+## begin_batch()/end_batch() coalesce many mutations into one `changed`
+## ("Loot All").
 
 signal changed
 
 const EPS := 0.0001
 const REASON_HEAVY := "Too heavy"
 const REASON_ELSEWHERE := "Already in another container"
+const REASON_CYCLE := "Can't put a bag inside itself"
+const REASON_WORN_BAG := "Take the bag off first"
 
 ## Weight capacity in kg (< 0 = unlimited).
 var capacity: float = -1.0
 var items: Array[ItemInstance] = []
+## Non-empty for an Equipment slot container (&"primary_hand"…).
+var equipment_slot: StringName = &""
+## Weak ref to the bag ItemInstance whose contents this is (null = none).
+var _owner_item_ref: WeakRef = null
+## Cached total weight (< 0 = dirty).
+var _weight_cache: float = -1.0
+var _batch: int = 0
+var _pending: bool = false
 
 
 func _init(p_capacity: float = -1.0) -> void:
 	capacity = p_capacity
 
 
+## The bag ItemInstance this container belongs to, or null.
+func owner_item() -> ItemInstance:
+	return _owner_item_ref.get_ref() as ItemInstance if _owner_item_ref != null else null
+
+
+func _set_owner_item(it: RefCounted) -> void:
+	_owner_item_ref = weakref(it) if it != null else null
+
+
 # --- Queries -------------------------------------------------------------------
 
 func total_weight() -> float:
-	var w := 0.0
-	for it in items:
-		w += it.total_weight()
-	return w
+	if _weight_cache < 0.0:
+		var w := 0.0
+		for it in items:
+			w += it.total_weight()
+		_weight_cache = w
+	return _weight_cache
+
+
+## Suspend `changed` until the matching end_batch() (nests); one signal
+## is emitted at the end when anything changed.
+func begin_batch() -> void:
+	_batch += 1
+
+
+func end_batch() -> void:
+	_batch = maxi(_batch - 1, 0)
+	if _batch == 0 and _pending:
+		_pending = false
+		changed.emit()
+
+
+## Something changed: adjust the weight cache by [delta] kg when known
+## (NAN = recompute lazily), emit (or defer while batching).
+func _touch(delta: float = NAN) -> void:
+	if is_nan(delta) or _weight_cache < 0.0:
+		_weight_cache = -1.0
+	else:
+		_weight_cache = maxf(_weight_cache + delta, 0.0)
+	if _batch > 0:
+		_pending = true
+	else:
+		changed.emit()
+
+
+func _on_nested_changed() -> void:
+	_touch()
 
 
 func free_weight() -> float:
@@ -95,26 +160,61 @@ func item_count() -> int:
 	return n
 
 
-## How many of [data] fit by weight (up to [wanted]).
-func fit_count(data: ItemData, wanted: int) -> int:
+## How many of [data] fit by weight (up to [wanted]). [unit] overrides
+## the per-item weight (a bag with contents: ItemInstance.unit_weight()).
+func fit_count(data: ItemData, wanted: int, unit: float = -1.0) -> int:
 	if data == null or wanted <= 0:
 		return 0
-	if capacity < 0.0 or data.weight <= 0.0:
+	var w := data.weight if unit < 0.0 else unit
+	if capacity < 0.0 or w <= 0.0:
 		return wanted
 	var free := capacity - total_weight()
-	return clampi(int(floor((free + EPS) / data.weight)), 0, wanted)
+	return clampi(int(floor((free + EPS) / w)), 0, wanted)
 
 
 ## True when [count] of [data] fit by weight.
-func can_fit(data: ItemData, count: int = 1) -> bool:
-	return data != null and fit_count(data, count) >= count
+func can_fit(data: ItemData, count: int = 1, unit: float = -1.0) -> bool:
+	return data != null and fit_count(data, count, unit) >= count
+
+
+## How many of the stack [item] fit here (weight + nesting rules).
+func fit_item(item: ItemInstance, wanted: int = -1) -> int:
+	if item == null or item.data == null:
+		return 0
+	if accept_reason(item) != "":
+		return 0
+	return fit_count(item.data, item.stack if wanted < 0 else wanted, item.unit_weight())
+
+
+## "" when [item] may be stored here by the nesting rules (not weight):
+## a bag never ends up inside itself (any depth) and a worn bag never goes
+## into another bag.
+func accept_reason(item: ItemInstance) -> String:
+	if item == null or item.contents == null:
+		return ""
+	var c: ItemContainer = self
+	var guard := 0
+	while c != null and guard < 64:
+		if c == item.contents:
+			return REASON_CYCLE
+		var bag := c.owner_item()
+		if bag == null:
+			break
+		if bag == item:
+			return REASON_CYCLE
+		c = bag.owner_container()
+		guard += 1
+	var holder := item.owner_container()
+	if owner_item() != null and holder != null and holder.equipment_slot != &"":
+		return REASON_WORN_BAG
+	return ""
 
 
 ## {ok, reason} for adding [count] of [data] (whole amount must fit).
-func can_add(data: ItemData, count: int = 1) -> Dictionary:
+func can_add(data: ItemData, count: int = 1, unit: float = -1.0) -> Dictionary:
 	if data == null:
 		return {"ok": false, "reason": "Nothing there"}
-	if fit_count(data, count) < count:
+	if fit_count(data, count, unit) < count:
 		return {"ok": false, "reason": REASON_HEAVY}
 	return {"ok": true}
 
@@ -149,12 +249,16 @@ func add(item: ItemInstance) -> Dictionary:
 	var holder := item.owner_container()
 	if holder != null and holder != self:
 		return {"ok": false, "reason": REASON_ELSEWHERE}
-	var chk := can_add(item.data, item.stack)
+	var nest := accept_reason(item)
+	if nest != "":
+		return {"ok": false, "reason": nest}
+	var chk := can_add(item.data, item.stack, item.unit_weight())
 	if not chk.ok:
 		return chk
 	var n := item.stack
+	var w := item.total_weight()
 	_insert(item)
-	changed.emit()
+	_touch(w)
 	return {"ok": true, "moved": n}
 
 
@@ -181,11 +285,11 @@ func remove(item: ItemInstance, count: int = -1) -> ItemInstance:
 	var out: ItemInstance
 	if count < 0 or count >= item.stack:
 		items.remove_at(i)
-		item._set_owner_container(null)
+		_detach(item)
 		out = item
 	else:
 		out = item.split(count)
-	changed.emit()
+	_touch(-out.total_weight())
 	return out
 
 
@@ -201,12 +305,12 @@ func remove_id(id: StringName, count: int) -> int:
 		var n := mini(left, it.stack)
 		if n >= it.stack:
 			items.remove_at(i)
-			it._set_owner_container(null)
+			_detach(it)
 		else:
 			it.stack -= n
 		left -= n
 	if left != count:
-		changed.emit()
+		_touch()
 	return count - left
 
 
@@ -221,12 +325,16 @@ func transfer_to(to: ItemContainer, item: ItemInstance, count: int = -1) -> Dict
 	var want := item.stack if count < 0 else mini(count, item.stack)
 	if want <= 0:
 		return {"ok": false, "reason": "Nothing there", "moved": 0}
-	var n := to.fit_count(item.data, want)
+	var nest := to.accept_reason(item)
+	if nest != "":
+		return {"ok": false, "reason": nest, "moved": 0}
+	var n := to.fit_count(item.data, want, item.unit_weight())
 	if n <= 0:
 		return {"ok": false, "reason": REASON_HEAVY, "moved": 0}
 	var moving := remove(item, n)
+	var w := moving.total_weight()
 	to._insert(moving)
-	to.changed.emit()
+	to._touch(w)
 	return {"ok": true, "moved": n, "partial": n < want}
 
 
@@ -254,9 +362,13 @@ func transfer_id(to: ItemContainer, id: StringName, count: int = -1) -> Dictiona
 ## Returns {ok, moved (items), left (items that did not fit), reason?}.
 func transfer_all(to: ItemContainer) -> Dictionary:
 	var moved := 0
+	begin_batch()
+	to.begin_batch()
 	for it in items.duplicate():
 		var r := transfer_to(to, it)
 		moved += int(r.get("moved", 0))
+	to.end_batch()
+	end_batch()
 	var left := item_count()
 	var out := {"ok": moved > 0, "moved": moved, "left": left}
 	if left > 0:
@@ -276,7 +388,7 @@ func split_stack(item: ItemInstance, n: int) -> ItemInstance:
 	var out := item.split(n)
 	items.insert(i + 1, out)
 	out._set_owner_container(self)
-	changed.emit()
+	_touch(0.0)
 	return out
 
 
@@ -288,9 +400,9 @@ func clear() -> void:
 	if items.is_empty():
 		return
 	for it in items:
-		it._set_owner_container(null)
+		_detach(it)
 	items.clear()
-	changed.emit()
+	_touch()
 
 
 # --- Save ----------------------------------------------------------------------
@@ -299,7 +411,10 @@ func clear() -> void:
 func to_dict() -> Dictionary:
 	var list: Array = []
 	for it in items:
-		list.append({"id": String(it.id()), "count": it.stack, "condition": it.condition})
+		var e := {"id": String(it.id()), "count": it.stack, "condition": it.condition}
+		if it.contents != null and not it.contents.is_empty():
+			e["contents"] = it.contents.to_dict()
+		list.append(e)
 	return {"capacity": capacity, "items": list}
 
 
@@ -309,12 +424,13 @@ func to_dict() -> Dictionary:
 ## container). Capacity is kept unless the dict carries one.
 func from_dict(d: Dictionary) -> void:
 	for it in items:
-		it._set_owner_container(null)
+		_detach(it)
 	items.clear()
+	_weight_cache = -1.0
 	if d.has("capacity"):
 		capacity = float(d.capacity)
 	for e in d.get("items", []):
-		var n := int(e.get("count", e.get("stack", 1)))
+		var n := int(e.get("count", e.get("stack", 1)))  # "stack": pre-R6 key
 		if n <= 0:
 			push_warning("ItemContainer.from_dict: skipping '%s' with count %d" % [str(e.get("id", "?")), n])
 			continue
@@ -322,14 +438,15 @@ func from_dict(d: Dictionary) -> void:
 		if inst == null:
 			push_warning("ItemContainer.from_dict: unknown item '%s'" % str(e.get("id", "?")))
 			continue
-		var fit := fit_count(inst.data, inst.stack)
+		var fit := fit_count(inst.data, inst.stack, inst.unit_weight())
 		if fit < inst.stack:
 			push_warning("ItemContainer.from_dict: %d × '%s' over capacity, dropped" % [inst.stack - fit, inst.id()])
 			if fit <= 0:
 				continue
 			inst.stack = fit
 		_insert(inst)
-	changed.emit()
+		_weight_cache = -1.0
+	_touch()
 
 
 # --- Internals -----------------------------------------------------------------
@@ -373,3 +490,12 @@ func _insert(item: ItemInstance) -> void:
 func _append(item: ItemInstance) -> void:
 	items.append(item)
 	item._set_owner_container(self)
+	if item.contents != null and not item.contents.changed.is_connected(_on_nested_changed):
+		item.contents.changed.connect(_on_nested_changed)
+
+
+## [item] no longer lives here: clear its owner, stop listening to a bag.
+func _detach(item: ItemInstance) -> void:
+	item._set_owner_container(null)
+	if item.contents != null and item.contents.changed.is_connected(_on_nested_changed):
+		item.contents.changed.disconnect(_on_nested_changed)

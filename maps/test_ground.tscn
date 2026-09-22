@@ -1,4 +1,4 @@
-[gd_scene load_steps=24 format=3 uid="uid://c0testground0001"]
+[gd_scene load_steps=25 format=3 uid="uid://c0testground0001"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://camera/isometric_camera.gd" id="2_cam"]
@@ -18,6 +18,7 @@
 [ext_resource type="Resource" path="res://data/buildings/shed_a.tres" id="16_shed"]
 [ext_resource type="Script" path="res://interaction/loot_container.gd" id="17_loot"]
 [ext_resource type="PackedScene" path="res://ui/inventory/loot_window.tscn" id="18_lootwin"]
+[ext_resource type="Resource" path="res://data/items/containers/backpack.tres" id="19_backpack"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
 size = Vector3(200, 1, 200)
@@ -152,6 +153,12 @@ position = Vector3(-5.2, 0, -8.8)
 rotation_degrees = Vector3(0, -20, 0)
 script = ExtResource("11_witem")
 item_data = ExtResource("13_knife")
+
+[node name="Backpack" type="StaticBody3D" parent="Items"]
+position = Vector3(-10.75, 0.48, -8.1)
+rotation_degrees = Vector3(0, 15, 0)
+script = ExtResource("11_witem")
+item_data = ExtResource("19_backpack")
 
 [node name="BloodDecals" type="Node3D" parent="."]
 script = ExtResource("14_blood")

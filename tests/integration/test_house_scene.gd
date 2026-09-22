@@ -305,7 +305,7 @@ func test_hud_prompt_reflects_actions() -> void:
 		{"id": &"open", "label": "Open window", "enabled": true, "reason": ""},
 		{"id": &"smash", "label": "Smash window", "enabled": true, "reason": ""},
 		{"id": &"climb", "label": "Climb through", "enabled": false, "reason": "Window is closed"}])
-	check_eq(txt, "E: Open window   [2] Smash window   [3] Climb through (Window is closed)", "formatter")
+	check_eq(txt, "E: Open window   [5] Smash window   [6] Climb through (Window is closed)", "formatter")
 	await _teleport(Vector3(-9, 0.1, -4))
 	await _settle_occlusion()
 	await frames(2)

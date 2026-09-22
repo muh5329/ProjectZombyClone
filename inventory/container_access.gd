@@ -16,14 +16,22 @@ extends RefCounted
 ## swung weapon mid-swing). Each move emits
 ## EventBus.item_transferred(from, to, item); refusals go out as
 ## EventBus.interaction_refused(actor, container, reason).
+##
+## Round 6: [container] is any node with `inventory`, `display_name`,
+## `is_open_for(actor)` (LootContainer, a bag WorldItem on the ground).
+## The actor side of a move may be any ItemContainer the actor owns
+## (duck-typed actor.owns_container(c): main inventory, worn bag,
+## equipment slots); default = the actor's `inventory`. Items leave the
+## actor from wherever they are (item.owner_container()).
 
 const SEARCH_CONTEXT := &"search"
 
-var container: LootContainer
+## The owning container node (LootContainer / WorldItem), duck-typed.
+var container: Node
 var searching_actor: Node = null
 
 
-func _init(c: LootContainer) -> void:
+func _init(c: Node) -> void:
 	container = c
 
 
@@ -110,36 +118,54 @@ static func can_release(actor: Node, item: ItemInstance) -> Dictionary:
 	return {"ok": true}
 
 
-func take(actor: Node, item: ItemInstance, count: int = -1) -> Dictionary:
-	return _move(actor, container, actor, item, count)
+## True when [c] is one of [actor]'s own containers.
+static func actor_owns(actor: Node, c: ItemContainer) -> bool:
+	if actor == null or c == null:
+		return false
+	if actor.has_method(&"owns_container"):
+		return bool(actor.call(&"owns_container", c))
+	return c == inventory_of(actor)
 
 
+## Container → actor ([into]: one of the actor's containers, default its
+## main inventory).
+func take(actor: Node, item: ItemInstance, count: int = -1, into: ItemContainer = null) -> Dictionary:
+	return _move(actor, container, actor, item, count, inventory_of(container), into if into != null else inventory_of(actor))
+
+
+## Actor → container, from wherever the actor keeps [item].
 func put(actor: Node, item: ItemInstance, count: int = -1) -> Dictionary:
-	return _move(actor, actor, container, item, count)
+	var from := item.owner_container() if item != null else null
+	if from == null or not actor_owns(actor, from):
+		from = inventory_of(actor)
+	return _move(actor, actor, container, item, count, from, inventory_of(container))
 
 
-func take_all(actor: Node) -> Dictionary:
-	return _move_all(actor, container, actor)
+func take_all(actor: Node, into: ItemContainer = null) -> Dictionary:
+	return _move_all(actor, container, actor, inventory_of(container), into if into != null else inventory_of(actor))
 
 
-func put_all(actor: Node) -> Dictionary:
-	return _move_all(actor, actor, container)
+## Everything in [from] (default: the actor's main inventory) goes in.
+func put_all(actor: Node, from: ItemContainer = null) -> Dictionary:
+	return _move_all(actor, actor, container, from if from != null else inventory_of(actor), inventory_of(container))
 
 
-func _check(actor: Node, from: ItemContainer, to: ItemContainer) -> String:
+func _check(actor: Node, from: ItemContainer, to: ItemContainer, actor_side: ItemContainer) -> String:
 	if not container.is_open_for(actor):
 		return "Not open"
 	if from == null or to == null:
 		return "Can't carry"
+	if not actor_owns(actor, actor_side):
+		return "Can't carry"
+	if to.equipment_slot != &"":
+		return "Use Equip"  # only Equipment fills its slots
 	if bool(actor.get("is_busy")):
 		return "Busy"
 	return ""
 
 
-func _move(actor: Node, src: Node, dst: Node, item: ItemInstance, count: int) -> Dictionary:
-	var from := inventory_of(src)
-	var to := inventory_of(dst)
-	var why := _check(actor, from, to)
+func _move(actor: Node, src: Node, dst: Node, item: ItemInstance, count: int, from: ItemContainer, to: ItemContainer) -> Dictionary:
+	var why := _check(actor, from, to, from if src == actor else to)
 	if why != "":
 		return _refused(actor, why)
 	if item == null or not from.has(item):
@@ -159,16 +185,17 @@ func _move(actor: Node, src: Node, dst: Node, item: ItemInstance, count: int) ->
 	return r
 
 
-func _move_all(actor: Node, src: Node, dst: Node) -> Dictionary:
-	var from := inventory_of(src)
-	var to := inventory_of(dst)
-	var why := _check(actor, from, to)
+func _move_all(actor: Node, src: Node, dst: Node, from: ItemContainer, to: ItemContainer) -> Dictionary:
+	var why := _check(actor, from, to, from if src == actor else to)
 	if why != "":
 		return _refused(actor, why)
 	if from.is_empty():
 		return _refused(actor, "Nothing there")
 	var moved := 0
 	var reason := ""
+	# One transaction: one `changed` per side (UI refresh, encumbrance).
+	from.begin_batch()
+	to.begin_batch()
 	for it in from.items.duplicate():
 		if src == actor:
 			var rel := can_release(actor, it)
@@ -178,7 +205,9 @@ func _move_all(actor: Node, src: Node, dst: Node) -> Dictionary:
 		var r := from.transfer_to(to, it)
 		moved += int(r.get("moved", 0))
 		if not r.ok or r.get("partial", false):
-			reason = ItemContainer.REASON_HEAVY
+			reason = String(r.get("reason", ItemContainer.REASON_HEAVY)) if not r.ok else ItemContainer.REASON_HEAVY
+	to.end_batch()
+	from.end_batch()
 	var out := {"ok": moved > 0, "moved": moved, "left": from.item_count()}
 	if moved > 0:
 		EventBus.item_transferred.emit(src, dst, {"id": &"", "name": "", "count": moved})

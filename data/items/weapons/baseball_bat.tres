@@ -27,4 +27,5 @@ knockback = 0.3
 knockdown_chance = 0.15
 condition_loss_chance = 0.2
 noise_radius = 8
+two_handed = true
 tags = Array[StringName]([&"blunt"])

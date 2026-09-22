@@ -6,6 +6,56 @@ that did not write the code).
 
 ---
 
+## Round 6 — Inventory, equipment, bags, encumbrance (2026-09-22)
+
+### Goal
+Make carrying a decision: equipment slots, wearable bags with weight
+reduction, drop/pick-up, hotbar, a full inventory screen, and encumbrance
+that feeds speed, stamina, sprint and noise.
+
+### What changed
+- `Equipment`: primary/secondary hand (two-handers take both) and back;
+  each slot is an `ItemContainer`, so equipped items leave the pack and
+  weight counts once. `MeleeCombat` mirrors the primary hand. X cycles
+  weapons. `inventory/hotbar.gd`: 3 slots, keys 1-3 work with any
+  modifier; interaction alternatives moved to keys 4-7.
+- Bags: `ContainerItemData` capacity + weight reduction (school bag 7 kg,
+  −30 %; duffel 18 kg, −40 %, 1.8 kg, ×0.97 speed while worn). Nesting
+  and cycle rules enforced in the model; nested weight watched at any
+  depth. Bags on the ground open as containers. G drops to a `WorldItem`.
+- `Encumbrance` (pure): ok ≤8 / light ≤12 (×0.92, +15 % drain) / heavy
+  ≤15 (×0.85, +30 %, footsteps ×1.2) / overloaded (×0.65, +70 %, no
+  sprint). Recomputed once per frame; events only on real changes.
+- Inventory screen (Tab) with container tabs, categories, equipped section,
+  context menu (Equip/Unequip/Drop/Use/Assign hotbar), Ctrl-split,
+  drag-and-drop; "Space W/Cap" vs "Carrying X / 8 kg"; hotbar widget.
+  Loot window split into panel/menu/drag-drop pieces with diffed rows.
+
+### Tests performed
+`scripts/test.sh` → **236 tests, 0 failed**. `scripts/screenshots.sh` OK
+twice in a row (21_inventory_screen, 22_overloaded). `scripts/perf.sh` calm
+2.6 ms / hostile 5.8 ms; 400-row refresh ≈ 7 ms, Loot All 199 ≈ 2 ms.
+
+### Bugs discovered (critic) → all fixed
+Hotbar dead while Shift/Ctrl/Alt held (Alt collided with walk);
+encumbrance state flicker mid-operation; save could load a two-hander
+next to a primary weapon; clicking the world with the inventory open
+attacked; loot API could stuff any item into a hand; stale nested-bag
+weight; 80+ ms UI refresh and a 199-event Loot All storm; dressing and
+worn-bag return paths; hotbar forgot dropped items; school bag
+overpowered; two confusing capacity numbers; two save formats.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (8) · System Integration 8 (7) · Survival Depth 7 (6) ·
+Architecture 7.5 (7) · Performance 8.5 (6) · UX/Feedback 7 (6.5) ·
+Bug Resistance 8 (7).
+
+### Highest-priority remaining issue
+Food and drink are inert. Round 7 (hunger/thirst + eating/drinking) gives
+loot its stakes.
+
+---
+
 ## Round 5 — Containers and data-driven loot (2026-09-22)
 
 ### Goal

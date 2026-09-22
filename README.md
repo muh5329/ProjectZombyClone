@@ -2,7 +2,7 @@
 
 Isometric 3D survival sandbox in **Godot 4.6 / GDScript**, inspired by the
 systemic gameplay of Project Zomboid. Blockout visuals (primitives), systems
-first. Built through a "gauntlet" of verified rounds; **Rounds 1–5 of 10 are
+first. Built through a "gauntlet" of verified rounds; **Rounds 1–6 of 10 are
 done and committed.**
 
 ## Status at handoff (2026-09-22)
@@ -14,9 +14,10 @@ done and committed.**
 | 3 | Zombie AI (FSM, vision/hearing/proximity, navmesh, door banging), health, spawner, perf harness | ✅ done |
 | 4 | Melee combat, shove, body-region injuries, weapons as data | ✅ done |
 | 5 | Containers, data-driven loot tables, player inventory, ref-4 loot window | ✅ done |
-| 6–10 | Inventory/equipment/encumbrance, hunger/thirst, sound propagation, barricades, save/load | ⬜ planned |
+| 6 | Equipment slots, bags, hotbar, inventory screen, encumbrance | ✅ done |
+| 7–10 | Hunger/thirst, sound propagation, barricades, save/load | ⬜ planned |
 
-- **188 automated tests, 0 failing** (`scripts/test.sh`, ~370 s headless).
+- **236 automated tests, 0 failing** (`scripts/test.sh`, ~400 s headless).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,
@@ -26,9 +27,10 @@ done and committed.**
 ## Run the game
 Open `project.godot` in Godot **4.6** and press Play (main scene
 `maps/test_ground.tscn`). Controls: WASD move · Shift sprint · Ctrl sneak ·
-Alt walk · E interact · 1-4 pick action · LMB attack (hold to charge) ·
-RMB aim · Space shove · X cycle weapon · B bandage · Q/R rotate camera ·
-wheel or +/− zoom · F3 debug · R restart after death.
+Alt walk · E interact · 4-7 pick action · 1-3 hotbar · LMB attack
+(hold to charge) · RMB aim · Space shove · X cycle weapon · B bandage ·
+Tab inventory (right-click items, drag, Ctrl+click split, G drop) · Q/R
+rotate camera · wheel or +/− zoom · F3 debug · R restart after death.
 
 ## Run the tests
 ```

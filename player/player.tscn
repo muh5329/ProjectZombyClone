@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://c0player000001"]
+[gd_scene load_steps=20 format=3 uid="uid://c0player000001"]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://characters/movement_component.gd" id="2_move"]
@@ -13,6 +13,8 @@
 [ext_resource type="Script" path="res://player/player_combat_input.gd" id="11_cinput"]
 [ext_resource type="Script" path="res://combat/melee_visuals.gd" id="12_cvis"]
 [ext_resource type="Resource" path="res://data/injuries/human_injuries.tres" id="13_injprof"]
+[ext_resource type="Script" path="res://inventory/equipment.gd" id="14_equip"]
+[ext_resource type="Script" path="res://inventory/encumbrance.gd" id="15_enc"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -66,6 +68,12 @@ profile = ExtResource("13_injprof")
 
 [node name="Footsteps" type="Node" parent="."]
 script = ExtResource("8_steps")
+
+[node name="Equipment" type="Node" parent="."]
+script = ExtResource("14_equip")
+
+[node name="Encumbrance" type="Node" parent="."]
+script = ExtResource("15_enc")
 
 [node name="Controller" type="Node" parent="."]
 script = ExtResource("4_ctrl")

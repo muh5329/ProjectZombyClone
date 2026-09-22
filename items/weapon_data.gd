@@ -54,6 +54,11 @@ extends ItemData
 ## Radius (m) of the sound a hit makes (EventBus.sound_emitted).
 @export var noise_radius: float = 6.0
 
+@export_group("Handling")
+## Needs both hands: equipped in the primary hand it also occupies the
+## secondary hand (Equipment, Round 6).
+@export var two_handed: bool = false
+
 
 func windup_time() -> float:
 	return swing_time * windup_fraction

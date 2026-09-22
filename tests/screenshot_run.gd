@@ -199,6 +199,7 @@ func _run() -> void:
 
 	await _round4(inst, player, cam, spawner, hud)
 	await _round5(inst, player, cam, spawner, hud)
+	await _round6(inst, player, cam, spawner, hud)
 
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
@@ -465,6 +466,120 @@ func _round5(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) 
 	await _frames(5)
 	if window.is_open():
 		_problems.append("E did not close the loot window")
+
+
+# --- Round 6: backpack, inventory screen, hotbar, encumbrance --------------
+func _round6(inst: Node, player: Node3D, _cam: Node3D, _spawner: Node, hud: Node) -> void:
+	var window: Node = inst.get_node("LootWindow")
+	var eq: Node = player.get_node("Equipment")
+	var bagw: Node3D = inst.get_node_or_null("Items/Backpack")
+	if bagw == null:
+		_problems.append("no school bag in the bedroom")
+		return
+	player.get_node("Health").heal(100.0)
+	player.global_position = Vector3(-11.1, 0.1, -7.2)
+	var to: Vector3 = bagw.global_position - player.global_position
+	player.movement.facing = atan2(-to.x, -to.z)
+	await _frames(20)
+	await _tap(&"interact")
+	await _frames(10)
+	var bag = player.inventory.find(&"backpack")
+	if bag == null:
+		_problems.append("E did not pick up the school bag")
+		return
+	# Staging: a few things worth carrying (as if looted).
+	player.inventory.add_id(&"hammer", 1)
+	player.inventory.add_id(&"kitchen_knife", 1)
+	player.inventory.add_id(&"canned_beans", 2)
+	player.inventory.add_id(&"water_bottle", 1)
+	player.inventory.add_id(&"bandage", 2)
+	await _tap(&"toggle_inventory")
+	await _frames(5)
+	if not window.is_visible_screen():
+		_problems.append("Tab did not open the inventory screen")
+	# Wear the bag through the row's context menu (real right-click).
+	var row: Control = window.row_for(&"player", bag)
+	if row == null:
+		_problems.append("no inventory row for the school bag")
+	else:
+		var at: Vector2 = row.get_viewport().get_final_transform() * row.get_global_rect().get_center()
+		_mouse_to(at)
+		await _frames(2)
+		_right_click(at)
+		await _frames(5)
+		if not window.context_menu.visible:
+			_problems.append("right-click did not open the context menu")
+		var idx := -1
+		for i in window.context_menu.item_count:
+			if window.context_menu.get_item_text(i) == "Wear on back":
+				idx = i
+		window.context_menu.hide()
+		if idx >= 0:
+			window.context_menu.id_pressed.emit(idx)
+		_mouse_to(Vector2(640, 600))
+	await _frames(5)
+	if eq.back_bag() != bag:
+		_problems.append("the school bag is not worn")
+	bag.contents.add_id(&"nails", 40)
+	bag.contents.add_id(&"rag", 2)
+	bag.contents.add_id(&"duct_tape", 1)
+	# Hotbar: knife 1, hammer 2, bat 3 (if still carried); key 2 draws the hammer.
+	var knife = player.inventory.find(&"kitchen_knife")
+	var hammer = player.inventory.find(&"hammer")
+	eq.assign_hotbar(0, knife)
+	eq.assign_hotbar(1, hammer)
+	for w in player.held_weapons():
+		if w.id() == &"baseball_bat":
+			eq.assign_hotbar(2, w)
+	await _tap(&"hotbar_2")
+	await _frames(10)
+	if eq.primary() != hammer:
+		_problems.append("hotbar key 2 did not equip the hammer")
+	if hud.hotbar.slot_name(1) != "Hammer" or not hud.hotbar.slot_equipped(1):
+		_problems.append("HUD hotbar does not show the equipped hammer")
+	if window.player_tabs().size() != 2:
+		_problems.append("no School Bag tab in the container column")
+	window.refresh()
+	await _frames(10)
+	await _shot("21_inventory_screen")
+	await _tap(&"toggle_inventory")
+	await _frames(5)
+	# Overloaded: planks from the garage (staging), then jog with real input.
+	player.global_position = Vector3(-6, 0.1, 4)
+	player.inventory.add_id(&"plank", 4)
+	await _frames(5)
+	var enc: Node = player.get_node("Encumbrance")
+	if enc.state != &"overloaded":
+		_problems.append("not overloaded after the planks (%s, %.1f kg)" % [enc.state, enc.weight])
+	_press(&"sprint")
+	_press(&"move_right")
+	await _frames(50)
+	var spd: float = player.speed()
+	await _shot("22_overloaded")
+	_release(&"move_right")
+	_release(&"sprint")
+	await _frames(5)
+	if spd > 3.4 * 0.7:
+		_problems.append("overloaded player not slowed (%.2f m/s)" % spd)
+	if not String(hud.weight_label.text).contains("Overloaded"):
+		_problems.append("HUD weight readout missing 'Overloaded': '%s'" % hud.weight_label.text)
+	if player.sprint_denied_reason() != "Too heavy":
+		_problems.append("sprint not refused as Too heavy")
+
+
+func _right_click(p: Vector2) -> void:
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_RIGHT
+	ev.button_mask = MOUSE_BUTTON_MASK_RIGHT
+	ev.pressed = true
+	ev.position = p
+	ev.global_position = p
+	Input.parse_input_event(ev)
+	await process_frame
+	var up := ev.duplicate() as InputEventMouseButton
+	up.pressed = false
+	up.button_mask = 0
+	Input.parse_input_event(up)
 
 
 func _click(p: Vector2) -> void:

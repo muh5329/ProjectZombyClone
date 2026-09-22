@@ -34,7 +34,8 @@ buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2), fu
 ai/           state_machine/state_machine.gd, state.gd  (generic FSM, R3)
 items/        item_data.gd, weapon_data.gd, item_instance.gd, world_item.gd (R4),
               food_data.gd, medical_data.gd, container_item_data.gd, item_db.gd (autoload ItemDB) (R5)
-inventory/    item_container.gd (ItemContainer), container_access.gd (ContainerAccess) (R5)
+inventory/    item_container.gd (ItemContainer), container_access.gd (ContainerAccess) (R5),
+              equipment.gd (Equipment), hotbar.gd (Hotbar), encumbrance.gd (Encumbrance), item_actions.gd (ItemActions) (R6)
 loot/         loot_table.gd, loot_table_db.gd (autoload LootTableDB), loot_resolver.gd (R5)
 combat/       melee_combat.gd, swing_state_machine.gd, hit_resolver.gd, melee_visuals.gd (R4)
 injuries/     injury.gd, injury_type_spec.gd, injury_component.gd (R4)
@@ -42,8 +43,9 @@ effects/      blood_decals.gd (R4)
 zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
               zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3)
 world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5)
-ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader
-ui/inventory/ loot_window.gd/.tscn (R5)
+ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader, hotbar.gd (HotbarWidget, R6)
+ui/inventory/ loot_window.gd/.tscn (LootWindow controller), item_list_panel.gd (ItemListPanel),
+              item_context_menu.gd (ItemContextMenu), inventory_drag_drop.gd (InventoryDragDrop) (R5/R6)
 maps/         test_ground.tscn                           (main scene)
 data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tres, zombies/zombie_basic.tres,
               items/<category>/*.tres (41 items, R5), loot/*.tres + loot/garage/*.tres (R5),
@@ -68,6 +70,9 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
   `move_and_slide()` → emits `movement_mode_changed` on change.
 - Stamina hysteresis: exhausted at ≤2 %, recovers at ≥25 %. While exhausted
   a `&"exhaustion"` speed modifier (×0.75) is applied.
+- R6: `sprint_locks {source: reason}` (`set_sprint_lock`,
+  `sprint_denied_reason()` — "Too heavy" / "Too winded to sprint");
+  `can_sprint()` = not exhausted and no lock.
 
 ### `MovementComponent`
 - Mode enum SNEAK/WALK/JOG/SPRINT with base speeds 1.3/2.0/3.4/5.6 m/s.
@@ -81,6 +86,8 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
   (`{&"low": 0.25, &"exhausted": 0.02}`) that emit `threshold` once per
   transition, both locally and on the EventBus.
 - `to_dict()/from_dict()` for the save system.
+- R6: `set_drain_multiplier(stat, source, mult)` / `drain_multiplier()`
+  scale NEGATIVE rates only in `tick()` (encumbrance).
 
 ### `PlayerController`
 - Reads the input map every physics tick and sets intent on the parent.
@@ -253,13 +260,20 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
 - `WorldItem` (StaticBody3D, layer 4, mask 0, group `world_item`):
   blockout box from the data, Interactable "Pick up <name>" →
   duck-typed `actor.pick_up_item(item) -> {ok}`; frees itself on success.
+- R6: a bag `WorldItem` also offers "Open <bag>" / "Close": it exposes
+  its `contents` as `inventory`, `display_name`, `is_open_for`, and
+  delegates `take/put/take_all/put_all` to its own `ContainerAccess`
+  (now duck-typed on its container node); closes > 2 m away, on pickup
+  or tree exit. Static `WorldItem.drop(inst, actor)` puts an instance at
+  the actor's feet under the actor's parent (the map).
 - R5: `ItemData.category` is an enum (`Category`: food, drink, medical,
   weapon, tool, material, clothing, container, misc; `category_id()` →
   StringName), `tags`, `description`. Subclasses `FoodData` (calories,
   hunger, thirst, spoil_days, needs_opener — consumed in R7),
   `MedicalData` (bandage_quality, rebleed_chance / rebleed_after,
-  disinfectant, pain_relief, splints), `ContainerItemData` (capacity,
-  weight_reduction — worn in R6).
+  disinfectant, pain_relief, splints), `ContainerItemData` (capacity_kg,
+  weight_reduction = fraction of the contents' weight removed while
+  worn). R6: `WeaponData.two_handed`.
 
 ### `ItemDB` (items/item_db.gd, autoload, R5)
 - Scans `res://data/items` recursively at startup, indexes `ItemData` by
@@ -282,6 +296,17 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
   owned by another container ("Already in another container"); a fully
   merged instance is spent (stack 0). `remove(item, 0)` removes nothing;
   `from_dict` skips counts ≤ 0 and never loads past capacity (warnings).
+- R6 perf: cached `total_weight()` (updated incrementally by add /
+  remove / transfer, invalidated otherwise), `begin_batch()/end_batch()`
+  coalesce `changed`; a stored bag's contents `changed` re-emits here
+  (connected on append, disconnected on detach) — recursive.
+- R6 nesting: `owner_item()` (weak ref to the bag whose contents this
+  is), `equipment_slot` (slot containers), `accept_reason(item)` (cycle
+  / worn-bag rules, checked by `add` and `transfer_to`), `fit_item(item)`
+  and `fit_count(data, n, unit)` with the instance's `unit_weight()`
+  (bags weigh their contents). `ItemInstance`: `contents` (bags),
+  `uid` (creation order), `unit_weight()`, `is_bag()`,
+  `is_two_handed()`; `to_dict` nests contents.
 - Convention: anything holding items exposes it as `inventory`
   (`Player`, `LootContainer`, `ZombieCorpse`); `LootContainer.inventory_of(node)`
   duck-types it.
@@ -326,7 +351,32 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
   snapshot/apply by `persist_id`, pending entries for late nodes; Round
   10 serializes it).
 
-### `LootWindow` (ui/inventory/loot_window.gd, CanvasLayer 2, R5)
+### `LootWindow` (ui/inventory/loot_window.gd, CanvasLayer 2, R5 / R6)
+- R6 split: `ItemListPanel` (one panel: title bar, column header,
+  pooled rows reconciled by key — item or header — with
+  `show_entries(entries)`, `last_rebound`, `row_node/row_for/
+  visible_row_count/header_count`; emits row_pressed /
+  row_right_clicked / row_hovered; drag via Callables),
+  `ItemContextMenu` (PopupMenu, `open_for`, `action_chosen`),
+  `InventoryDragDrop` (payload / destination / can_drop / drop). The
+  controller keeps the test API, emits
+  `EventBus.inventory_screen_toggled(visible)` (PlayerCombatInput
+  ignores attack presses while it is open).
+- R6: the container side accepts any node with `take/put/take_all/
+  put_all/close/is_open_for`, `inventory`, `display_name` (LootContainer
+  or a bag `WorldItem`). Player side = tab column (`player_tabs()`:
+  main inventory + worn bag; `select_tab(i)`, `active_player_container()`
+  is the take target) + list in display order (`side_items(side)`:
+  equipped first, then category-grouped with header rows; the container
+  side keeps storage order). Rows forward drag data
+  (`drag_payload`); panels, lists, rows and tabs accept drops
+  (`can_drop_payload / drop_payload(target, data)`, targets `&"player"`,
+  `&"container"`, `&"tab_<i>"`). Right-click → PopupMenu from
+  `context_actions()` / `perform_context()`; `click_row(side, item,
+  shift, ctrl)`; `drop_selected()` (G, `drop_item` action).
+  Pooled rows: `row_node(side, i)` = i-th item row (headers skipped),
+  `row_for(side, item)`. Note: `set_meta(k, null)` removes a key and
+  `get_meta(k, null)` then errors — use `has_meta`.
 - Built in code. Top-left panel = player inventory ("Inventory" · Transfer
   All · "W / 15 kg"), top-right = open container (Loot All · name ·
   "W / Cap kg"); rows = stacks (colour square, name, type, ×count, kg,
@@ -343,6 +393,54 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
   weapon leaving it is unequipped. `InjuryComponent.bandage_worst()`
   consumes the best dressing from `character.inventory` ("No bandages").
 
+### `Equipment` (inventory/equipment.gd, child `Equipment` of the Player, R6)
+- Slots primary_hand / secondary_hand / back as unlimited
+  `ItemContainer`s tagged `equipment_slot`; equipped items live there
+  (out of the inventory), so generic transfers / the loot window work on
+  them and slot changes from anywhere are noticed via `changed`.
+- `equip(item, slot)` (slot rules, displaced items stowed into main
+  inventory → worn bag, refused as a whole "No room in inventory"),
+  `unequip(item|slot)`, `destroy(item)`, `primary()`, `secondary()`
+  (two-hander = both), `back_bag()`, `bag_contents()`, `hand_items()`,
+  `storage()` (main + worn bag), `owns_container(c)`, `carries(item)`,
+  statics `slot_rule()`, `default_slot()`, `can_hold()`,
+  `is_equippable()`. Hotbar facade over `hotbar: Hotbar` (pure slot
+  bookkeeping, references kept by identity): `assign_hotbar(i, item)`
+  (validates), `hotbar_item(i)` (null while not carried), `use_hotbar(i)`,
+  `hotbar_summary()`; `hotbar_changed` only when the summary changed.
+  `from_dict` routes through `equip()` + combo checks.
+- Owner duck-typing: `inventory`, optional `can_release_item(item)`.
+- Signals: `equipped_changed(slot, item)`, `contents_changed` (slots,
+  main inventory or worn-bag contents changed), `hotbar_changed`;
+  EventBus `equipment_changed`, `hotbar_changed`. `to_dict/from_dict`.
+
+### `Encumbrance` (inventory/encumbrance.gd, child `Encumbrance`, R6)
+- `mark_dirty()` (the Player, on every carried change) → one deferred
+  flush per frame; `recompute()` flushes now; `state` / `weight` getters
+  flush when dirty; `emit_count` for tests. Per flush:
+  weight → state (ok / light / heavy / overloaded from the profile's
+  Carrying group) → movement modifier `encumbrance`, stamina drain
+  multiplier, footstep multiplier, sprint lock; `encumbrance_changed`.
+  Pure statics `carried_weight(main, hands, worn_bags)`,
+  `worn_bag_weight(bag)`, `state_for(w, cap, heavy, over)`,
+  `effects_for(state, profile)`, `state_label()`.
+
+### `ItemActions` (inventory/item_actions.gd, RefCounted statics, R6)
+- `for_item(actor, item)` → context-menu entries `{id, label, enabled,
+  reason}`; `perform(actor, item, id)` → the Player verbs
+  (`equip_item`, `unequip_item`, `use_item`, `drop_item`, `split_item`)
+  or `Equipment.assign_hotbar`. `use_block_reason(data)` (food / drink
+  → "… comes in Round 7").
+
+### Player carrying verbs (player/player.gd, R6)
+- `pick_up_item`, `equip_item`, `unequip_item`, `move_item(item, to,
+  n)` (between own containers), `drop_item(item, n)` (→
+  `WorldItem.drop`, `item_dropped`), `split_item`, `use_item`,
+  `use_hotbar(i)`, `cycle_weapon()`, `carries`, `owns_container`,
+  `carried_storage()`, `carried_weight()`, `carried_to_dict /
+  carried_from_dict`. Refusals → `interaction_refused(player, null,
+  reason)` (HUD + window footer).
+
 ### `MeleeCombat` (combat/melee_combat.gd, child `Combat`, R4)
 - Facade for any Character over two RefCounted helpers:
   `SwingStateMachine` (pure: phases IDLE → CHARGING → WINDUP → ACTIVE →
@@ -355,6 +453,9 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
 - API `start_attack()/release_attack()/attack_now(held)/shove()/
   cancel_charge()/set_aiming()/equip()/charge_fraction()/
   pain_modifiers()`, settable `aim_direction`, `scripted`.
+- R6: `equipped` mirrors the actor's `Equipment` primary hand
+  (`equipped_changed`); `equip(item)` asks the Equipment (returns its
+  {ok, reason}); actors without Equipment keep direct assignment.
 - Targets: sphere query on `target_mask` (layer 3) → `select_targets` →
   LOS ray (1+7+8) at `hit_height`. Duck-typed targets: `take_damage(amount, source,
   info)`, optional `receive_shove(source, info)`, `is_winding_up()`,
@@ -433,6 +534,9 @@ weapon_broken(actor, item)`, `item_picked_up(actor, item)`,
 `zombie_knocked_down(zombie, source)`, `zombie_got_up(zombie)`,
 `bandage_interrupted(character, region)`,
 `infection_stage_changed(character, stage)`.
+Round 6: `inventory_screen_toggled(visible)`, `equipment_changed(character, slot, item)`,
+`hotbar_changed(character, slots)`, `encumbrance_changed(character,
+state, weight)`, `item_dropped(character, item)`.
 Round 5: `inventory_changed(owner)`, `container_opened(actor,
 container)`, `container_closed(actor, container)`, `item_transferred(from,
 to, item)`, `timed_action_started(actor, action, label, seconds)`,
@@ -457,7 +561,7 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `player`, `isometric_camera`, `occlusion_manager`, `building`, `room`,
 `wall`, `roof`, `floor`, `door`, `window`, `occluder`, `interactable`,
 `breakable` (doors: `take_damage` + `blocks_path`), `zombie`, `corpse`,
-`world_item`, `blood_decals` (R4), `container`, `persistent`,
+`world_item` (R4; dropped items and bags on the ground too, R6), `blood_decals` (R4), `container`, `persistent`,
 `furniture`, `world_config` (R5),
 `navigation_mesh_source_group` (the map root; parsed by NavBaker).
 

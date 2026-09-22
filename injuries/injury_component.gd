@@ -41,6 +41,8 @@ var bandaging: Injury = null
 ## The dressing being applied (taken out of the inventory; returned on
 ## interrupt).
 var _dressing: ItemInstance = null
+## Container the dressing was taken from (weak): refunds go back there.
+var _dressing_from: WeakRef = null
 ## Visible infection stage (&"none" until symptoms, see profile thresholds).
 var infection_stage: StringName = &"none"
 var _bandage_left: float = 0.0
@@ -243,8 +245,10 @@ static func heal_rate(inj: Injury, p: InjuryProfile) -> float:
 # --- Treatment -----------------------------------------------------------------
 
 ## Start bandaging the worst wound: [profile.bandage_seconds] of busy time
-## owned by the character. Returns {ok, reason?, region?}.
-func bandage_worst() -> Dictionary:
+## owned by the character. Returns {ok, reason?, region?}. [preferred]:
+## use that dressing (inventory "Use" on a rag); default the best one in
+## any carried container (main inventory, worn bag).
+func bandage_worst(preferred: ItemInstance = null) -> Dictionary:
 	if character == null or character.is_dead():
 		return _refuse("Can't bandage now")
 	if character.is_busy:
@@ -252,11 +256,21 @@ func bandage_worst() -> Dictionary:
 	var inj := worst_unbandaged()
 	if inj == null:
 		return _refuse("Nothing to bandage")
-	var inv := _inventory()
-	var dressing: ItemInstance = best_dressing_in(inv)
+	var dressing: ItemInstance = null
+	if preferred != null and preferred.data is MedicalData and (preferred.data as MedicalData).bandage_quality > 0.0 \
+			and _storage().has(preferred.owner_container()):
+		dressing = preferred
+	else:
+		var q := 0.0
+		for c in _storage():
+			var d := best_dressing_in(c)
+			if d != null and (d.data as MedicalData).bandage_quality > q:
+				q = (d.data as MedicalData).bandage_quality
+				dressing = d
 	if dressing == null:
 		return _refuse("No bandages")
-	_dressing = inv.remove(dressing, 1)
+	_dressing_from = weakref(dressing.owner_container())
+	_dressing = dressing.owner_container().remove(dressing, 1)
 	bandaging = inj
 	_bandage_left = profile.bandage_seconds
 	var tw := character.begin_busy(BANDAGE_CONTEXT)
@@ -272,6 +286,15 @@ func _inventory() -> ItemContainer:
 		return null
 	var inv: Variant = character.get("inventory")
 	return inv as ItemContainer if inv is ItemContainer else null
+
+
+## Carried containers to look for dressings in (duck-typed
+## character.carried_storage(); else its `inventory`).
+func _storage() -> Array:
+	if character != null and character.has_method(&"carried_storage"):
+		return character.call(&"carried_storage")
+	var inv := _inventory()
+	return [inv] if inv != null else []
 
 
 ## Pure: the best dressing in [inv] (highest bandage_quality), or null.
@@ -339,8 +362,14 @@ func _refund_dressing() -> void:
 	_dressing = null
 	if d == null or d.stack <= 0:
 		return
+	# Back where it came from (worn bag or main inventory), else the main
+	# inventory, else the floor.
+	var origin: ItemContainer = _dressing_from.get_ref() as ItemContainer if _dressing_from != null else null
+	_dressing_from = null
+	if origin != null and _storage().has(origin) and origin.add(d).get("ok", false):
+		return
 	var inv := _inventory()
-	if inv != null and inv.add(d).get("ok", false):
+	if inv != null and inv != origin and inv.add(d).get("ok", false):
 		return
 	if character == null or character.get_parent() == null:
 		return
