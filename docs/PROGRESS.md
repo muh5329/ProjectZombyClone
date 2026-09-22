@@ -6,6 +6,82 @@ that did not write the code).
 
 ---
 
+## Round 2 — Interaction framework, enterable house, dimetric camera + cutaway (2026-09-22)
+
+### Goal
+One enterable house with doors and windows, a universal interaction
+framework (objects provide their own actions), and the Project-Zomboid
+look: orthographic dimetric camera with roof hiding / wall cutaway indoors.
+
+### What changed
+- Camera now orthographic, 30° elevation, 45° yaw steps, zoom as view size
+  (10/14/20/28). Perspective path kept behind `orthographic=false`.
+- `Interactable` component API + `PlayerInteraction` (sphere query on layer
+  4, facing-weighted, line-of-sight ray, E / 1-4). Refusals surface via
+  `interaction_refused` → HUD notice ("Locked", "Blocked", "Busy").
+- `WallFixture` base → `Door` (swing with collision, blocked check against
+  bodies, 0.5 s cooldown, locked flag) and `HouseWindow` (open/close/
+  smash/climb; climb is actor-owned busy tween, costs stamina −12/s,
+  `hazard` flag for smashed glass).
+- `BuildingPlan` resource → `HouseBlockout` generates floor, split wall
+  segments, lintels, doors, windows, rooms, roof. `validate()` warns on bad
+  plans. House A (10×8, 4 rooms, 2 ext + 3 int doors, 7 windows).
+- `OcclusionManager`: inside → roof hidden, eye-facing exterior walls and
+  current-room interior walls become 0.35 m stubs; outside → occluders on
+  the eye→player ray fade (per-instance material). Room hysteresis
+  (0.35 m exit margin), per-building caches, 10 Hz.
+- HUD: interaction prompt, "Inside: room — building", refusal notices.
+
+### Files changed
+camera/{isometric_camera,occlusion_manager}.gd, interaction/{interactable,
+wall_fixture,door,window}.gd, buildings/{building,room,building_plan,
+house_blockout}.gd, data/buildings/house_a.tres, player/{player.tscn,
+player_interaction.gd}, characters/character.gd,
+data/characters/{character_stats_profile.gd,player_stats.tres},
+core/event_bus.gd, ui/hud/*, maps/test_ground.tscn, project.godot,
+world/blockout_box.gd, tests/unit/test_{room,house_plan,door_window}.gd,
+tests/integration/test_house_scene.gd, tests/screenshot_run.gd, docs/*.
+
+### Systems added
+Interaction, Doors/Windows, Buildings/Rooms, Occlusion/cutaway, busy state.
+
+### Tests performed
+`scripts/test.sh` → **81 tests, 0 failed** (42 unit, 39 integration).
+`scripts/screenshots.sh` → OK; new shots 07_door_prompt, 08_inside_cutaway,
+09_window_open, 10_after_climb. Critic probe: 19 adversarial cases.
+
+### Bugs discovered (critic) → all fixed
+Permanent player freeze if a window is freed mid-climb; interaction through
+walls (no LOS); `orthographic` toggle broke zoom; room-boundary thrash
+(11 flips in 12 steps); stamina regen while climbing; doors swinging
+through bodies; instant door spam; no plan validation; door/window code
+duplication; hardcoded heights; per-tick String allocation; shared-material
+fading; HUD hard-coded child lookup; a vacuous door test.
+
+### Failed approaches
+- Area3D overlap for interactables never reported static bodies → direct
+  shape query. - `MeshInstance3D.transparency` is a no-op in GL
+  Compatibility → per-instance material_override duplicate.
+- First interior-wall cut rule cut partitions in every room → restricted to
+  the current room.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (7) · System Integration 8 (7) · Survival Depth 5 (4) ·
+Architecture 7 (6) · Performance 7 (6) · UX/Feedback 7 (5) ·
+Bug Resistance 7 (5).
+
+### Highest-priority remaining issue
+Nothing threatens the player yet. Round 3 zombies (states, senses,
+navigation through doors) are the gate for combat, sound and barricades.
+
+### Recommended next action
+Round 3: zombie base + AI state machine (Idle/Wander/Investigate/Chase/
+Attack/Search/LostTarget/Stunned/Dead), vision cone + hearing hook,
+NavigationRegion3D baked from the blockout, 8-12 zombies on the test map,
+attack that deals damage to a new HealthComponent (full injuries in R4).
+
+---
+
 ## Round 1 — Player + isometric camera (2026-09-22)
 
 ### Goal

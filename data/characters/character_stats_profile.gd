@@ -15,6 +15,8 @@ extends Resource
 @export var stamina_rate_walk: float = 1.0
 @export var stamina_rate_jog: float = -1.5
 @export var stamina_rate_sprint: float = -18.0
+## Climbing through windows / over obstacles.
+@export var stamina_rate_climb: float = -12.0
 ## "low" warning state (no mechanical effect yet; UI + future stress).
 @export_range(0.0, 1.0) var stamina_low_fraction: float = 0.25
 ## Exhausted: entered at/below `enter`, left only at/above `exit`.
@@ -26,6 +28,10 @@ extends Resource
 ## stamina somehow recovers faster (e.g. future items).
 @export var winded_min_seconds: float = 4.0
 
+@export_group("Body")
+## Height of the eyes / interaction focus above the feet (metres).
+@export var eye_height: float = 0.9
+
 
 func stamina_rates() -> Dictionary:
 	return {
@@ -34,6 +40,7 @@ func stamina_rates() -> Dictionary:
 		&"walk": stamina_rate_walk,
 		&"jog": stamina_rate_jog,
 		&"sprint": stamina_rate_sprint,
+		&"climb": stamina_rate_climb,
 	}
 
 

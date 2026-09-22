@@ -5,25 +5,60 @@ that fixed them.
 
 ## Open
 
-1. **No occlusion handling yet** — camera does not fade roofs/walls. Not a
-   bug until buildings exist (Round 2 deliverable).
-2. **Player facing indicator is subtle** — the "nose" box on the capsule is
+1. **Cutaway is facade-wide, not view-based** — every camera-facing
+   exterior wall of the building is stubbed, even in rooms the player is
+   not in; interior partitions are only cut for the current room. Good
+   enough for one-storey houses; multi-storey / large buildings will need a
+   per-room or per-ray rule.
+2. **Single occlusion ray** — outside, only a ray to the player's centre
+   is tested, so a prop covering just the head/feet is not faded.
+3. **Door blocking checks only the end position** — the leaf's arc is not
+   swept, so a character standing mid-arc (not at the target) can still be
+   nudged by the moving StaticBody.
+4. **Climb does not check the landing spot** — the tween lands 0.9 m past
+   the wall regardless of props there.
+5. **Smash needs no tool and no strength check** — placeholder until items
+   (R5) and combat (R4).
+6. **Interior door lintels are cut with the wall** — cosmetic: the stub of
+   a door leaf reads a little odd while the door is open.
+7. **Faded objects keep casting full shadows** — alpha fade does not affect
+   shadow maps; a hidden roof stops shadows only once fully hidden.
+8. **Player facing indicator is subtle** — the "nose" box on the capsule is
    hard to read at the default zoom. Consider a larger wedge or a ground
    arrow once aiming matters (Round 4).
-3. **Mouse aim absent** — brief lists Aim; scheduled with combat (Round 4).
-4. **No vault / climb / push** — scheduled with windows (R2) and combat (R4).
-5. **HUD is not scaled for high-DPI** — stretch mode is `canvas_items`, so it
+9. **Mouse aim absent** — brief lists Aim; scheduled with combat (Round 4).
+10. **No vault over low obstacles / push** — window climb exists (R2);
+   fences and shoving come with combat (R4).
+11. **HUD is not scaled for high-DPI** — stretch mode is `canvas_items`, so it
    scales with window size, but font sizes are engine defaults.
-6. **HUD still polls two things** — the debug overlay (fine) and the
+12. **HUD still polls two things** — the debug overlay (fine) and the
    winded-timer clear (Character does not emit an event when the winded
    lockout expires). Add an `exhaustion_changed` event when needed.
-7. **Stamina at 0 while jogging** — the player can keep jogging at 0 %
+13. **Stamina at 0 while jogging** — the player can keep jogging at 0 %
    stamina (×0.6). Intended for now; revisit with pain/stress (Phase 3).
-8. **Screenshot runner is Linux-oriented** — uses `xvfb-run` when present;
+14. **Screenshot runner is Linux-oriented** — uses `xvfb-run` when present;
    on macOS run `scripts/screenshots.sh` with a display (works, untested
    here).
 
 ## Fixed
+
+- (R2) `Area3D.get_overlapping_bodies()` never reported the static door /
+  window bodies in headless runs; `PlayerInteraction` now uses a direct
+  `intersect_shape` query each physics tick (deterministic, no overlap
+  bookkeeping).
+- (R2) `class_name Window` collides with Godot's built-in `Window`; the
+  class is `HouseWindow` (file stays `interaction/window.gd`).
+- (R2) Trees in `test_ground.tscn` stood inside the new house footprint;
+  moved.
+- (R2) Occlusion: `MeshInstance3D.transparency` is a no-op in the
+  Compatibility renderer (verified: the player vanished behind faded
+  walls); fading uses a per-instance `material_override` duplicated from
+  the mesh's material, so shared materials are never mutated.
+- (R2, critic) Window climb tween was bound to the window: freeing it
+  mid-climb left the player busy forever. The actor now owns the tween.
+- (R2, critic) Interactables were targetable through walls; LOS ray added.
+- (R2, critic) Room detection flickered on thresholds; hysteresis added.
+- (R2, critic) Doors could swing into characters; blocked check + cooldown.
 
 - (R1, critic) Sub-epsilon stat changes swallowed by `is_equal_approx`.
 - (R1, critic) Empty `zoom_levels` / zero `yaw_step_degrees` crashed camera.

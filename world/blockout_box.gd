@@ -19,6 +19,10 @@ var _shape: CollisionShape3D
 
 
 func _ready() -> void:
+	if not Engine.is_editor_hint():
+		# Props also live on layer 6 so the occlusion ray can fade them.
+		collision_layer = collision_layer | (1 << 5)
+		add_to_group(&"occluder")
 	_rebuild()
 
 

@@ -14,6 +14,8 @@ const COL_EXHAUSTED := Color(0.9, 0.25, 0.2)
 @onready var debug_label: Label = %DebugLabel
 @onready var hint_label: Label = %HintLabel
 @onready var notice_label: Label = %NoticeLabel
+@onready var prompt_label: Label = %PromptLabel
+@onready var room_label: Label = %RoomLabel
 
 var _flash_time: float = 0.0
 var _notice_time: float = 0.0
@@ -28,8 +30,13 @@ func _ready() -> void:
 	EventBus.stat_threshold.connect(_on_stat_threshold)
 	EventBus.movement_mode_changed.connect(_on_mode_changed)
 	EventBus.sprint_denied.connect(_on_sprint_denied)
-	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · Q/R rotate · Wheel zoom · F3 debug"
+	EventBus.interaction_target_changed.connect(_on_interaction_target_changed)
+	EventBus.interaction_refused.connect(_on_interaction_refused)
+	EventBus.player_room_changed.connect(_on_player_room_changed)
+	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 1-4 actions · Q/R rotate · Wheel zoom · F3 debug"
 	notice_label.text = ""
+	prompt_label.text = ""
+	room_label.text = ""
 	_sync_from_player()
 	_refresh()
 
@@ -76,6 +83,63 @@ func _on_mode_changed(c: Node, mode: StringName) -> void:
 func _on_sprint_denied(c: Node) -> void:
 	if _is_player(c):
 		_notice("Too winded to sprint", 1.5)
+
+
+func _on_interaction_target_changed(actor: Node, target: Node, actions: Array) -> void:
+	if not _is_player(actor):
+		return
+	if target == null:
+		prompt_label.text = ""
+		return
+	var target_name := String(target.call("display_name")) if target.has_method("display_name") else ""
+	prompt_label.text = format_prompt(target_name, actions)
+	var any_enabled := false
+	for a in actions:
+		if bool(a.get("enabled", true)):
+			any_enabled = true
+	prompt_label.modulate = Color.WHITE if any_enabled else Color(0.7, 0.7, 0.7, 0.85)
+
+
+func _on_interaction_refused(actor: Node, _target: Node, reason: String) -> void:
+	if _is_player(actor):
+		_notice(reason, 1.5)
+
+
+## Pure formatter. Enabled: "E: Open door   [2] Smash window"; disabled
+## actions are greyed via BBCode-free brackets: "[3] Climb through (Window is closed)".
+## (Label has no rich text; the parenthesised reason is the greying.)
+static func format_prompt(target_name: String, actions: Array) -> String:
+	if actions.is_empty():
+		return target_name
+	var parts: PackedStringArray = []
+	var primary_done := false
+	for i in actions.size():
+		var a: Dictionary = actions[i]
+		var label := String(a.get("label", ""))
+		var enabled := bool(a.get("enabled", true))
+		var reason := String(a.get("reason", ""))
+		var key := ""
+		if enabled and not primary_done:
+			key = "E"
+			primary_done = true
+		elif i < 4:
+			key = "[%d]" % (i + 1)
+		else:
+			continue
+		if not enabled:
+			parts.append("%s %s (%s)" % [key, label, reason if reason != "" else "unavailable"])
+		else:
+			parts.append("%s: %s" % [key, label] if key == "E" else "%s %s" % [key, label])
+	return "   ".join(parts)
+
+
+func _on_player_room_changed(room: Node, building: Node) -> void:
+	if room == null:
+		room_label.text = ""
+		return
+	var rn := String(room.get("room_name")) if "room_name" in room else String(room.name)
+	var bn := String(building.get("display_name")) if building != null and "display_name" in building else ""
+	room_label.text = "Inside: %s%s" % [rn, (" — " + bn) if bn != "" else ""]
 
 
 func _notice(text: String, seconds: float) -> void:

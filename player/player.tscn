@@ -1,10 +1,11 @@
-[gd_scene load_steps=10 format=3 uid="uid://c0player000001"]
+[gd_scene load_steps=11 format=3 uid="uid://c0player000001"]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://characters/movement_component.gd" id="2_move"]
 [ext_resource type="Script" path="res://characters/stats_component.gd" id="3_stats"]
 [ext_resource type="Script" path="res://player/player_controller.gd" id="4_ctrl"]
 [ext_resource type="Resource" path="res://data/characters/player_stats.tres" id="5_profile"]
+[ext_resource type="Script" path="res://player/player_interaction.gd" id="6_interact"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -51,3 +52,6 @@ script = ExtResource("3_stats")
 
 [node name="Controller" type="Node" parent="."]
 script = ExtResource("4_ctrl")
+
+[node name="Interaction" type="Node3D" parent="."]
+script = ExtResource("6_interact")

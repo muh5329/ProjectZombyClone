@@ -233,9 +233,28 @@ func test_camera_zoom_levels_clamp() -> void:
 	for i in 20:
 		cam.zoom_step(-1)
 	check_eq(cam.zoom_index, 0, "clamped at min")
-	var ok := await wait_until(func(): return absf(cam.camera.position.z - cam.zoom_levels[0]) < 0.1, 400)
-	check(ok, "camera distance follows level")
+	var ok: bool
+	if cam.orthographic:
+		check_eq(cam.camera.projection, Camera3D.PROJECTION_ORTHOGONAL, "orthographic projection active")
+		ok = await wait_until(func(): return absf(cam.camera.size - cam.zoom_levels[0]) < 0.1, 400)
+		check(ok, "orthographic size follows level")
+		check_gt(cam.camera.position.z, 10.0, "ortho camera sits far back along the arm")
+	else:
+		ok = await wait_until(func(): return absf(cam.camera.position.z - cam.perspective_zoom_levels[0]) < 0.1, 400)
+		check(ok, "camera distance follows level")
 	cam.zoom_index = z0
+
+
+func test_camera_pitch_and_perspective_fallback() -> void:
+	check_near(cam.pitch_degrees, 30.0, 0.001, "default elevation is 30° (2:1 dimetric)")
+	var c2 := IsometricCamera.new()
+	c2.orthographic = false
+	scene.add_child(c2)
+	await frames(2)
+	check_eq(c2.camera.projection, Camera3D.PROJECTION_PERSPECTIVE, "perspective path still works")
+	check_near(c2.camera.position.z, c2.perspective_zoom_levels[c2.zoom_index], 0.01, "perspective uses distances")
+	c2.queue_free()
+	cam.camera.make_current()
 
 
 func test_camera_survives_bad_config_and_lost_target() -> void:
@@ -266,3 +285,15 @@ func test_movement_is_camera_relative() -> void:
 	var d := PlayerController.camera_relative(Vector2(0, -1), cam.camera)
 	check_near(d.x, -0.7071, 0.02, "x")
 	check_near(d.z, -0.7071, 0.02, "z")
+
+
+func test_camera_projection_toggle_at_runtime() -> void:
+	cam.orthographic = false
+	await frames(60)
+	check_eq(cam.camera.projection, Camera3D.PROJECTION_PERSPECTIVE, "perspective after toggle")
+	check_near(cam.camera.position.z, cam.perspective_zoom_levels[cam.zoom_index], 0.2, "distance from perspective list")
+	cam.orthographic = true
+	await frames(60)
+	check_eq(cam.camera.projection, Camera3D.PROJECTION_ORTHOGONAL, "orthographic again")
+	check_near(cam.camera.size, cam.zoom_levels[cam.zoom_index], 0.2, "size from ortho list")
+	check_near(cam.camera.position.z, cam.orthographic_distance, 0.01, "ortho camera back on the arm")

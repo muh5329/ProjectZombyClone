@@ -30,6 +30,15 @@ var effective_mode: MovementComponent.Mode = MovementComponent.Mode.JOG
 var exhausted: bool = false
 ## True this tick if sprint was requested but denied (for UI feedback).
 var sprint_denied: bool = false
+## True while an action owns the body (climbing, vaulting…). Intent is
+## ignored and the body is not moved by physics; whoever set it moves the
+## character (e.g. a Tween) and must clear it.
+var is_busy: bool = false
+## Stats context charged while busy (e.g. &"climb"). Set by begin_busy().
+var busy_context: StringName = &"idle"
+## Tween that currently moves this body while busy (owned by this node so
+## it survives the thing that started it). May be null.
+var busy_tween: Tween = null
 ## Seconds of winded time remaining (physics time).
 var _winded_left: float = 0.0
 var _last_emitted_mode: MovementComponent.Mode = MovementComponent.Mode.JOG
@@ -64,7 +73,48 @@ func can_sprint() -> bool:
 	return not exhausted
 
 
+## Height of the eyes / interaction focus above the feet (from the profile).
+func eye_height() -> float:
+	return profile.eye_height if profile else 0.9
+
+
+## Take control of the body away from locomotion. Returns a fresh Tween
+## owned by this node that the caller fills with the movement; end_busy()
+## is connected to its `finished` so the lock always clears, even if the
+## caller (a window, a car…) is freed mid-way.
+func begin_busy(context: StringName = &"idle") -> Tween:
+	if busy_tween and busy_tween.is_valid():
+		busy_tween.kill()
+	is_busy = true
+	busy_context = context
+	velocity = Vector3.ZERO
+	busy_tween = create_tween()
+	busy_tween.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	busy_tween.finished.connect(end_busy)
+	return busy_tween
+
+
+func end_busy() -> void:
+	is_busy = false
+	busy_context = &"idle"
+	busy_tween = null
+
+
+## Legacy toggle (tests / simple callers).
+func set_busy(v: bool) -> void:
+	if v:
+		is_busy = true
+		velocity = Vector3.ZERO
+	else:
+		end_busy()
+
+
 func _physics_process(delta: float) -> void:
+	if is_busy:
+		# Somebody else is moving us (climb tween). Charge the busy context.
+		velocity = Vector3.ZERO
+		stats.tick(delta, busy_context, 1.0)
+		return
 	if _winded_left > 0.0:
 		_winded_left = maxf(0.0, _winded_left - delta)
 		if _winded_left == 0.0 and not stats.is_in_state(STAMINA, STATE_EXHAUSTED):

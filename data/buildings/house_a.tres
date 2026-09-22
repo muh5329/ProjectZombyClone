@@ -1,0 +1,97 @@
+[gd_resource type="Resource" script_class="BuildingPlan" load_steps=2 format=3 uid="uid://c0housea000001"]
+
+[ext_resource type="Script" path="res://buildings/building_plan.gd" id="1_plan"]
+
+[resource]
+script = ExtResource("1_plan")
+display_name = "House A"
+footprint = Vector2(10, 8)
+wall_height = 2.7
+wall_thickness = 0.2
+door_width = 0.9
+window_width = 1.2
+wall_color = Color(0.62, 0.58, 0.5, 1)
+interior_wall_color = Color(0.7, 0.68, 0.62, 1)
+floor_color = Color(0.45, 0.36, 0.28, 1)
+roof_color = Color(0.36, 0.3, 0.3, 1)
+rooms = Array[Dictionary]([{
+"name": "Bedroom",
+"rect": Rect2(0, 0, 4, 4)
+}, {
+"name": "Bathroom",
+"rect": Rect2(4, 0, 2.5, 4)
+}, {
+"name": "Kitchen",
+"rect": Rect2(6.5, 0, 3.5, 4)
+}, {
+"name": "Living Room",
+"rect": Rect2(0, 4, 10, 4)
+}])
+walls = Array[Dictionary]([{
+"from": Vector2(0, 8),
+"openings": [{
+"at": 3.0,
+"type": "door"
+}, {
+"at": 7.0,
+"type": "window"
+}],
+"outward": Vector2(0, 1),
+"to": Vector2(10, 8)
+}, {
+"from": Vector2(0, 0),
+"openings": [{
+"at": 2.0,
+"type": "window"
+}, {
+"at": 5.25,
+"type": "window",
+"width": 0.8
+}, {
+"at": 8.25,
+"type": "door"
+}],
+"outward": Vector2(0, -1),
+"to": Vector2(10, 0)
+}, {
+"from": Vector2(0, 0),
+"openings": [{
+"at": 2.0,
+"type": "window"
+}, {
+"at": 6.0,
+"type": "window"
+}],
+"outward": Vector2(-1, 0),
+"to": Vector2(0, 8)
+}, {
+"from": Vector2(10, 0),
+"openings": [{
+"at": 2.0,
+"type": "window"
+}, {
+"at": 6.0,
+"type": "window"
+}],
+"outward": Vector2(1, 0),
+"to": Vector2(10, 8)
+}, {
+"from": Vector2(0, 4),
+"openings": [{
+"at": 2.0,
+"type": "door"
+}, {
+"at": 5.25,
+"type": "door"
+}, {
+"at": 8.25,
+"type": "door"
+}],
+"to": Vector2(10, 4)
+}, {
+"from": Vector2(4, 0),
+"to": Vector2(4, 4)
+}, {
+"from": Vector2(6.5, 0),
+"to": Vector2(6.5, 4)
+}])

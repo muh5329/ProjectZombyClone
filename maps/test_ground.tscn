@@ -1,10 +1,13 @@
-[gd_scene load_steps=11 format=3 uid="uid://c0testground0001"]
+[gd_scene load_steps=14 format=3 uid="uid://c0testground0001"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://camera/isometric_camera.gd" id="2_cam"]
 [ext_resource type="PackedScene" path="res://ui/hud/hud.tscn" id="3_hud"]
 [ext_resource type="Script" path="res://world/blockout_box.gd" id="4_box"]
 [ext_resource type="Shader" path="res://assets/materials/grid_ground.gdshader" id="5_grid"]
+[ext_resource type="Script" path="res://buildings/house_blockout.gd" id="6_house"]
+[ext_resource type="Resource" path="res://data/buildings/house_a.tres" id="7_house_a"]
+[ext_resource type="Script" path="res://camera/occlusion_manager.gd" id="8_occl"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
 size = Vector3(200, 1, 200)
@@ -36,7 +39,7 @@ position = Vector3(0, 12, 0)
 rotation_degrees = Vector3(-55, 35, 0)
 light_energy = 0.85
 shadow_enabled = true
-directional_shadow_max_distance = 60.0
+directional_shadow_max_distance = 120.0
 
 [node name="Ground" type="StaticBody3D" parent="."]
 collision_layer = 1
@@ -73,7 +76,7 @@ color = Color(0.55, 0.4, 0.25, 1)
 position = Vector3(-6, 0, 2)
 script = ExtResource("4_box")
 size = Vector3(8, 2.6, 0.3)
-color = Color(0.7, 0.68, 0.62, 1)
+color = Color(0.62, 0.6, 0.55, 1)
 
 [node name="Car" type="StaticBody3D" parent="Props"]
 position = Vector3(2, 0, 6)
@@ -83,16 +86,23 @@ size = Vector3(1.9, 1.4, 4.4)
 color = Color(0.3, 0.35, 0.55, 1)
 
 [node name="Tree1" type="StaticBody3D" parent="Props"]
-position = Vector3(-10, 0, -8)
+position = Vector3(-17, 0, -13)
 script = ExtResource("4_box")
 size = Vector3(0.6, 4, 0.6)
 color = Color(0.35, 0.25, 0.15, 1)
 
 [node name="Tree2" type="StaticBody3D" parent="Props"]
-position = Vector3(-12, 0, -6)
+position = Vector3(-2, 0, -13)
 script = ExtResource("4_box")
 size = Vector3(0.6, 4, 0.6)
 color = Color(0.35, 0.25, 0.15, 1)
+
+[node name="Buildings" type="Node3D" parent="."]
+
+[node name="HouseA" type="Node3D" parent="Buildings"]
+position = Vector3(-14, 0, -10)
+script = ExtResource("6_house")
+plan = ExtResource("7_house_a")
 
 [node name="Player" parent="." instance=ExtResource("1_player")]
 position = Vector3(0, 0.1, 0)
@@ -100,5 +110,9 @@ position = Vector3(0, 0.1, 0)
 [node name="IsometricCamera" type="Node3D" parent="."]
 script = ExtResource("2_cam")
 target_path = NodePath("../Player")
+
+[node name="OcclusionManager" type="Node" parent="."]
+script = ExtResource("8_occl")
+camera_path = NodePath("../IsometricCamera")
 
 [node name="HUD" parent="." instance=ExtResource("3_hud")]
