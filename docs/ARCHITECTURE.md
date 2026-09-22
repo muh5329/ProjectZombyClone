@@ -26,25 +26,30 @@
 core/         event_bus.gd, game_manager.gd             (autoloads)
 characters/   character.gd, movement_component.gd, stats_component.gd,
               health_component.gd, footstep_emitter.gd, body_helpers.gd (R3)
-player/       player.gd, player.tscn, player_controller.gd, player_interaction.gd
+player/       player.gd, player.tscn, player_controller.gd, player_interaction.gd,
+              player_combat_input.gd (R4)
 camera/       isometric_camera.gd, occlusion_manager.gd
 interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2)
 buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2)
 ai/           state_machine/state_machine.gd, state.gd  (generic FSM, R3)
+items/        item_data.gd, weapon_data.gd, item_instance.gd, world_item.gd (R4)
+combat/       melee_combat.gd, swing_state_machine.gd, hit_resolver.gd, melee_visuals.gd (R4)
+injuries/     injury.gd, injury_type_spec.gd, injury_component.gd (R4)
+effects/      blood_decals.gd (R4)
 zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
               zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3)
 world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3)
 ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader
 maps/         test_ground.tscn                           (main scene)
-data/         characters/*.tres, buildings/house_a.tres, zombies/zombie_basic.tres
+data/         characters/*.tres, buildings/house_a.tres, zombies/zombie_basic.tres,
+              items/weapons/*.tres, combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4)
 assets/       materials/grid_ground.gdshader
 tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd
 scripts/      test.sh, screenshots.sh, perf.sh
 docs/
 ```
 
-Planned folders follow the brief (`inventory/`, `items/`,
-`combat/`, `survival/`, `injuries/`, `crafting/`, `simulation/`,
+Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simulation/`,
 `vehicles/`, `farming/`, `weather/`, `electricity/`, `audio/`, `npc/`).
 
 ## Key types
@@ -195,8 +200,11 @@ Planned folders follow the brief (`inventory/`, `items/`,
 - Children are ready before the parent's `@onready` vars exist, so the
   zombie calls `senses.setup(self)` / `ai.setup(self)` itself.
 - `set_intent(direction, mode)`, `face_toward(p)`, `take_damage(amount,
-  source, info)` ({ok:false} for ≤ 0; head ×3; stun ≥ stagger_damage;
-  otherwise the AI turns toward the source), `die(killer)` → ZombieCorpse.
+  source, info)` ({ok:false} for ≤ 0; head ×3; ×1.5 while knocked down;
+  info.knockback_dir/knockback → collided knockback slide; info.knockdown →
+  `knocked_down` state; stun ≥ stagger_damage (10); a creature source
+  becomes the target), `receive_shove(source, info)`, `is_winding_up()`,
+  `is_knocked_down()`, `die(killer)` → ZombieCorpse.
 - One `_physics_process` runs senses, the AI and the movement step (all
   rates from the profile, phases from `ai_seed`); the step is skipped
   while settled; `cheap_movement` (calm, and known to be > cheap_distance
@@ -229,12 +237,79 @@ Planned folders follow the brief (`inventory/`, `items/`,
   map iteration to advance before `navigation_ready` — queries before
   that return nothing.
 
+### `ItemData` / `WeaponData` / `ItemInstance` / `WorldItem` (items/, R4)
+- `ItemData` (Resource): id, display_name, category, weight, max_stack,
+  max_condition (0 = unbreakable), color, world_size. `WeaponData
+  extends ItemData`: damage range, crit, head-hit chance, reach, arc,
+  max targets, swing time + windup/active fractions, stamina, knockback,
+  knockdown (and vs-windup), `is_shove`, condition loss, noise radius.
+- `ItemInstance` (RefCounted): data + condition + stack, `wear()` →
+  `broken` signal, `to_dict/from_dict`.
+- `WorldItem` (StaticBody3D, layer 4, mask 0, group `world_item`):
+  blockout box from the data, Interactable "Pick up <name>" →
+  duck-typed `actor.pick_up_item(item) -> {ok}`; frees itself on success.
+- `Player.held_items` + `cycle_weapon()` + `on_weapon_broken()` are a
+  stopgap until the Round-6 inventory.
+
+### `MeleeCombat` (combat/melee_combat.gd, child `Combat`, R4)
+- Facade for any Character over two RefCounted helpers:
+  `SwingStateMachine` (pure: phases IDLE → CHARGING → WINDUP → ACTIVE →
+  RECOVERY, charge time, one-deep queue; `finish()` returns the queue
+  snapshot and always clears it; static `charge_multiplier()`) and
+  `HitResolver` (target query + LOS, damage / crit / head / knockback /
+  knockdown / shove, `wear()` of the swung ItemInstance, `melee_hit` +
+  sound; statics `select_targets()`, `stamina_damage_multiplier()`).
+  Tuning: `CombatProfile` (data/combat/).
+- API `start_attack()/release_attack()/attack_now(held)/shove()/
+  cancel_charge()/set_aiming()/equip()/charge_fraction()/
+  pain_modifiers()`, settable `aim_direction`, `scripted`.
+- Targets: sphere query on `target_mask` (layer 3) → `select_targets` →
+  LOS ray (1+7+8) at `hit_height`. Duck-typed targets: `take_damage(amount, source,
+  info)`, optional `receive_shove(source, info)`, `is_winding_up()`,
+  `is_dead()`.
+- Sets movement modifiers `charge` / `attack` and
+  `Character.facing_override` (aim / swing direction); pays stamina via
+  `StatsComponent`; calls `actor.on_weapon_broken(item)` if present.
+- Local signals for presentation (`swing_started`, `active_started`,
+  `swing_finished`, `equipped_changed`, `aim_changed`) + EventBus events.
+- `PlayerCombatInput` (player/): input → MeleeCombat / InjuryComponent;
+  static `ground_point(camera, screen_pos, plane_y)` (ortho-safe mouse →
+  ground). `PlayerController` caps the mode at walk while aiming.
+- `MeleeVisuals` (combat/, child `CombatVisuals`): weapon box on the body
+  visual (sweeps through the arc), aim ring + arc preview, active-window
+  arc; listens to the local signals only.
+
+### `InjuryComponent` / `Injury` (injuries/, child `Injuries`, R4)
+- `Injury` (RefCounted): `Region` (10) / `Type` (6) enums + StringName
+  ids used in payloads and data, bleeding / bleed_left / heal_left /
+  bandaged / infected, `to_dict()`, pure `roll_weighted(weights, r)`.
+- `InjuryComponent`: `setup(character)` is called by `Character._ready`
+  (registers stats `pain`, `infection`, connects `health.damaged` and
+  `window_climbed`). `add_injury()`, `bandage_worst()` (4 s busy tween
+  owned by the Character), `tick(dt)` at `profile.tick_hz` (tests call it
+  to fast-forward). Pure statics `total_bleed_rate`, `total_pain`,
+  `leg_speed_multiplier`, `max_stamina_penalty`, `pain_combat_modifiers`,
+  `infection_stage_for`. `interrupt_bandage()` (on any damage),
+  `bandage_progress()`. Effects: health drain,
+  movement modifier `injury`, `StatsComponent.set_max(stamina)`, pain
+  stat, infection stat.
+- Data: `InjuryProfile` (data/injuries/) with one `InjuryTypeSpec`
+  sub-resource per type, region weights, treatment and effect numbers.
+
+### `BloodDecals` (effects/blood_decals.gd, node in the map, R4)
+- One MultiMesh (200 flat discs), ring buffer; listens to `melee_hit`,
+  `character_damaged`, `blood_spilled`. Group `blood_decals`.
+
 ### `HealthComponent` (characters/health_component.gd)
 - `max_health`, `take_damage(amount, source, info) -> {ok, health, dead}`,
   `heal`, `revive`, `invulnerable`; local `damaged`/`died`/`changed` and
   EventBus `character_damaged` / `character_died` with the owning
   character. `Character` picks up an optional `Health` child, delegates
   `take_damage`, and on death sets `is_busy` (input ignored).
+- R4: `drain(amount, source, cause)` for bleeding / infection (no
+  `damaged` signal → no hit flash, no new wound); every change emits
+  `EventBus.health_changed`. `StatsComponent.set_max(id, max)` lets
+  injuries lower max stamina.
 
 ### `FootstepEmitter` (characters/footstep_emitter.gd)
 - Child of a Character; emits `sound_emitted` once per second while it
@@ -255,12 +330,24 @@ Planned folders follow the brief (`inventory/`, `items/`,
 `zombie_state_changed(zombie, from, to)`, `zombie_spotted_target(zombie, target)`,
 `zombie_lost_target(zombie)`, `zombie_attacked(zombie, target, hit)`,
 `zombie_died(zombie, killer)`.
+Round 4: `health_changed(character, value, max)`,
+`injuries_changed(character, summary)`, `bandage_started(character,
+region, seconds)`, `bandage_finished(character, region)`,
+`blood_spilled(position, amount)`, `melee_swing(actor, weapon_id,
+charge)`, `melee_hit(actor, target, damage, info)`,
+`attack_refused(actor, reason)`, `melee_aim_changed(actor, aiming,
+in_reach)`, `weapon_equipped / weapon_condition_changed /
+weapon_broken(actor, item)`, `item_picked_up(actor, item)`,
+`zombie_knocked_down(zombie, source)`, `zombie_got_up(zombie)`,
+`bandage_interrupted(character, region)`,
+`infection_stage_changed(character, stage)`.
 
 ## Physics layers
 1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders ·
 7 doors · 8 window_panes
 
-Walls: 1+6. Windows: sill + header body 1+4+6, glass child body 8 while
+World items (`WorldItem`): layer 4, mask 0. Melee target query: layer 3;
+melee LOS: 1+7+8. Walls: 1+6. Windows: sill + header body 1+4+6, glass child body 8 while
 closed (0 once open / smashed). Door leaves: 7+4+6 — never on 1, so the
 navmesh (baked from layer 1) passes through doorways; broken doors: 4
 only. Roofs: 6 only (never block movement). Props (`BlockoutBox`): 1+6.
@@ -272,6 +359,7 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `player`, `isometric_camera`, `occlusion_manager`, `building`, `room`,
 `wall`, `roof`, `floor`, `door`, `window`, `occluder`, `interactable`,
 `breakable` (doors: `take_damage` + `blocks_path`), `zombie`, `corpse`,
+`world_item`, `blood_decals` (R4),
 `navigation_mesh_source_group` (the map root; parsed by NavBaker).
 
 ## Testing

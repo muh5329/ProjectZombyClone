@@ -14,15 +14,24 @@ var scripted_direction: Vector3 = Vector3.ZERO
 var scripted_mode: MovementComponent.Mode = MovementComponent.Mode.JOG
 
 @onready var character: Character = get_parent() as Character
+## Optional sibling MeleeCombat: aiming caps the mode at walk.
+@onready var _combat: MeleeCombat = get_parent().get_node_or_null("Combat") as MeleeCombat
 
 
 func _physics_process(_delta: float) -> void:
 	if character == null:
 		return
 	if scripted:
-		character.set_intent(scripted_direction, scripted_mode)
+		character.set_intent(scripted_direction, _cap_mode(scripted_mode))
 		return
-	character.set_intent(_read_direction(), _read_mode())
+	character.set_intent(_read_direction(), _cap_mode(_read_mode()))
+
+
+## Aiming a weapon: walk at most (sneak stays sneak).
+func _cap_mode(mode: MovementComponent.Mode) -> MovementComponent.Mode:
+	if _combat != null and _combat.aiming and mode > MovementComponent.Mode.WALK:
+		return MovementComponent.Mode.WALK
+	return mode
 
 
 func _read_mode() -> MovementComponent.Mode:

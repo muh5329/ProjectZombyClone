@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"fists"
+display_name = "Fists"
+category = &"weapon"
+weight = 0.0
+max_stack = 1
+max_condition = 0
+color = Color(0.85, 0.7, 0.45, 1)
+world_size = Vector3(0.1, 0.1, 0.1)
+damage_min = 3
+damage_max = 5
+crit_chance = 0.05
+crit_multiplier = 2.0
+head_hit_chance = 0.1
+reach = 0.8
+arc_degrees = 60
+max_targets = 1
+swing_time = 0.5
+stamina_cost = 2
+knockback = 0.25
+knockdown_chance = 0.05
+condition_loss_chance = 0.0
+noise_radius = 3
+

@@ -179,7 +179,7 @@ func test_attack_damages_player_after_windup() -> void:
 	check(hit, "player took damage")
 	var windup_frames := Engine.get_physics_frames() - t_attack
 	check_gt(float(windup_frames), 20.0, "hit came after the 0.5 s windup (%d frames)" % windup_frames)
-	check_near(player.health.health, hp0 - z.profile.attack_damage, 0.01, "damage = profile.attack_damage")
+	check_near(player.health.health, hp0 - z.profile.attack_damage, 0.05, "damage = profile.attack_damage")
 	check_eq(attacks.size(), 1, "one zombie_attacked event")
 	check(attacks[0][2] == true, "…with hit = true")
 	await frames(1)
@@ -187,7 +187,8 @@ func test_attack_damages_player_after_windup() -> void:
 	check_near(hud.health_bar.value, 88.0, 0.5, "health bar updated")
 	# Second hit only after the cooldown.
 	await physics_frames(40)
-	check_near(player.health.health, hp0 - z.profile.attack_damage, 0.01, "no second hit during cooldown")
+	# (Round 4: the wound bleeds a little in the meantime.)
+	check_gt(player.health.health, hp0 - z.profile.attack_damage - 1.0, "no second hit during cooldown")
 	var again := await wait_physics_until(func(): return player.health.health < hp0 - z.profile.attack_damage - 1.0, 150)
 	check(again, "second hit after cooldown + windup")
 

@@ -73,6 +73,8 @@ var _ai_divider: int = 6
 var _sense_accum: float = 0.0
 var _move_accum: float = 0.0
 var _move_counter: int = 0
+## Remaining knockback displacement (flat), applied at profile.knockback_speed.
+var _knock_left: Vector3 = Vector3.ZERO
 
 
 func _ready() -> void:
@@ -103,6 +105,13 @@ func _ready() -> void:
 	_ai_counter = phase.randi_range(0, _ai_divider - 1)
 	_sense_accum = phase.randf() * senses.period()
 	_move_counter = phase.randi_range(0, CHEAP_MOVE_DIVIDER - 1)
+
+
+## Freed without dying (despawn, scene change): give back the attack slot
+## so the static registry does not keep the target "full" forever.
+func _exit_tree() -> void:
+	if ai and ai.has_attack_slot:
+		ai.release_attack_slot()
 
 
 static func _divider_for(hz: float) -> int:
@@ -177,7 +186,9 @@ func _physics_process(delta: float) -> void:
 		_ai_counter = 0
 		ai.tick(_ai_accum)
 		_ai_accum = 0.0
-	if not _settled or intent_direction.x != 0.0 or intent_direction.z != 0.0:
+	if _knock_left != Vector3.ZERO:
+		_step_knockback(delta)
+	elif not _settled or intent_direction.x != 0.0 or intent_direction.z != 0.0:
 		if cheap_movement:
 			_move_accum += delta
 			_move_counter += 1
@@ -218,8 +229,11 @@ func _step_movement(delta: float) -> void:
 
 # --- Damage / death ---------------------------------------------------------
 
-## info.region == &"head" applies the profile's head multiplier. A hit of
-## at least profile.stagger_damage stuns (Round 4 combat hooks in here).
+## info (all optional): region (&"head" applies profile.head_hit_multiplier),
+## knockback_dir (Vector3) + knockback (m), knockdown (bool).
+## Damage taken while knocked down is multiplied by
+## profile.knockdown_damage_multiplier. A hit of at least
+## profile.stagger_damage stuns; a hit from a creature makes it the target.
 ## Returns {ok, health, dead}; ok is false for no-op damage.
 func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> Dictionary:
 	if dead:
@@ -229,14 +243,62 @@ func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> D
 	var dmg := amount
 	if info.get("region", &"") == &"head":
 		dmg *= profile.head_hit_multiplier
+	if is_knocked_down():
+		dmg *= profile.knockdown_damage_multiplier
 	stats.modify(HEALTH, -dmg)
 	var hp := stats.get_value(HEALTH)
 	if hp <= 0.0:
 		die(source)
-		return {"ok": true, "health": 0.0, "dead": true}
+		return {"ok": true, "health": 0.0, "dead": true, "damage": dmg}
+	cheap_movement = false
+	visual.hit_flash(profile.hit_flash_seconds)
+	_apply_knockback(info)
 	if ai:
-		ai.on_damaged(source, dmg >= profile.stagger_damage)
-	return {"ok": true, "health": hp, "dead": false}
+		ai.on_damaged(source, dmg, info)
+	return {"ok": true, "health": hp, "dead": false, "damage": dmg, "knocked_down": is_knocked_down()}
+
+
+## A shove: no damage, cancels an attack windup, pushes back and either
+## knocks down (info.knockdown) or staggers for profile.shove_stun_seconds.
+func receive_shove(source: Node = null, info: Dictionary = {}) -> Dictionary:
+	if dead:
+		return {"ok": false, "reason": "Already dead"}
+	cheap_movement = false
+	var was_winding_up := is_winding_up()
+	_apply_knockback(info)
+	if ai:
+		ai.on_shoved(source, bool(info.get("knockdown", false)))
+	return {"ok": true, "knocked_down": is_knocked_down(), "interrupted": was_winding_up}
+
+
+## True during the windup of a bite (a shove is more likely to floor it).
+func is_winding_up() -> bool:
+	return ai != null and ai.is_winding_up()
+
+
+func is_knocked_down() -> bool:
+	return ai != null and ai.is_in(ZombieAI.S_KNOCKED_DOWN)
+
+
+func _apply_knockback(info: Dictionary) -> void:
+	var dist := float(info.get("knockback", 0.0))
+	var dir: Vector3 = info.get("knockback_dir", Vector3.ZERO)
+	dir.y = 0.0
+	if dist <= 0.0 or dir.length_squared() < 0.0001 or is_knocked_down():
+		return
+	_knock_left = dir.normalized() * dist
+
+
+## Slide the remaining knockback (collides with walls and bodies).
+func _step_knockback(delta: float) -> void:
+	var remaining := _knock_left.length()
+	var step := minf(remaining, profile.knockback_speed * delta)
+	var dir := _knock_left / remaining
+	velocity = dir * (step / delta)
+	move_and_slide()
+	velocity = Vector3.ZERO
+	_knock_left = Vector3.ZERO if remaining - step <= 0.001 else dir * (remaining - step)
+	_settled = false
 
 
 func health() -> float:

@@ -24,6 +24,14 @@ func exit(_to: StringName) -> void:
 	ai.release_attack_slot()
 
 
+## Lose the windup (shoved while stagger-immune): straight to cooldown.
+func interrupt() -> void:
+	if phase == Phase.WINDUP:
+		zombie.visual.lunge = 0.0
+		phase = Phase.COOLDOWN
+		timer = profile().attack_cooldown
+
+
 func _start_windup() -> void:
 	phase = Phase.WINDUP
 	timer = profile().attack_windup
@@ -64,6 +72,6 @@ func _swing(t: Node3D) -> void:
 		and ai.has_attack_line()
 	zombie.visual.flash(profile().swing_flash_seconds)
 	if hit and t.has_method(&"take_damage"):
-		t.call(&"take_damage", profile().attack_damage, zombie, {"region": &"random", "type": &"bite"})
+		t.call(&"take_damage", profile().attack_damage, zombie, ai.roll_attack_info())
 	last_hit = hit
 	EventBus.zombie_attacked.emit(zombie, t, hit)

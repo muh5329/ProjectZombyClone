@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://c0player000001"]
+[gd_scene load_steps=18 format=3 uid="uid://c0player000001"]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://characters/movement_component.gd" id="2_move"]
@@ -8,6 +8,11 @@
 [ext_resource type="Script" path="res://player/player_interaction.gd" id="6_interact"]
 [ext_resource type="Script" path="res://characters/health_component.gd" id="7_health"]
 [ext_resource type="Script" path="res://characters/footstep_emitter.gd" id="8_steps"]
+[ext_resource type="Script" path="res://injuries/injury_component.gd" id="9_injuries"]
+[ext_resource type="Script" path="res://combat/melee_combat.gd" id="10_combat"]
+[ext_resource type="Script" path="res://player/player_combat_input.gd" id="11_cinput"]
+[ext_resource type="Script" path="res://combat/melee_visuals.gd" id="12_cvis"]
+[ext_resource type="Resource" path="res://data/injuries/human_injuries.tres" id="13_injprof"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -55,6 +60,10 @@ script = ExtResource("3_stats")
 [node name="Health" type="Node" parent="."]
 script = ExtResource("7_health")
 
+[node name="Injuries" type="Node" parent="."]
+script = ExtResource("9_injuries")
+profile = ExtResource("13_injprof")
+
 [node name="Footsteps" type="Node" parent="."]
 script = ExtResource("8_steps")
 
@@ -63,3 +72,12 @@ script = ExtResource("4_ctrl")
 
 [node name="Interaction" type="Node3D" parent="."]
 script = ExtResource("6_interact")
+
+[node name="Combat" type="Node" parent="."]
+script = ExtResource("10_combat")
+
+[node name="CombatInput" type="Node" parent="."]
+script = ExtResource("11_cinput")
+
+[node name="CombatVisuals" type="Node3D" parent="."]
+script = ExtResource("12_cvis")

@@ -14,7 +14,7 @@ extends SceneTree
 ## A global watchdog aborts the run after WATCHDOG_SECONDS.
 
 const DIRS := ["unit", "integration"]
-const WATCHDOG_SECONDS := 600.0
+const WATCHDOG_SECONDS := 900.0
 
 var _total := 0
 var _failed := 0

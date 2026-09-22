@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"kitchen_knife"
+display_name = "Kitchen Knife"
+category = &"weapon"
+weight = 0.3
+max_stack = 1
+max_condition = 10
+color = Color(0.8, 0.82, 0.85, 1)
+world_size = Vector3(0.3, 0.03, 0.05)
+damage_min = 5
+damage_max = 8
+crit_chance = 0.35
+crit_multiplier = 3.0
+head_hit_chance = 0.25
+reach = 0.9
+arc_degrees = 40
+max_targets = 1
+swing_time = 0.4
+stamina_cost = 3
+knockback = 0.05
+knockdown_chance = 0.0
+condition_loss_chance = 0.25
+noise_radius = 2
+can_stagger = false

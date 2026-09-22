@@ -93,6 +93,13 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
   window   [3] Climb through (Window is closed)"; greyed when nothing is
   enabled, hidden while busy), refusal reasons in the notice label, and an
   "Inside: <room> — <building>" line. All purely event-driven.
+- Round 4: top-right body panel — "Weapon: Baseball Bat  (11/12)" +
+  condition bar, "Pain N%", green "INFECTED", injury list ("• Left leg —
+  Laceration  BLEEDING" / "(bandaged)"); "Aiming — N in reach";
+  refusal / pickup / bandaging / broken-weapon notices; charge meter
+  while charging, bandage progress bar; "Stamina 60 %" + " · max 80 %"
+  only when wounds lower the cap; mode "Idle" when standing; health bar
+  follows `health_changed` (bleeding); key hints on a dark strip.
 - Round 3: dark-red "♥ Health" bar (white text) above stamina; exhausted
   stamina is orange-red so the two never match; top-centre danger
   indicator "!  N chasing" (zombies in chase/attack on the player, from
@@ -128,14 +135,18 @@ constants in code).
 | attack | windup 0.5 s (visual lunges 0.25 m) → hit if still in range, faced and with a clear line (`target.take_damage(12, zombie, {region: random})`, head flashes white) → cooldown 1.5 s | out of range → chase; target gone → lost_target |
 | attack_door | same rhythm against `ai.blocking_obstacle` (`take_damage(8)` on any breakable) | it no longer blocks → chase or investigate |
 | lost_target | transient: `zombie_lost_target`, forget | → search (near) / investigate (far) |
-| stunned | 0.8 s freeze after a hit ≥ 20 damage (R4 combat hook) | → chase / idle |
+| stunned | 0.8 s freeze after a hit ≥ 10 damage (0.6 s after a shove) | → chase / idle |
+| knocked_down | on the ground 2.5 s (weapon knockdown roll or shove); no attacks; damage ×1.5; visual lies on its back | → chase / idle |
 | dead | corpse (see below) | — |
 
 Unreachable targets: the path ends at the closest reachable point; the
 zombie stands there facing the target and keeps re-trying at 2 Hz. No
 biting through walls: entering Attack and every swing need a clear
-chest-to-chest ray (layers 1+7+8). A zombie hit by something while it has
-no target turns toward the attacker and investigates; a hit ≥ 20 stuns.
+chest-to-chest ray (layers 1+7+8). A zombie hit by a creature (anything
+with `take_damage` that is not a zombie) makes it its target and chases;
+hit by anything else while it has no target it turns and investigates; a
+hit ≥ 10 stuns, a knockdown floors it (Round 4, see Melee combat). Bites
+roll a body region + wound type on the victim (`roll_attack_info()`).
 Head tint tells the state at a glance: normal / yellow (investigate,
 search, attack_door) / red (chase, attack) / white flash (swing) / dark
 (dead).
@@ -190,7 +201,8 @@ with priority-bracketed probe nodes): **calm/loud ≈ 5 ms** (budget 8),
 Emitters: player footsteps at 1 Hz while moving (`FootstepEmitter`:
 sneak 2 m, walk 4 m, jog 8 m, sprint 14 m), door open/close 6 m, door
 bang 10 m (+ `door_banged`), door break 18 m, window open/close 5 m,
-window smash 18 m. Listener side (`ZombieSenses`): radius test, halved
+window smash 18 m, melee hit = weapon noise radius (bat 8 m, knife 2 m,
+shove 2 m). Listener side (`ZombieSenses`): radius test, halved
 when a wall / closed door lies between ear and source (one ray). No real
 propagation yet.
 
@@ -206,7 +218,133 @@ characters are not baked. `navigation_ready` fires once the map is
 queryable (~200 ms after load); the spawner waits for it. Windows are
 walls for navigation (you climb, never walk).
 
-## Health 🔶 (Round 3 minimal, Round 4 does injuries)
+## Melee combat ✅ (Round 4)
+
+`MeleeCombat` (combat/melee_combat.gd, child `Combat` of the player; generic
+for NPCs; a facade over `SwingStateMachine` (timing / queue) and
+`HitResolver` (targets, damage, wear, events)) + `PlayerCombatInput`
+(player/) + `MeleeVisuals` (combat/). Shared tuning in
+`data/combat/combat_profile.tres` (`CombatProfile`: charge curve, stamina
+multipliers, movement slows, hit height 1.1 m, target radius, regions,
+noise scaling).
+Weapons are data: `WeaponData extends ItemData` in
+`data/items/weapons/*.tres`.
+
+| Weapon | Dmg | Reach | Arc | Targets | Swing | Stamina | Knockback | Knockdown | Crit | Condition |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Fists | 3–5 | 0.8 | 60° | 1 | 0.5 s | 2 | 0.25 | 5 % | 5 % ×2 | — |
+| Baseball bat | 12–18 | 1.4 | 120° | 2 | 1.1 s | 12 | 0.3 | 15 % | 10 % ×2 (head 12 %) | 12 (20 %/hit) |
+| Kitchen knife | 5–8 | 0.9 | 40° | 1 | 0.4 s | 3 | 0.05 | 0 (never staggers) | 35 % ×3 | 10 (25 %) |
+| Crowbar | 10–15 | 1.2 | 70° | 2 | 0.75 s | 7 | 0.25 | 10 % | 10 % ×2 | 30 (8 %) |
+| Hammer | 8–12 | 0.95 | 60° | 1 | 0.55 s | 5 | 0.2 | 8 % | 15 % ×2.5 | 20 (10 %) |
+| Lead pipe | 9–14 | 1.2 | 90° | 2 | 0.7 s | 7 | 0.25 | 12 % | 10 % ×2 | 20 (12 %) |
+| Shove (Space) | 0 | 1.0 | 90° | 3 | 0.45 s | 5 | 1.2 | 25 % (50 % vs windup) | — | — |
+
+- **Swing**: LMB press starts charging (speed ×0.7), release swings with
+  ×0.6 (tap) → ×1.3 (held 1 s). Stamina is paid at the swing start; not
+  enough → refused, `attack_refused(actor, "Too tired to swing")` → HUD
+  notice. Windup (35 % of the swing, speed ×0.4) → active window (20 %,
+  the arc is shown, targets resolved once) → recovery. Pressing during a
+  swing queues the next one (held through recovery → keeps charging);
+  any interrupted swing (busy — climbing / bandaging —, death) drops the
+  queue. X is refused mid-swing ("Mid-swing"); wear always lands on the
+  instance that was swung.
+- **Pain** (thresholds in the injury profile): > 50 → damage ×0.85, swing
+  time ×1.15; > 80 → ×0.7 / ×1.3.
+- **Targets**: sphere query (reach + 0.3 m body radius) on layer 3 →
+  pure `select_targets()` (flat distance, angle ≤ half arc widened by the
+  body's angular radius, closest first) → LOS ray at 1.1 m on 1+7+8 (no
+  hits through walls / closed door leaves / closed panes; open windows
+  are fine, the ray clears the sill) → capped at max_targets.
+- **Per target**: rand(min,max) × charge × stamina (exhausted ×0.6, low
+  ×0.85); crit roll; head-hit roll (zombie head ×3); knockback along the
+  attacker→target line; knockdown roll → `take_damage(dmg, actor,
+  {region, knockback_dir, knockback, knockdown, crit, weapon, charge})`.
+  A connecting swing emits a `melee` sound (weapon noise radius: bat 8 m,
+  knife 2 m) and rolls condition loss; 0 → `weapon_broken`, back to fists.
+- **Shove**: same pipeline, no damage; `receive_shove()` cancels a
+  windup, knocks back 1.2 m, knocks down (25 %, 50 % vs a zombie winding
+  up) or staggers 0.6 s.
+- **Aim** (RMB): mouse → ground via `Camera3D.project_ray_origin/normal` +
+  plane (works with the orthographic camera), body faces the aim
+  (`Character.facing_override`), mode capped at walk, ring at reach (orange
+  when something is in reach) + faint arc preview, HUD "Aiming — N in
+  reach" (10 Hz).
+- **Zombie side** (all numbers in `ZombieProfile`): stun 0.5 s on hits ≥
+  16 (weapons with `can_stagger = false` — the knife — never stun), no
+  new stagger within 1.2 s of the last (no stun-lock; a shove during the
+  immunity still cancels the windup), knocked down 2.5 s ×1.5 damage
+  (the knockback of the floor-ing blow still slides it), knockback at
+  5 m/s with collision, body + head hit flash 0.2 s then back to the state
+  tint, a creature that hits a zombie becomes its target. Bite: range
+  1.0 m, windup 0.4 s.
+- Events: `melee_swing`, `melee_hit`, `attack_refused`,
+  `melee_aim_changed`, `weapon_equipped`, `weapon_condition_changed`,
+  `weapon_broken`, `zombie_knocked_down`, `zombie_got_up`.
+- Balance (tests, the critic's bot: stands still, aims at the nearest,
+  0.35 s charge, shoves windups; seeds 1–5): bat vs 1 zombie costs
+  12–27 % (avg 23 %, band 5–35 %); bat vs 3 zombies kills the bot in all
+  5 seeds (band: > 50 % or death); 4 zombies kill a passive player in
+  ≈ 5 s (< 30 s).
+
+## Injuries ✅ (Round 4)
+
+`InjuryComponent` (injuries/, child `Injuries` of the player) + `Injury`
+(RefCounted) + `InjuryProfile` / `InjuryTypeSpec` data
+(`data/injuries/human_injuries.tres`).
+
+- 10 regions: head, neck, upper/lower torso, left/right arm, left/right
+  hand, left/right leg. 6 types:
+
+| Type | Bleed hp/s | Stops by itself | Pain | Heal | Infection (zombie) | Leg slow | −Max stamina |
+|---|---|---|---|---|---|---|---|
+| Scratch | 0.04 | 45 s | 8 | 5 min | 7 % | ×0.95 | 2 |
+| Laceration | 0.12 | 120 s | 18 | 15 min | 25 % | ×0.8 | 5 |
+| Deep wound | 0.3 | never | 30 | 30 min | 25 % | ×0.65 | 10 |
+| Bite | 0.2 | 180 s | 25 | 20 min | 100 % | ×0.75 | 8 |
+| Burn | — | — | 35 | 40 min | — | ×0.85 | 10 |
+| Fracture | — | — | 45 | 100 min | — | ×0.5 | 15 |
+
+- Any hit whose info has a `type` becomes a wound on `info.region`
+  (`random` → profile weights). Zombie bites roll region
+  (`ZombieProfile.attack_region_weights`: arms/torso/neck heavy) and type
+  (scratch 60 / laceration 28 / bite 12 %) with `infectious = true`.
+  Smashed-window climbs lacerate a hand/arm/leg (4 damage).
+- Effects, recomputed on change: bleeding drains health via
+  `HealthComponent.drain()` (no flash, no new wound) at 10 Hz and drips
+  blood; leg wounds set the movement modifier `injury` (product, floor
+  ×0.4; bandaged wounds slow half as much); open wounds lower max stamina
+  (cap −40); `pain` stat = capped sum (bandaged ×0.6); an infected wound
+  makes the `infection` stat rise 0.02 %/s (≈ 83 min to 100 %), after
+  which health drains 0.5/s.
+- **B** bandages the worst wound (fastest bleeder, else most painful):
+  4 s busy (the Character owns the tween; no movement, no swings) →
+  bleeding stops, heals ×2. Only bleeding wounds qualify, by
+  `bandage_priority` (deep wound > bite > laceration > scratch); fractures
+  and burns never ("Nothing to bandage"). Taking damage interrupts it
+  (`bandage_interrupted`, HUD "Interrupted"). HUD progress bar.
+- Infection is invisible until the stat reaches 25 → "Feverish"
+  (orange), ≥ 60 → "Infected" (red) (`infection_stage_changed`).
+- Events: `injuries_changed(character, summary)`, `bandage_started`,
+  `bandage_finished`, `blood_spilled`, `health_changed`.
+
+## Items (Round 4 minimal) 🔶
+
+`ItemData` (id, name, category, weight, max_stack, max_condition, colour,
+world size) → `ItemInstance` (condition, stack, to/from dict).
+`WorldItem` (StaticBody3D, layer 4, group `world_item`) offers "Pick up
+<name>" → `actor.pick_up_item(item)`. The map has a baseball bat in the
+living room and a kitchen knife in the kitchen. `Player.held_items` is a
+stopgap list until the Round-6 inventory; X cycles fists → held weapons;
+picking a weapon up with empty hands equips it.
+
+## Blood decals (Round 4)
+
+`BloodDecals` (effects/, node in the map): one `MultiMeshInstance3D` of
+200 flat discs, ring-buffer reuse (oldest first). Splats on `melee_hit`,
+`character_damaged` and bleeding drips.
+
+## Health 🔶 (Round 3 minimal, Round 4 injuries on top)
 
 `HealthComponent` (child `Health` of the player, 100 HP from
 `CharacterStatsProfile.health_max`): `take_damage(amount, source, info)`
@@ -218,7 +356,7 @@ action reloads the scene) and zombies lose interest.
 
 ## Planned (see MASTER_PLAN for order)
 
-Sound propagation ⬜ · Combat ⬜ · Health & injuries ⬜ · Inventory ⬜ ·
+Sound propagation ⬜ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ⬜ ·
 Loot tables ⬜ · Needs (hunger/thirst/fatigue/temperature) ⬜ ·
 Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ⬜ · Vehicles ⬜ ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·

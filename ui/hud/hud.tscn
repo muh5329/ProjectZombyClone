@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://c0hud000000001"]
+[gd_scene load_steps=6 format=3 uid="uid://c0hud000000001"]
 
 [ext_resource type="Script" path="res://ui/hud/hud.gd" id="1_hud"]
 [ext_resource type="Shader" path="res://ui/hud/damage_vignette.gdshader" id="2_vignette"]
@@ -6,6 +6,20 @@
 [sub_resource type="ShaderMaterial" id="Mat_vignette"]
 shader = ExtResource("2_vignette")
 shader_parameter/strength = 0.0
+
+[sub_resource type="StyleBoxFlat" id="Style_hint"]
+bg_color = Color(0, 0, 0, 0.55)
+content_margin_left = 10.0
+content_margin_top = 4.0
+content_margin_right = 10.0
+content_margin_bottom = 4.0
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="Style_meter"]
+bg_color = Color(1, 0.7, 0.25, 1)
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
@@ -30,6 +44,7 @@ offset_top = -190.0
 offset_right = 320.0
 offset_bottom = -16.0
 grow_vertical = 0
+mouse_filter = 2
 theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
@@ -37,6 +52,7 @@ theme_override_constants/margin_bottom = 8
 
 [node name="Panel" type="PanelContainer" parent="Margin"]
 layout_mode = 2
+mouse_filter = 2
 
 [node name="VBox" type="VBoxContainer" parent="Margin/Panel"]
 layout_mode = 2
@@ -71,6 +87,111 @@ layout_mode = 2
 value = 100.0
 show_percentage = false
 
+[node name="BodyMargin" type="MarginContainer" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -330.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 60.0
+grow_horizontal = 0
+mouse_filter = 2
+
+[node name="BodyPanel" type="PanelContainer" parent="BodyMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+
+[node name="BodyVBox" type="VBoxContainer" parent="BodyMargin/BodyPanel"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="WeaponLabel" type="Label" parent="BodyMargin/BodyPanel/BodyVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.92, 0.75, 1)
+theme_override_font_sizes/font_size = 18
+text = "Weapon: Fists"
+
+[node name="ConditionBar" type="ProgressBar" parent="BodyMargin/BodyPanel/BodyVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+value = 100.0
+show_percentage = false
+
+[node name="PainLabel" type="Label" parent="BodyMargin/BodyPanel/BodyVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Pain 0%"
+
+[node name="InfectedLabel" type="Label" parent="BodyMargin/BodyPanel/BodyVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 1, 0.35, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 20
+text = "INFECTED"
+
+[node name="InjuryLabel" type="Label" parent="BodyMargin/BodyPanel/BodyVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "No injuries"
+
+[node name="AimLabel" type="Label" parent="."]
+unique_name_in_owner = true
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -134.0
+offset_right = 200.0
+offset_bottom = -102.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 0.75, 0.4, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+text = ""
+
+[node name="ChargeBar" type="ProgressBar" parent="."]
+unique_name_in_owner = true
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -90.0
+offset_top = -150.0
+offset_right = 90.0
+offset_bottom = -142.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/fill = SubResource("Style_meter")
+show_percentage = false
+
+[node name="BandageBar" type="ProgressBar" parent="."]
+unique_name_in_owner = true
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -120.0
+offset_top = 124.0
+offset_right = 120.0
+offset_bottom = 134.0
+grow_horizontal = 2
+mouse_filter = 2
+show_percentage = false
+
 [node name="DebugLabel" type="Label" parent="."]
 unique_name_in_owner = true
 offset_left = 16.0
@@ -91,6 +212,7 @@ offset_right = -16.0
 offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 0
+theme_override_styles/normal = SubResource("Style_hint")
 horizontal_alignment = 2
 autowrap_mode = 3
 text = "hints"

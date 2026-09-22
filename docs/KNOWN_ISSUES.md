@@ -5,6 +5,45 @@ that fixed them.
 
 ## Open
 
+00. **Round-4 combat / injury gaps** (ordered):
+   - **Knocked-down zombies keep their upright capsule**: only the visual
+     lies down, so the player bumps into an invisible standing body over
+     the lying mesh. (Swings still find it: the target query is a sphere.)
+   - **Targets are resolved once, at the start of the active window**; a
+     zombie stepping into the arc mid-window is not hit. No per-frame
+     sweep.
+   - **No animations / hit reactions**: the weapon is a box that sweeps
+     through the arc; bites do not stagger the player; the zombie hit
+     reaction is a 0.2 s red body flash + knockback.
+   - **Arc / ring are depth-tested ground meshes**: hidden under zombie
+     bodies and indoors under the cutaway rules; readable in the open.
+   - **Bandages are free and unlimited** (items come in R5/6); no
+     disinfectant, stitches, splints (B refuses fractures). Burns and
+     fractures exist as data but nothing inflicts them yet.
+   - **Smashed-window climbs always lacerate** (`glass_laceration_chance`
+     1.0) — there is no "clear glass" action yet.
+   - **Infection stages are cosmetic** (Feverish ≥ 25, Infected ≥ 60): no
+     fever effects yet until the lethal drain at 100. Hand wounds do not
+     affect combat.
+   - **Max-stamina reduction clamps the current value**: a swing paid
+     just before a wound lowers the cap can look free (HUD shows stamina
+     against the base max with "(max N%)").
+   - **Mouse aim intersects the plane at the player's feet**; multi-level
+     buildings will need a ground raycast.
+   - **`Player.held_items` is a stopgap** (no drop, no weight, no UI list);
+     X cycles fists → held weapons. Round 6 replaces it.
+   - **Balance is tuned against one bot** (stand still, 0.35 s charges,
+     shove windups): 1v1 bat ≈ 23 % health, 3 zombies always kill it. A
+     player who backs off between swings does much better; no footwork
+     in the bot.
+   - **Attack-slot registry** is still static, but slots are now released
+     when a zombie leaves the tree (was: a despawned attacker kept the
+     target "full" forever).
+   - **Condition only wears on swings that connect**; misses are free.
+   - **Test suite runtime** is ~210 s (watchdog 600 s); each integration
+     test bakes the navmesh.
+   - The screenshot run disables the three staging zombies' senses until
+     shot 14 is taken (so the aim ring / arc read clearly).
 0. **Zombie Round-3 gaps** (ordered):
    - **Cheap-mode zombies are out of the physics space** (calm and known
      to be > 8 m from the player): they overlap each other and are not
@@ -49,17 +88,16 @@ that fixed them.
 4. **Climb does not check the landing spot** — the tween lands 0.9 m past
    the wall regardless of props there.
 5. **Smash needs no tool and no strength check** — placeholder until items
-   (R5) and combat (R4).
+   (R5); the equipped weapon is not consulted yet.
 6. **Interior door lintels are cut with the wall** — cosmetic: the stub of
    a door leaf reads a little odd while the door is open.
 7. **Faded objects keep casting full shadows** — alpha fade does not affect
    shadow maps; a hidden roof stops shadows only once fully hidden.
 8. **Player facing indicator is subtle** — the "nose" box on the capsule is
-   hard to read at the default zoom. Consider a larger wedge or a ground
-   arrow once aiming matters (Round 4).
-9. **Mouse aim absent** — brief lists Aim; scheduled with combat (Round 4).
-10. **No vault over low obstacles / push** — window climb exists (R2);
-   fences and shoving come with combat (R4).
+   hard to read at the default zoom; while aiming the ring + arc preview
+   show the direction, otherwise only the held weapon does.
+10. **No vault over low obstacles** — window climb exists (R2), shove
+   exists (R4); fences / vaulting later.
 11. **HUD is not scaled for high-DPI** — stretch mode is `canvas_items`, so it
    scales with window size, but font sizes are engine defaults.
 12. **HUD still polls two things** — the debug overlay (fine) and the
@@ -72,6 +110,25 @@ that fixed them.
    here).
 
 ## Fixed
+
+- (R4, critic) Interrupted swings (busy / death) kept their queued
+  follow-up → double swing + double stamina later; the queue is cleared by
+  every finish.
+- (R4, critic) Swapping weapons mid-swing dodged wear; wear goes to the
+  swung instance and X is refused mid-swing.
+- (R4, critic) A knockdown cancelled its own knockback.
+- (R4, critic) Blood decals ignored the floor height (y from the hit).
+- (R4, critic) Bat stun-lock made 1v1 free (0 % health): stagger 16,
+  0.5 s, 1.2 s immunity, faster/longer bite, weaker bat knockback.
+- (R4, critic) Zombie head stayed hit-coloured / corpse body stayed red
+  after a killing blow; the hit flash now restores the state tint and
+  collapse clears it.
+- (R4) Mouse aim (RMB) added: ortho-safe mouse → ground projection,
+  facing override, walk cap, ring at reach.
+- (R4) Zombie attack always passed `region: random, type: bite`; bites
+  now roll region + type from the profile and wound the victim.
+- (R4) HUD stamina percentage hid the injury cap (value / reduced max
+  read 100 %); now shown against the base max with "(max N%)".
 
 - (R3) Door leaves were on layer 1 and got baked into the navmesh (no
   path into houses). New layer 7 "doors"; player/zombie masks include it.

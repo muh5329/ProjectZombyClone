@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"hammer"
+display_name = "Hammer"
+category = &"weapon"
+weight = 1.0
+max_stack = 1
+max_condition = 20
+color = Color(0.45, 0.45, 0.5, 1)
+world_size = Vector3(0.35, 0.05, 0.12)
+damage_min = 8
+damage_max = 12
+crit_chance = 0.15
+crit_multiplier = 2.5
+head_hit_chance = 0.3
+reach = 0.95
+arc_degrees = 60
+max_targets = 1
+swing_time = 0.55
+stamina_cost = 5
+knockback = 0.2
+knockdown_chance = 0.08
+condition_loss_chance = 0.1
+noise_radius = 6
+

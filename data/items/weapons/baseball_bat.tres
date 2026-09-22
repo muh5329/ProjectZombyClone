@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"baseball_bat"
+display_name = "Baseball Bat"
+category = &"weapon"
+weight = 1.5
+max_stack = 1
+max_condition = 12
+color = Color(0.72, 0.52, 0.3, 1)
+world_size = Vector3(0.8, 0.07, 0.07)
+damage_min = 12
+damage_max = 18
+crit_chance = 0.1
+crit_multiplier = 2.0
+head_hit_chance = 0.12
+reach = 1.4
+arc_degrees = 120
+max_targets = 2
+swing_time = 1.1
+stamina_cost = 12
+knockback = 0.3
+knockdown_chance = 0.15
+condition_loss_chance = 0.2
+noise_radius = 8
+

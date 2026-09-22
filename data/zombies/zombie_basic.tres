@@ -20,8 +20,8 @@ sense_hz = 6.0
 chase_sense_interval = 0.5
 sneak_range_multiplier = 0.5
 sprint_range_multiplier = 1.25
-attack_range = 0.9
-attack_windup = 0.5
+attack_range = 1.0
+attack_windup = 0.4
 attack_cooldown = 1.5
 attack_damage = 12.0
 attack_hit_slack = 0.25
@@ -33,13 +33,37 @@ max_attackers = 4
 hold_distance = 1.4
 hold_stuck_seconds = 0.5
 hold_recheck_seconds = 1.5
+attack_region_weights = {
+&"head": 0.05,
+&"left_arm": 0.15,
+&"left_hand": 0.08,
+&"left_leg": 0.045,
+&"lower_torso": 0.1,
+&"neck": 0.1,
+&"right_arm": 0.15,
+&"right_hand": 0.08,
+&"right_leg": 0.045,
+&"upper_torso": 0.2
+}
+attack_type_weights = {
+&"bite": 0.12,
+&"laceration": 0.28,
+&"scratch": 0.6
+}
+attack_infectious = true
 door_damage = 8.0
 door_max_distance = 1.8
 door_check_distance = 1.2
 health = 60.0
 head_hit_multiplier = 3.0
-stagger_damage = 20.0
-stun_seconds = 0.8
+stagger_damage = 16.0
+stagger_immunity_seconds = 1.2
+stun_seconds = 0.5
+knockdown_seconds = 2.5
+knockdown_damage_multiplier = 1.5
+knockback_speed = 5.0
+shove_stun_seconds = 0.6
+hit_flash_seconds = 0.2
 ai_hz_hostile = 20.0
 ai_hz_calm = 10.0
 repath_hz = 2.0

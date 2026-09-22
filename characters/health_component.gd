@@ -39,7 +39,7 @@ func fraction() -> float:
 func set_max(v: float, refill: bool = true) -> void:
 	max_health = maxf(v, 0.0)
 	health = max_health if refill else minf(health, max_health)
-	changed.emit(health, max_health)
+	_emit_changed()
 
 
 func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> Dictionary:
@@ -49,23 +49,42 @@ func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> D
 		return {"ok": false, "reason": "No effect", "health": health}
 	health = maxf(0.0, health - amount)
 	damaged.emit(amount, source, info)
-	changed.emit(health, max_health)
+	_emit_changed()
 	EventBus.character_damaged.emit(character, amount, source, info)
-	if health <= 0.0:
+	_check_death(source)
+	return {"ok": true, "health": health, "dead": dead}
+
+
+## Slow loss (bleeding, infection): no `damaged` / character_damaged (no
+## hit flash, no injury), only `changed` and death. [cause] is for logs.
+func drain(amount: float, source: Node = null, _cause: StringName = &"bleeding") -> void:
+	if dead or invulnerable or amount <= 0.0:
+		return
+	health = maxf(0.0, health - amount)
+	_emit_changed()
+	_check_death(source)
+
+
+func _emit_changed() -> void:
+	changed.emit(health, max_health)
+	EventBus.health_changed.emit(character, health, max_health)
+
+
+func _check_death(source: Node) -> void:
+	if health <= 0.0 and not dead:
 		dead = true
 		died.emit(source)
 		EventBus.character_died.emit(character, source)
-	return {"ok": true, "health": health, "dead": dead}
 
 
 func heal(amount: float) -> void:
 	if dead or amount <= 0.0:
 		return
 	health = minf(max_health, health + amount)
-	changed.emit(health, max_health)
+	_emit_changed()
 
 
 func revive(full: bool = true) -> void:
 	dead = false
 	health = max_health if full else maxf(health, 1.0)
-	changed.emit(health, max_health)
+	_emit_changed()

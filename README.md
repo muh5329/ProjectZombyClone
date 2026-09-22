@@ -2,8 +2,8 @@
 
 Isometric 3D survival sandbox in **Godot 4.6 / GDScript**, inspired by the
 systemic gameplay of Project Zomboid. Blockout visuals (primitives), systems
-first. Built through a "gauntlet" of verified rounds; **Rounds 1–3 of 10 are
-done and committed. Round 4 (melee combat + injuries) has NOT been started.**
+first. Built through a "gauntlet" of verified rounds; **Rounds 1–4 of 10 are
+done and committed.**
 
 ## Status at handoff (2026-09-22)
 
@@ -12,10 +12,10 @@ done and committed. Round 4 (melee combat + injuries) has NOT been started.**
 | 1 | Player controller (sneak/walk/jog/sprint), stamina economy, isometric camera, HUD, test harness | ✅ done |
 | 2 | Interaction framework, enterable house (doors, windows, climb/smash), orthographic dimetric camera, roof/wall cutaway | ✅ done |
 | 3 | Zombie AI (FSM, vision/hearing/proximity, navmesh, door banging), health, spawner, perf harness | ✅ done |
-| 4 | Melee combat, shove, body-region injuries, weapons as data | ⬜ **next** — full spec below |
+| 4 | Melee combat, shove, body-region injuries, weapons as data | ✅ done |
 | 5–10 | Containers/loot, inventory/equipment, hunger/thirst, sound propagation, barricades, save/load | ⬜ planned |
 
-- **112 automated tests, 0 failing** (`scripts/test.sh`, ~165 s headless).
+- **154 automated tests, 0 failing** (`scripts/test.sh`, ~335 s headless).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,
@@ -25,8 +25,9 @@ done and committed. Round 4 (melee combat + injuries) has NOT been started.**
 ## Run the game
 Open `project.godot` in Godot **4.6** and press Play (main scene
 `maps/test_ground.tscn`). Controls: WASD move · Shift sprint · Ctrl sneak ·
-Alt walk · E interact · 1-4 pick action · Q/R rotate camera · wheel or +/−
-zoom · F3 debug · R restart after death.
+Alt walk · E interact · 1-4 pick action · LMB attack (hold to charge) ·
+RMB aim · Space shove · X cycle weapon · B bandage · Q/R rotate camera ·
+wheel or +/− zoom · F3 debug · R restart after death.
 
 ## Run the tests
 ```
@@ -77,7 +78,7 @@ writes throwaway probe tests and reports bugs/architecture/UX/test gaps with
 commit. Every round so far found 5–14 real defects in the critic pass; do not
 skip it.
 
-## Round 4 spec (not started) — melee, shove, injuries
+## Round 4 spec (DONE — kept for reference; see PROGRESS.md) — melee, shove, injuries
 - `items/item_data.gd`, `items/weapon_data.gd` (damage min/max, reach, arc,
   swing time, stamina cost, knockback, knockdown chance, max targets,
   condition loss, noise), `items/item_instance.gd` (condition/stack);

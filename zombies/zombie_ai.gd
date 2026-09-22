@@ -27,6 +27,7 @@ const S_ATTACK := &"attack"
 const S_ATTACK_DOOR := &"attack_door"
 const S_LOST := &"lost_target"
 const S_STUNNED := &"stunned"
+const S_KNOCKED_DOWN := &"knocked_down"
 const S_DEAD := &"dead"
 const GROUP_BREAKABLE := &"breakable"
 
@@ -34,6 +35,7 @@ const GROUP_BREAKABLE := &"breakable"
 const TINTS := {
 	S_INVESTIGATE: &"alert", S_SEARCH: &"alert", S_ATTACK_DOOR: &"alert",
 	S_CHASE: &"hostile", S_ATTACK: &"hostile", S_LOST: &"hostile",
+	S_KNOCKED_DOWN: &"hostile", S_STUNNED: &"hostile",
 	S_DEAD: &"dead",
 }
 ## Layers for the "breakable ahead" ray: 7 doors.
@@ -64,7 +66,14 @@ var blocking_obstacle: Node3D = null
 var stuck_time: float = 0.0
 ## True while this zombie holds an attack slot on zombie.target.
 var has_attack_slot: bool = false
+## Duration of the next / current stun (set by stun()).
+var stun_seconds: float = 0.8
+## AI time (s) of the last stagger; no new stagger within
+## profile.stagger_immunity_seconds of it (no stun-lock).
+var _last_stagger_time: float = -INF
+var _time: float = 0.0
 
+var _claimed_key: int = 0
 var _obstacle_ray: PhysicsRayQueryParameters3D
 var _attack_ray: PhysicsRayQueryParameters3D
 var _nav_target: Vector3 = Vector3.INF
@@ -100,6 +109,7 @@ func setup(z: Zombie) -> void:
 	machine.add_state(ZombieStateAttackDoor.new(S_ATTACK_DOOR, self))
 	machine.add_state(ZombieStateLostTarget.new(S_LOST, self))
 	machine.add_state(ZombieStateStunned.new(S_STUNNED, self))
+	machine.add_state(ZombieStateKnockedDown.new(S_KNOCKED_DOWN, self))
 	machine.add_state(ZombieStateDead.new(S_DEAD, self))
 	machine.state_changed.connect(_on_state_changed)
 	zombie.senses.target_seen.connect(_on_target_seen)
@@ -130,6 +140,7 @@ func profile() -> ZombieProfile:
 func tick(delta: float) -> void:
 	if zombie.dead:
 		return
+	_time += delta
 	_repath_accum += delta
 	if zombie.has_move_intent() and zombie.speed() < 0.05:
 		stuck_time += delta
@@ -144,7 +155,7 @@ func tick(delta: float) -> void:
 ## as near.
 func _update_movement_mode() -> void:
 	var s := machine.current_id()
-	var hostile := s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED
+	var hostile := s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_KNOCKED_DOWN
 	var far := zombie.senses.last_target_distance != INF and zombie.senses.last_target_distance > profile().cheap_distance
 	zombie.cheap_movement = not hostile and far
 	if zombie.hostile != hostile:
@@ -165,7 +176,7 @@ func _on_target_seen(t: Node3D) -> void:
 	memory_left = profile().memory_seconds
 	zombie.target = t
 	var s := state_id()
-	if s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_DEAD:
+	if s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_KNOCKED_DOWN or s == S_DEAD:
 		return
 	EventBus.zombie_spotted_target.emit(zombie, t)
 	machine.change_to(S_CHASE)
@@ -183,13 +194,27 @@ func _on_sound_heard(position: Vector3, _category: StringName) -> void:
 			machine.change_to(S_INVESTIGATE)
 
 
-## Hit by [source]: a heavy hit stuns; otherwise a zombie without a target
-## turns toward the attacker and goes to look (Round 4 combat hooks here).
-func on_damaged(source: Node, heavy: bool) -> void:
-	if zombie.dead:
+## Hit by [source] for [dmg] (after multipliers). info.knockdown floors
+## it; a hit of at least profile.stagger_damage stuns; a creature that
+## hits us (anything with take_damage that is not a zombie) becomes the
+## target; anything else makes a target-less zombie turn and investigate.
+## A zombie lying on the ground stays down.
+func on_damaged(source: Node, dmg: float, info: Dictionary = {}) -> void:
+	if zombie.dead or is_in(S_KNOCKED_DOWN):
 		return
-	if heavy:
-		stun()
+	var attacker := _creature(source)
+	if attacker != null:
+		_remember_attacker(attacker)
+	if bool(info.get("knockdown", false)):
+		knock_down(source)
+		return
+	if dmg >= profile().stagger_damage and bool(info.get("stagger", true)) and can_be_staggered():
+		stun(profile().stun_seconds)
+		return
+	if attacker != null:
+		var s := state_id()
+		if s != S_CHASE and s != S_ATTACK and s != S_STUNNED:
+			machine.change_to(S_CHASE)
 		return
 	if zombie.target == null and source is Node3D and is_instance_valid(source):
 		var p: Vector3 = (source as Node3D).global_position
@@ -203,10 +228,85 @@ func on_damaged(source: Node, heavy: bool) -> void:
 				machine.change_to(S_INVESTIGATE)
 
 
-func stun() -> void:
-	if zombie.dead or is_in(S_STUNNED):
+## Shoved by [source]: the attack windup is lost; knocked down or
+## staggered for profile.shove_stun_seconds.
+func on_shoved(source: Node, knockdown: bool) -> void:
+	if zombie.dead or is_in(S_KNOCKED_DOWN):
 		return
-	machine.change_to(S_STUNNED)
+	var attacker := _creature(source)
+	if attacker != null:
+		_remember_attacker(attacker)
+	if knockdown:
+		knock_down(source)
+	elif can_be_staggered():
+		stun(profile().shove_stun_seconds)
+	else:
+		# Still reeling from the last stagger: the bite is lost, no stun.
+		interrupt_attack()
+
+
+func _creature(source: Node) -> Node3D:
+	if source is Node3D and is_instance_valid(source) and source.has_method(&"take_damage") \
+			and not source.is_in_group(&"zombie") and source.is_inside_tree():
+		if source.has_method(&"is_dead") and source.is_dead():
+			return null
+		return source
+	return null
+
+
+func _remember_attacker(attacker: Node3D) -> void:
+	if zombie.target != attacker:
+		release_attack_slot()
+	zombie.target = attacker
+	last_known_position = attacker.global_position
+	memory_left = profile().memory_seconds
+	zombie.face_toward(attacker.global_position)
+
+
+func can_be_staggered() -> bool:
+	return _time - _last_stagger_time >= profile().stagger_immunity_seconds
+
+
+## Cancel a bite windup (straight into the cooldown).
+func interrupt_attack() -> void:
+	if is_in(S_ATTACK):
+		(machine.current as ZombieStateAttack).interrupt()
+
+
+## Freeze for [seconds] (re-entering restarts the timer).
+func stun(seconds: float = -1.0) -> void:
+	if zombie.dead or is_in(S_KNOCKED_DOWN):
+		return
+	_last_stagger_time = _time
+	stun_seconds = seconds if seconds > 0.0 else profile().stun_seconds
+	machine.change_to(S_STUNNED, true)
+
+
+func knock_down(source: Node = null) -> void:
+	if zombie.dead or is_in(S_KNOCKED_DOWN):
+		return
+	# The knockback of the blow that floored it keeps sliding the body.
+	machine.change_to(S_KNOCKED_DOWN)
+	EventBus.zombie_knocked_down.emit(zombie, source)
+
+
+## True during the windup phase of a bite.
+func is_winding_up() -> bool:
+	if not is_in(S_ATTACK):
+		return false
+	var st := machine.current as ZombieStateAttack
+	return st != null and st.phase == ZombieStateAttack.Phase.WINDUP
+
+
+## Roll where / how a bite lands: {region, type, infectious}.
+func roll_attack_info() -> Dictionary:
+	var region := Injury.roll_weighted(profile().attack_region_weights, rng.randf())
+	var type := Injury.roll_weighted(profile().attack_type_weights, rng.randf())
+	return {
+		"region": region if region != &"" else &"random",
+		"type": type if type != &"" else &"scratch",
+		"infectious": profile().attack_infectious,
+	}
 
 
 func on_death() -> void:
@@ -241,6 +341,7 @@ func claim_attack_slot() -> bool:
 		return false
 	_attack_slots[key] = n + 1
 	has_attack_slot = true
+	_claimed_key = key
 	return true
 
 
@@ -248,7 +349,8 @@ func release_attack_slot() -> void:
 	if not has_attack_slot:
 		return
 	has_attack_slot = false
-	var key := _slot_key()
+	# The key remembered at claim time (the target may be freed by now).
+	var key := _claimed_key
 	var n: int = _attack_slots.get(key, 0) - 1
 	if n <= 0:
 		_attack_slots.erase(key)

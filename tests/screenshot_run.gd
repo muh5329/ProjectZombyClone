@@ -197,6 +197,8 @@ func _run() -> void:
 		_problems.append("damage flash not visible after the hit (strength %.2f)" % hud.flash_strength())
 	await _shot("13_damage_flash")
 
+	await _round4(inst, player, cam, spawner, hud)
+
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
 		quit(0)
@@ -204,6 +206,180 @@ func _run() -> void:
 		for p in _problems:
 			printerr("SCREENSHOT_RUN PROBLEM: " + p)
 		quit(1)
+
+
+# --- Round 4: pickup, aim, swing, knockdown, injuries, bandage -------------
+func _round4(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) -> void:
+	var combat: Node = player.get_node("Combat")
+	var injuries: Node = player.get_node("Injuries")
+	# Clear the stage: every zombie so far goes away; top the player up.
+	for z in get_nodes_in_group(&"zombie"):
+		z.queue_free()
+	await _frames(2)
+	player.get_node("Health").heal(100.0)
+	player.get_node("Stats").set_value(&"stamina", 100.0)
+	await _tap(&"camera_zoom_in")
+	await _frames(5)
+	await _tap(&"camera_zoom_in")
+	# Pick up the bat in the living room with E.
+	player.global_position = Vector3(-6.5, 0.1, -2.5)
+	player.movement.facing = 0.0  # face -Z (toward the bat)
+	await _frames(20)
+	await _tap(&"interact")
+	await _frames(10)
+	if combat.weapon().id != &"baseball_bat":
+		_problems.append("bat not picked up / equipped via E (weapon %s)" % combat.weapon().id)
+	# Out into the open (closest zoom): three zombies screen-right, in reach.
+	await _tap(&"camera_zoom_in")
+	player.global_position = Vector3(10, 0.1, 12)
+	await _frames(30)
+	var camera: Camera3D = cam.camera
+	# Aim to screen-right so the arc and the zombies read side by side.
+	var fwd := camera.global_basis.x
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var zs: Array = []
+	for a in [-0.9, 0.0, 0.9]:
+		var d := fwd.rotated(Vector3.UP, a)
+		var z: Node3D = spawner.spawn_at(player.global_position + d * 1.5)
+		z.face_toward(player.global_position)
+		z.snap_facing(z.movement.facing)
+		# Staging only: they notice the player after the aim shot, so the
+		# spacing (and the arc under them) stays readable in 14.
+		z.senses.enabled = false
+		zs.append(z)
+	await _frames(2)
+	# Aim (RMB) at the middle one with the mouse.
+	var target_screen := camera.unproject_position(player.global_position + fwd * 1.25)
+	_mouse_to(target_screen)
+	_press(&"aim")
+	await _frames(12)
+	_mouse_to(target_screen)
+	await _frames(6)
+	if not combat.aiming:
+		_problems.append("RMB did not enter aim mode")
+	if combat.aim_direction.dot(fwd) < 0.9:
+		_problems.append("aim does not follow the mouse (aim %s, want %s)" % [str(combat.aim_direction), str(fwd)])
+	if combat.in_reach < 2:
+		_problems.append("expected >= 2 zombies in reach while aiming (got %d)" % combat.in_reach)
+	if not String(hud.aim_label.text).begins_with("Aiming"):
+		_problems.append("HUD aim label missing (got '%s')" % hud.aim_label.text)
+	await _shot("14_aim_arc")
+	for z in zs:
+		z.senses.enabled = true
+	# Hold LMB ~0.4 s, release: the bat sweeps the arc.
+	_press(&"attack")
+	await _frames(24)
+	_release(&"attack")
+	var active := false
+	for i in 40:
+		await physics_frame
+		if combat.is_active():
+			active = true
+			break
+	if not active:
+		_problems.append("swing never reached the active window")
+	elif combat.last_hits.is_empty():
+		_problems.append("bat swing hit nobody")
+	else:
+		var flashing := false
+		for h in combat.last_hits:
+			flashing = flashing or h.target.visual.is_hit_flashing()
+		if not flashing:
+			_problems.append("no hit flash on the struck zombie")
+	await _shot("15_swing_hit")
+	# Shove (Space) / swing until one of them is on the ground.
+	var downed: Node3D = null
+	for attempt in 8:
+		for i in 60:
+			await physics_frame
+			if combat.phase == 0:
+				break
+		for z in zs:
+			if is_instance_valid(z) and not z.dead and z.state() == &"knocked_down":
+				downed = z
+		if downed:
+			break
+		var near: Node3D = null
+		for z in zs:
+			if is_instance_valid(z) and not z.dead:
+				near = z
+				break
+		if near == null:
+			break
+		_mouse_to(camera.unproject_position(near.global_position))
+		await _frames(2)
+		await _tap(&"shove" if attempt % 2 == 0 else &"attack")
+		for i in 30:
+			await physics_frame
+			if near.dead or near.state() == &"knocked_down":
+				break
+		if is_instance_valid(near) and not near.dead and near.state() == &"knocked_down":
+			downed = near
+			break
+	if downed == null:
+		_problems.append("no zombie was knocked down by shove / bat")
+	await _frames(8)
+	await _shot("16_knockdown")
+	_release(&"aim")
+	for z in zs:
+		if is_instance_valid(z):
+			z.queue_free()
+	await _frames(5)
+	# Climb through the smashed living-room window: glass laceration.
+	player.get_node("Health").heal(100.0)
+	player.global_position = Vector3(-13.3, 0.1, -4)
+	player.movement.facing = PI * 0.5  # face -X (the window)
+	await _frames(20)
+	var n_before: int = injuries.injuries.size()
+	var interaction: Node = player.get_node("Interaction")
+	var idx := -1
+	for i in interaction.current_actions.size():
+		if interaction.current_actions[i].id == &"smash":
+			idx = i
+	if idx < 0:
+		_problems.append("no smash action on the west window")
+	else:
+		await _tap(StringName("action_%d" % (idx + 1)))
+		await _frames(20)
+		await _tap(&"interact")
+		await _frames(70)
+	var glass := false
+	for inj in injuries.injuries:
+		glass = glass or inj.type == 1  # laceration
+	if injuries.injuries.size() <= n_before or not glass:
+		_problems.append("smashed-window climb did not lacerate (injuries %d → %d)" % [n_before, injuries.injuries.size()])
+	if not String(hud.injury_label.text).contains("BLEEDING"):
+		_problems.append("HUD injury list shows no bleeding wound: '%s'" % hud.injury_label.text)
+	# Step away from the wall so the player is in plain view.
+	player.global_position = Vector3(-17.5, 0.1, -0.5)
+	await _frames(20)
+	await _shot("17_injury_panel")
+	# B: bandage the worst bleeding wound (4 s).
+	await _tap(&"bandage")
+	await _frames(60)
+	if not injuries.is_bandaging():
+		_problems.append("B did not start bandaging")
+	if not String(hud.notice_label.text).begins_with("Bandaging"):
+		_problems.append("HUD bandaging notice missing (got '%s')" % hud.notice_label.text)
+	await _shot("18_bandaging")
+	for i in 60 * 4:
+		await physics_frame
+		if not injuries.is_bandaging():
+			break
+	var any_bandaged := false
+	for inj in injuries.injuries:
+		any_bandaged = any_bandaged or inj.bandaged
+	if not any_bandaged:
+		_problems.append("no wound bandaged after 4 s")
+
+
+func _mouse_to(p: Vector2) -> void:
+	Input.warp_mouse(p)
+	var ev := InputEventMouseMotion.new()
+	ev.position = p
+	ev.global_position = p
+	Input.parse_input_event(ev)
 
 
 func _press(action: StringName) -> void:

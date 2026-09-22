@@ -6,6 +6,63 @@ that did not write the code).
 
 ---
 
+## Round 4 — Melee combat, shove, body-region injuries (2026-09-22)
+
+### Goal
+Let the player fight back without becoming a superhero: data-driven melee
+weapons, aim/charge, shove crowd control, body-region injuries with
+bleeding/pain/infection, bandaging, and pickup/equip of weapons.
+
+### What changed
+- `ItemData`/`WeaponData`/`ItemInstance`; weapons as .tres (bat, crowbar,
+  knife, hammer, pipe, fists, shove). `WorldItem` pickups (bat in living
+  room, knife in kitchen), X cycles weapon (refused mid-swing).
+- `MeleeCombat` facade over `SwingStateMachine` (queue/charge/phases) and
+  `HitResolver` (arc query + LOS on layers 1/7/8, damage × charge × pain ×
+  exhaustion, head hits, knockback, knockdown, wear on the swung
+  instance). Tuning in `data/combat/combat_profile.tres`.
+- Aim (RMB) faces the mouse on the ground in ortho, caps speed to walk,
+  shows a reach ring + "N in reach"; hold LMB to charge (×0.6→1.3).
+- Shove (Space) 1.0 m/90°/3 targets, cancels zombie windups.
+- Zombies: `KnockedDown` state (×1.5 damage while down), stagger threshold
+  16 with 1.2 s immunity, windup 0.4 s, range 1.0 m.
+- `InjuryComponent`: 10 regions, scratch/laceration/deep wound/bite/burn/
+  fracture, bleeding drain, leg slow, max-stamina reduction, pain (>50 /
+  >80 slows and weakens swings), infection hidden until symptoms
+  (Feverish ≥25, Infected ≥60). B bandages worst bleeding wound (4 s,
+  interrupted by damage). Smashed-window climb lacerates.
+- HUD: weapon + condition, injuries list, pain, charge meter, bandage
+  progress, "Idle", stamina "· max N %"; pooled blood decals.
+
+### Tests performed
+`scripts/test.sh` → **154 tests, 0 failed** (70 unit, 84 integration;
+watchdog raised to 900 s). `scripts/screenshots.sh` OK (14_aim_arc,
+15_swing_hit, 16_knockdown, 17_injury_panel, 18_bandaging).
+`scripts/perf.sh` calm 4.15 ms / hostile 7.75 ms. Balance bot (seeds 1-5):
+1v1 bat costs 12-27 % health (avg 23 %); 3 zombies kill a static bot every
+seed; a non-fighting surrounded player dies < 30 s.
+
+### Bugs discovered (critic) → all fixed
+Stale queued swing after an interrupted windup (double swing, double
+stamina, double charge rate); weapon swap mid-swing skipped wear
+(infinite-durability exploit); knockdown cancelled its own knockback;
+blood decals at fixed height; damage didn't interrupt bandaging; B
+"bandaged" fractures; 1v1 bat stun-lock (0 % health lost); instant green
+"INFECTED" spoiler; pain had no effect; freed zombies held attack slots
+(found during fixing); melee_combat.gd god object; tuning outside data;
+balance test with no lower bound.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (7.5) · System Integration 8 (8) · Survival Depth 7 (5.5) ·
+Architecture 8 (7) · Performance 8 (8.5) · UX/Feedback 7 (6) ·
+Bug Resistance 8 (6.5).
+
+### Highest-priority remaining issue
+No loot: weapons are placed by hand and bandages are free. Round 5
+(interactable containers + data-driven loot tables) is next.
+
+---
+
 ## Round 3 — Basic zombie AI, senses, navigation, health (2026-09-22)
 
 ### Goal

@@ -43,6 +43,8 @@ func stamina_rates() -> Dictionary:
 		&"jog": stamina_rate_jog,
 		&"sprint": stamina_rate_sprint,
 		&"climb": stamina_rate_climb,
+		# Bandaging is sitting still: idle recovery.
+		&"bandage": stamina_rate_idle,
 	}
 
 

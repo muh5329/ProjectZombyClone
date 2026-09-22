@@ -117,6 +117,22 @@ func set_value(id: StringName, v: float) -> void:
 	_evaluate_thresholds(id, s)
 
 
+## Change a stat's maximum (injuries lower max stamina). The value is
+## clamped into the new range; `changed` fires when anything moved.
+func set_max(id: StringName, max_value: float) -> void:
+	var s: Stat = _stats.get(id)
+	if s == null:
+		return
+	var m := maxf(max_value, 0.0)
+	if m == s.max_value:
+		return
+	s.max_value = m
+	s.value = minf(s.value, m)
+	changed.emit(id, s.value, s.max_value)
+	EventBus.stat_changed.emit(character, id, s.value, s.max_value)
+	_evaluate_thresholds(id, s)
+
+
 func modify(id: StringName, delta: float) -> void:
 	set_value(id, get_value(id) + delta)
 

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CombatProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/combat/combat_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+charge_min = 0.6
+charge_max = 1.3
+charge_seconds = 1.0
+exhausted_damage_multiplier = 0.6
+low_stamina_damage_multiplier = 0.85
+swing_speed_multiplier = 0.4
+charge_speed_multiplier = 0.7
+hit_height = 1.1
+target_radius = 0.3
+head_region = &"head"
+body_region = &"upper_torso"
+aim_refresh_hz = 10.0
+noise_intensity_radius = 14.0

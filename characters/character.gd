@@ -21,6 +21,8 @@ const INTENT_DEADZONE := BodyHelpers.INTENT_DEADZONE
 @onready var stats: StatsComponent = $Stats
 ## Optional HealthComponent child named "Health" (player, survivors).
 @onready var health: HealthComponent = get_node_or_null("Health")
+## Optional InjuryComponent child named "Injuries" (Round 4).
+@onready var injuries: InjuryComponent = get_node_or_null("Injuries")
 ## Visual root that is rotated to face the movement direction.
 @onready var visual: Node3D = get_node_or_null("Visual")
 
@@ -41,6 +43,9 @@ var busy_context: StringName = &"idle"
 ## Tween that currently moves this body while busy (owned by this node so
 ## it survives the thing that started it). May be null.
 var busy_tween: Tween = null
+## When non-zero the body faces this (XZ) direction instead of its travel
+## direction (aiming, swinging). Set by combat; ZERO = travel facing.
+var facing_override: Vector3 = Vector3.ZERO
 ## Seconds of winded time remaining (physics time).
 var _winded_left: float = 0.0
 var _last_emitted_mode: MovementComponent.Mode = MovementComponent.Mode.JOG
@@ -56,6 +61,8 @@ func _ready() -> void:
 		health.character = self
 		health.set_max(profile.health_max)
 		health.died.connect(_on_died)
+	if injuries:
+		injuries.setup(self)
 
 
 func set_intent(direction: Vector3, mode: MovementComponent.Mode) -> void:
@@ -159,6 +166,8 @@ func _physics_process(delta: float) -> void:
 		velocity.y = 0.0
 
 	velocity = movement.compute_velocity(intent_direction, velocity, delta)
+	if facing_override.x != 0.0 or facing_override.z != 0.0:
+		movement.facing = BodyHelpers.yaw_for(facing_override)
 	move_and_slide()
 
 	# Stamina is charged AFTER moving so effort reflects what actually
@@ -171,6 +180,11 @@ func _physics_process(delta: float) -> void:
 	if effective_mode != _last_emitted_mode:
 		_last_emitted_mode = effective_mode
 		EventBus.movement_mode_changed.emit(self, MovementComponent.mode_name(effective_mode))
+
+
+## Direction the body faces (logical, XZ unit vector).
+func facing_vector() -> Vector3:
+	return BodyHelpers.facing_vector(movement.facing)
 
 
 func _resolve_mode() -> void:

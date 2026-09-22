@@ -1,7 +1,7 @@
 class_name ZombieStateStunned
 extends ZombieState
-## Hit hard: freeze for profile.stun_seconds, then resume chasing (target
-## remembered) or stand idle. Round 4 adds knock-downs on top.
+## Hit hard (or shoved): freeze for ai.stun_seconds, then resume chasing
+## (target remembered) or stand idle.
 
 
 func enter(_from: StringName) -> void:
@@ -10,7 +10,7 @@ func enter(_from: StringName) -> void:
 
 
 func update(_delta: float) -> StringName:
-	if time_in_state < profile().stun_seconds:
+	if time_in_state < ai.stun_seconds:
 		return &""
 	if ai.target_valid() and ai.memory_left > 0.0:
 		return ZombieAI.S_CHASE

@@ -44,8 +44,8 @@ extends Resource
 @export var sprint_range_multiplier: float = 1.25
 
 @export_group("Attack")
-@export var attack_range: float = 0.9
-@export var attack_windup: float = 0.5
+@export var attack_range: float = 1.0
+@export var attack_windup: float = 0.4
 @export var attack_cooldown: float = 1.5
 @export var attack_damage: float = 12.0
 ## Extra reach tolerated at the moment of the hit.
@@ -67,6 +67,16 @@ extends Resource
 @export var hold_stuck_seconds: float = 0.5
 ## …and try again after this long.
 @export var hold_recheck_seconds: float = 1.5
+## Where a zombie's hit lands on a human (Injury.REGION_IDS → weight,
+## sums to 1) and what kind of wound it makes (Injury.TYPE_IDS → weight).
+@export var attack_region_weights: Dictionary = {
+	&"head": 0.05, &"neck": 0.1, &"upper_torso": 0.2, &"lower_torso": 0.1,
+	&"left_arm": 0.15, &"right_arm": 0.15, &"left_hand": 0.08, &"right_hand": 0.08,
+	&"left_leg": 0.045, &"right_leg": 0.045,
+}
+@export var attack_type_weights: Dictionary = {&"scratch": 0.6, &"laceration": 0.28, &"bite": 0.12}
+## Zombie wounds roll the injury type's infection chance.
+@export var attack_infectious: bool = true
 ## Damage per bang against doors / breakables.
 @export var door_damage: float = 8.0
 ## A breakable further than this is no longer "in the way".
@@ -78,8 +88,22 @@ extends Resource
 @export var health: float = 60.0
 @export var head_hit_multiplier: float = 3.0
 ## A single hit of at least this much damage stuns (Round 4 combat).
-@export var stagger_damage: float = 20.0
-@export var stun_seconds: float = 0.8
+@export var stagger_damage: float = 16.0
+@export var stun_seconds: float = 0.5
+## No new stagger (hit or shove stun) within this long of the last one:
+## it takes the hit but keeps coming (no stun-lock).
+@export var stagger_immunity_seconds: float = 1.2
+## Knocked down (by a weapon's knockdown roll or a shove): lies for this
+## long, then gets up; damage taken while down is multiplied.
+@export var knockdown_seconds: float = 2.5
+@export var knockdown_damage_multiplier: float = 1.5
+## Knockback displacement speed (m/s); the distance comes from the weapon.
+@export var knockback_speed: float = 5.0
+## A shove that does not knock down staggers for this long (and cancels
+## an attack windup).
+@export var shove_stun_seconds: float = 0.6
+## Seconds the body flashes when hit.
+@export var hit_flash_seconds: float = 0.2
 
 @export_group("Behaviour")
 ## AI ticks per second while hostile (chase / attack) and while calm.

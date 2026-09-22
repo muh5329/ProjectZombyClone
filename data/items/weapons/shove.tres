@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"shove"
+display_name = "Shove"
+category = &"weapon"
+weight = 0.0
+max_stack = 1
+max_condition = 0
+color = Color(0.85, 0.7, 0.45, 1)
+world_size = Vector3(0.1, 0.1, 0.1)
+damage_min = 0
+damage_max = 0
+crit_chance = 0.0
+crit_multiplier = 1.0
+head_hit_chance = 0.0
+reach = 1.0
+arc_degrees = 90
+max_targets = 3
+swing_time = 0.45
+stamina_cost = 5
+knockback = 1.2
+knockdown_chance = 0.25
+condition_loss_chance = 0.0
+noise_radius = 2
+knockdown_chance_vs_windup = 0.5
+is_shove = true
+windup_fraction = 0.2
+active_fraction = 0.3
