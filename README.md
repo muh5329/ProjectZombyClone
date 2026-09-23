@@ -53,6 +53,16 @@ macOS: `GODOT="/Applications/Godot.app/Contents/MacOS/Godot"`. Linux CI uses
 `xvfb-run` automatically for screenshots. `test.sh` fails on any
 `SCRIPT ERROR` or `ERROR:` line in engine output.
 
+## Vertical-slice review (after Round 10)
+See `docs/VERTICAL_SLICE_REVIEW.md`. Verdict: **not passed yet** — all 18
+First-Playable verbs and the natural-play acceptance test pass, but the map
+is 1 house + garage + 10 zombies instead of the brief's neighborhood (8–12
+houses, store, warehouse, gas station, forest edge, 30–50 zombies). Next
+rounds, in order: (1) data-driven neighborhood layout + house variants,
+(2) store / warehouse / gas station, (3) forest edge + 30–50 zombies + perf
+at scale, (4) hotbar ghost bug, (5) audio + threat cues, then acceptance
+bot v2.
+
 ## Read these first (in order)
 1. `docs/AGENT_GUIDE.md` — conventions, commands, definition of done, visual target.
 2. `docs/BRIEF.md` — the original design brief (verbatim).
