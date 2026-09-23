@@ -20,6 +20,8 @@ const CONSUME_HALF := &"consume_half"
 const HOTBAR_PREFIX := "hotbar_"
 ## Round 9: boxes (ItemData.unpack_item): "Open box".
 const OPEN_BOX := &"open_box"
+## Round 10: clothing → rags (ItemData.tear_into / tear_count).
+const TEAR := &"tear"
 
 
 ## Why [d] has no Use verb ("" when it has one / is not special).
@@ -37,6 +39,33 @@ static func has_use(d: ItemData) -> bool:
 
 static func _a(id: StringName, label: String, enabled: bool = true, reason: String = "") -> Dictionary:
 	return {"id": id, "label": label, "enabled": enabled, "reason": reason}
+
+
+static func is_tearable(d: ItemData) -> bool:
+	return d != null and d.tear_into != &"" and d.tear_count > 0 and ItemDB.has_item(d.tear_into)
+
+
+## Tear one [item] (carried clothing) into rags: it is used up and the
+## rags go to the actor (overflow at the feet). {ok, reason?, added}.
+static func tear(actor: Node, item: ItemInstance) -> Dictionary:
+	if actor == null or item == null or not is_tearable(item.data):
+		return {"ok": false, "reason": "Can't tear that"}
+	if bool(actor.get(&"is_busy")) or (actor.has_method(&"is_dead") and bool(actor.call(&"is_dead"))):
+		return {"ok": false, "reason": "Busy"}
+	var from := item.owner_container()
+	if from == null or (actor.has_method(&"carries") and not bool(actor.call(&"carries", item))):
+		return {"ok": false, "reason": "Not here"}
+	if actor.has_method(&"can_release_item"):
+		var rel: Dictionary = actor.call(&"can_release_item", item)
+		if not rel.get("ok", false):
+			return rel
+	if from.remove(item, 1) == null:
+		return {"ok": false, "reason": "Nothing there"}
+	var r := CarriedItems.give(actor, item.data.tear_into, item.data.tear_count)
+	EventBus.inventory_changed.emit(actor)
+	EventBus.game_notice.emit("Tore the %s into %d %s" % [item.display_name().to_lower(),
+		item.data.tear_count, ItemDB.get_item(item.data.tear_into).display_name.to_lower()], 2.0)
+	return {"ok": true, "added": r.added, "dropped": r.dropped}
 
 
 static func is_box(d: ItemData) -> bool:
@@ -80,6 +109,8 @@ static func for_item(actor: Node, item: ItemInstance) -> Array[Dictionary]:
 	if is_box(item.data):
 		out.append(_a(OPEN_BOX, "Open box (%d %s)" % [item.data.unpack_count,
 			ItemDB.get_item(item.data.unpack_item).display_name.to_lower()]))
+	if is_tearable(item.data):
+		out.append(_a(TEAR, "Tear into %s (%d)" % [ItemDB.get_item(item.data.tear_into).display_name.to_lower(), item.data.tear_count]))
 	var consume: Variant = actor.get("consume")
 	if item.data is FoodData and consume is ConsumeAction:
 		for o in (consume as ConsumeAction).options_for(item):
@@ -122,6 +153,8 @@ static func perform(actor: Node, item: ItemInstance, id: StringName) -> Dictiona
 			return actor.call(&"split_item", item)
 		OPEN_BOX:
 			return open_box(actor, item)
+		TEAR:
+			return tear(actor, item)
 	var s := String(id)
 	if s.begins_with(HOTBAR_PREFIX):
 		var eq: Equipment = actor.get("equipment") as Equipment

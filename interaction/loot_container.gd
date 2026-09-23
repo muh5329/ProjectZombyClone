@@ -24,7 +24,7 @@ extends StaticBody3D
 ##   ContainerVisual child "Visual" (box + lid tween).
 ## LootContainer itself is the interaction provider + persistence glue.
 ## - Persistence: to_dict()/from_dict() (searched flag + contents), group
-##   "persistent" (WorldState; save/load is Round 10).
+##   "persistent" (WorldState) + "saveable" (Round 10: save_state / load_state).
 
 const GROUP := &"container"
 const LAYER_WORLD := 1
@@ -77,6 +77,9 @@ var opened_by: Node = null
 var access: ContainerAccess
 ## Blockout visual (null for corpses, which adopt the zombie's visual).
 var visual: ContainerVisual
+## Round 10: static containers join the Saveable group; corpses are
+## dynamic (saved as spawn records by WorldSnapshot) and set this false.
+var static_saveable: bool = true
 
 
 func _init() -> void:
@@ -87,6 +90,8 @@ func _init() -> void:
 func _ready() -> void:
 	add_to_group(GROUP)
 	add_to_group(WorldState.GROUP)
+	if static_saveable and persist_id != "":
+		add_to_group(Saveable.GROUP)
 	inventory.capacity = capacity
 	inventory.set_spoil_multiplier(spoil_multiplier)
 	inventory.changed.connect(_on_inventory_changed)
@@ -369,3 +374,17 @@ func from_dict(d: Dictionary) -> void:
 		inventory.capacity = capacity
 	else:
 		inventory.clear()
+
+
+## Saveable contract (Round 10): the same data as to_dict(). An unsearched
+## container stays unrolled (its loot is rolled lazily from the seed).
+func save_state() -> Dictionary:
+	var d := to_dict()
+	d["kind"] = "container"
+	return d
+
+
+func load_state(d: Dictionary) -> void:
+	if is_open():
+		close()
+	from_dict(d)

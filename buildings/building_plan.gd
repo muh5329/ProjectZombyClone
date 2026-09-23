@@ -116,4 +116,30 @@ func validate() -> Array[String]:
 		var pos: Vector2 = f.get("position", Vector2.ZERO)
 		if pos.x < 0.0 or pos.y < 0.0 or pos.x > rect.size.x or pos.y > rect.size.y:
 			problems.append("%s: position %s outside room '%s' (%s)" % [flabel, pos, room.get("name"), rect.size])
+	problems.append_array(id_problems())
 	return problems
+
+
+## Round 10: stable ids come from DATA — every room, opening and
+## furniture entry carries an explicit, unique "id" (they key the save,
+## so reordering the arrays never re-maps a saved object).
+func id_problems() -> Array[String]:
+	var out: Array[String] = []
+	var seen := {}
+	var entries: Array = []
+	for r in rooms:
+		entries.append(["room", r])
+	for w in walls:
+		for o in w.get("openings", []):
+			entries.append([String(o.get("type", "door")), o])
+	for f in furniture:
+		entries.append(["furniture", f])
+	for e in entries:
+		var id := String((e[1] as Dictionary).get("id", ""))
+		if id == "":
+			out.append("%s %s has no id" % [e[0], str(e[1].get("name", e[1].get("type", "?")))])
+		elif seen.has(id):
+			out.append("duplicate id '%s'" % id)
+		else:
+			seen[id] = true
+	return out

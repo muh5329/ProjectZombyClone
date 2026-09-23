@@ -76,11 +76,11 @@ static func segments_for_wall(wall: Dictionary, p: BuildingPlan) -> Array[Dictio
 		var kind := String(o.get("type", "door"))
 		if kind == "door":
 			var dh := minf(p.door_height, h)
-			out.append({"kind": "door", "a0": a0, "a1": a1, "y0": 0.0, "y1": dh})
+			out.append({"kind": "door", "a0": a0, "a1": a1, "y0": 0.0, "y1": dh, "id": String(o.get("id", ""))})
 			if h > dh + EPS:
 				out.append({"kind": "lintel", "a0": a0, "a1": a1, "y0": dh, "y1": h})
 		else:
-			out.append({"kind": "window", "a0": a0, "a1": a1, "y0": 0.0, "y1": h})
+			out.append({"kind": "window", "a0": a0, "a1": a1, "y0": 0.0, "y1": h, "id": String(o.get("id", ""))})
 		cursor = maxf(cursor, a1)
 	if length + ext > cursor + EPS:
 		out.append({"kind": "wall", "a0": cursor, "a1": length + ext, "y0": 0.0, "y1": h})
@@ -196,6 +196,7 @@ func _build_wall(wall: Dictionary) -> void:
 			"door":
 				var door := Door.new()
 				door.name = "Door"
+				door.persist_id = _entry_id(String(seg.get("id", "")), "door/%d" % doors.size())
 				door.width = a1 - a0
 				door.height = minf(plan.door_height, plan.wall_height)
 				door.wall_height = plan.wall_height
@@ -211,6 +212,7 @@ func _build_wall(wall: Dictionary) -> void:
 			"window":
 				var win := HouseWindow.new()
 				win.name = "Window"
+				win.persist_id = _entry_id(String(seg.get("id", "")), "window/%d" % windows.size())
 				win.width = a1 - a0
 				win.wall_height = plan.wall_height
 				win.wall_thickness = plan.wall_thickness
@@ -292,6 +294,12 @@ func stable_id() -> String:
 	return building_id if building_id != "" else String(name)
 
 
+## "<building>/<data id>" (Round 10). Plans without ids (tests, old data)
+## fall back to a build-order id, reported by BuildingPlan.validate().
+func _entry_id(data_id: String, fallback: String) -> String:
+	return "%s/%s" % [stable_id(), data_id if data_id != "" else fallback]
+
+
 ## Pure: building-local transform data for a furniture entry:
 ## {position: Vector3 (floor centre), yaw: float (radians)}.
 static func furniture_placement(entry: Dictionary, p: BuildingPlan) -> Dictionary:
@@ -327,7 +335,7 @@ func _build_furniture() -> void:
 			c.building_type = plan.building_type
 			var idx: int = per_room.get(room_type, 0)
 			per_room[room_type] = idx + 1
-			c.persist_id = "%s/%s/%d" % [stable_id(), room_type, idx]
+			c.persist_id = _entry_id(String(entry.get("id", "")), "%s/%d" % [room_type, idx])
 			c.display_name = String(spec.name) if String(spec.name) != "" else LootContainer.default_name(ctype)
 			c.prompt_height = minf((spec.size as Vector3).y, 1.1)
 			c.size = spec.size
@@ -349,7 +357,7 @@ func _build_furniture() -> void:
 		body.rotation.y = place.yaw
 		body.add_to_group(&"furniture")
 		body.set_meta(&"furniture_type", type)
-		_add_furniture_work(body, spec)
+		_add_furniture_work(body, spec, _entry_id(String(entry.get("id", "")), "furniture/%d" % furniture.size()))
 		holder.add_child(body, true)
 		furniture.append(body)
 
@@ -358,7 +366,7 @@ func _build_furniture() -> void:
 ## block_health, disassemble) get a FurnitureWork child: "Block door",
 ## "Disassemble". Only interactive bodies (containers, beds, sofas) — the
 ## actions ride on their Interactable.
-func _add_furniture_work(body: StaticBody3D, spec: Dictionary) -> void:
+func _add_furniture_work(body: StaticBody3D, spec: Dictionary, entry_persist_id: String = "") -> void:
 	var movable := bool(spec.get("movable", false))
 	var dis: Dictionary = spec.get("disassemble", {})
 	if not movable and dis.is_empty():
@@ -367,6 +375,8 @@ func _add_furniture_work(body: StaticBody3D, spec: Dictionary) -> void:
 		return
 	var fw := FurnitureWork.new()
 	fw.name = FurnitureWork.NODE_NAME
+	# Round 10: the save id comes from the plan entry's "id" (data).
+	fw.persist_id = entry_persist_id + "/furniture" if entry_persist_id != "" else ""
 	fw.display_name = String(spec.name) if String(spec.name) != "" else "Furniture"
 	fw.size = spec.size
 	fw.movable = movable

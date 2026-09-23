@@ -26,7 +26,8 @@ const FILE_SECONDS := {
 	"test_combat_scene.gd": 170.0, "test_survival_scene.gd": 88.0, "test_zombie_scene.gd": 72.0,
 	"test_player_scene.gd": 58.0, "test_sound_scene.gd": 48.0, "test_inventory_scene.gd": 38.0,
 	"test_loot_scene.gd": 36.0, "test_house_scene.gd": 32.0, "test_models_scene.gd": 18.0, "test_barricade_scene.gd": 105.0,
-	"test_inventory_perf.gd": 3.0,
+	"test_inventory_perf.gd": 3.0, "test_acceptance.gd": 75.0,
+	"test_unstaged_1337.gd": 180.0, "test_unstaged_7.gd": 190.0, "test_unstaged_99.gd": 220.0, "test_save_scene.gd": 60.0,
 }
 const DEFAULT_FILE_SECONDS := 30.0
 

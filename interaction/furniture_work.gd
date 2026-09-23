@@ -49,6 +49,8 @@ const CHARACTER_MASK := (1 << 1) | (1 << 2)
 @export var xp: float = 15.0
 
 var body: CollisionObject3D
+## Round 10: stable save id ("HouseA/furniture/3"), set by HouseBlockout.
+var persist_id: String = ""
 ## The door this piece is pushed against (null when not blocking).
 var blocking_door: Node3D = null
 var health: float = 200.0
@@ -62,6 +64,8 @@ var _world_layer: int = 1
 func _ready() -> void:
 	body = get_parent() as CollisionObject3D
 	add_to_group(Interactable.GROUP_EXTENSION)
+	if persist_id != "":
+		add_to_group(Saveable.GROUP)
 	health = block_health
 	if body != null:
 		home = body.global_transform
@@ -124,6 +128,7 @@ func destroy(source: Node = null) -> void:
 	SoundManager.emit_sound(&"wood_break", at, source)
 	Splinters.spawn(body.get_parent(), at, Vector3.ZERO, Color(0.5, 0.36, 0.22))
 	EventBus.furniture_destroyed.emit(body, source)
+	WorldConfig.record_destroyed(self)
 	body.collision_layer = 0  # out of the re-bake right away
 	body.queue_free()
 	NavBaker.request_rebake_in(get_tree())
@@ -358,6 +363,7 @@ func _finish_disassemble(actor: Node) -> void:
 	_drop_contents()
 	Splinters.spawn(body.get_parent(), body.global_position, Vector3.ZERO, Color(0.5, 0.36, 0.22))
 	EventBus.furniture_destroyed.emit(body, actor)
+	WorldConfig.record_destroyed(self)
 	body.collision_layer = 0
 	body.queue_free()
 	NavBaker.request_rebake_in(get_tree())
@@ -386,3 +392,55 @@ func _drop_contents() -> void:
 		host.add_child(w)
 		w.global_position = body.global_position + Vector3(0.25 * cos(i * 1.3), 0.02, 0.25 * sin(i * 1.3))
 		i += 1
+
+
+# --- Save (Round 10) ------------------------------------------------------------------
+
+## {blocking: door persist_id or "", health}. A destroyed piece is simply
+## absent from the save (remove_for_load).
+func save_state() -> Dictionary:
+	var door_id := ""
+	if is_blocking():
+		door_id = String(blocking_door.get(&"persist_id"))
+	return {"kind": "furniture", "blocking": door_id, "health": health}
+
+
+## Silent restore: pushed back in front of its door (same transform and
+## layers as _finish_block) without the noise / events.
+func load_state(d: Dictionary) -> void:
+	if body == null:
+		return
+	if is_blocking():
+		_release_door()
+		body.global_transform = home
+	health = clampf(float(d.get("health", block_health)), 0.0, block_health)
+	var door_id := String(d.get("blocking", ""))
+	if door_id == "":
+		return
+	var door := SaveManager.find_saveable(door_id) as Door
+	if door == null:
+		push_warning("FurnitureWork %s: saved door '%s' not found" % [persist_id, door_id])
+		return
+	home = body.global_transform
+	body.global_transform = block_transform(door)
+	blocking_door = door
+	door.blocker = body
+	_world_layer = body.collision_layer & 1
+	body.collision_layer = (body.collision_layer & ~1) | (1 << BARRICADE_LAYER_BIT)
+	add_to_group(GROUP_BREAKABLE)
+
+
+## The piece was destroyed / taken apart in the saved world: gone, with
+## no drops (its contents were saved as world items) and no noise.
+func remove_for_load() -> void:
+	if body == null or body.is_queued_for_deletion():
+		return
+	_release_door()
+	WorldConfig.record_destroyed(self)
+	if body is LootContainer:
+		(body as LootContainer).inventory.clear()
+		(body as LootContainer).searched = true
+	body.collision_layer = 0
+	body.remove_from_group(Saveable.GROUP)
+	remove_from_group(Saveable.GROUP)
+	body.queue_free()

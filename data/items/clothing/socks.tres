@@ -13,3 +13,5 @@ max_stack = 5
 color = Color(0.9, 0.9, 0.85, 1)
 world_size = Vector3(0.12, 0.02, 0.08)
 tags = Array[StringName]([&"feet"])
+tear_into = &"rag"
+tear_count = 1

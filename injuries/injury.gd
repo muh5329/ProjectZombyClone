@@ -77,6 +77,38 @@ func to_dict() -> Dictionary:
 	}
 
 
+## Full state for the save (to_dict() is the UI summary). INF timers are
+## stored as -1 (JSON has no infinity).
+func save_dict() -> Dictionary:
+	return {
+		"region": String(region_id()), "type": String(type_id()),
+		"bleeding": bleeding, "bleed_left": bleed_left if is_finite(bleed_left) else -1.0,
+		"heal_left": heal_left, "heal_total": heal_total, "bandaged": bandaged,
+		"bandage_quality": bandage_quality, "rebleed_left": rebleed_left,
+		"infected": infected, "age": age,
+	}
+
+
+## Rebuild from save_dict(); null for an unknown region / type.
+static func from_save(d: Dictionary) -> Injury:
+	var r := region_from_id(StringName(String(d.get("region", ""))))
+	var t := type_from_id(StringName(String(d.get("type", ""))))
+	if r < 0 or t < 0:
+		return null
+	var inj := Injury.new(r, t)
+	inj.bleeding = bool(d.get("bleeding", false))
+	var bl := float(d.get("bleed_left", -1.0))
+	inj.bleed_left = bl if bl >= 0.0 else INF
+	inj.heal_total = maxf(float(d.get("heal_total", 60.0)), 0.1)
+	inj.heal_left = clampf(float(d.get("heal_left", inj.heal_total)), 0.0, inj.heal_total)
+	inj.bandaged = bool(d.get("bandaged", false))
+	inj.bandage_quality = float(d.get("bandage_quality", 1.0))
+	inj.rebleed_left = float(d.get("rebleed_left", -1.0))
+	inj.infected = bool(d.get("infected", false))
+	inj.age = maxf(float(d.get("age", 0.0)), 0.0)
+	return inj
+
+
 static func is_leg_region(r: int) -> bool:
 	return r == Region.LEFT_LEG or r == Region.RIGHT_LEG
 

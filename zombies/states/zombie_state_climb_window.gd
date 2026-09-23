@@ -49,4 +49,8 @@ func update(_delta: float) -> StringName:
 		return &""
 	ai.reset_path()
 	EventBus.window_climbed.emit(zombie, window, false)
+	if profile().window_land_down_seconds > 0.0:
+		# PZ: it tumbles in over the sill and lies there for a moment.
+		ai.down_seconds = profile().window_land_down_seconds
+		return ZombieAI.S_KNOCKED_DOWN
 	return ai.after_obstacle_state()

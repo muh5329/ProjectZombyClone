@@ -180,3 +180,23 @@ func _process(delta: float) -> void:
 	zoom_index = clampi(zoom_index, 0, levels.size() - 1)
 	_current_zoom = lerpf(_current_zoom, levels[zoom_index], clampf(zoom_lerp_speed * delta, 0.0, 1.0))
 	_apply_zoom()
+
+
+# --- Save (Round 10) ------------------------------------------------------------------
+
+func view_state() -> Dictionary:
+	return {"yaw_index": yaw_index, "zoom_index": zoom_index}
+
+
+## Snap to a saved heading / zoom and onto the target (no easing), so a
+## loaded game opens on the view it was saved with.
+func restore_view(d: Dictionary) -> void:
+	var count := int(round(360.0 / yaw_step_degrees))
+	yaw_index = posmod(int(d.get("yaw_index", yaw_index)), count)
+	zoom_index = clampi(int(d.get("zoom_index", zoom_index)), 0, _levels().size() - 1)
+	_current_yaw = wrapf(deg_to_rad(target_yaw_degrees()), -PI, PI)
+	rotation.y = _current_yaw
+	_current_zoom = _levels()[zoom_index]
+	_apply_zoom()
+	if is_instance_valid(target) and target.is_inside_tree():
+		global_position = target.global_position + Vector3.UP * target_height_offset

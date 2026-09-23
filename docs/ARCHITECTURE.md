@@ -16,8 +16,9 @@
   `EventBus` autoload. Emitters never know their listeners.
 - **Autoloads stay thin.** `GameManager` holds only the player reference and
   debug flags. `TimeManager` (R7) owns world time; `SoundManager` (R8)
-  owns gameplay sound propagation; future managers (`SaveManager`,
-  `WorldManager`) are separate autoloads with single responsibilities.
+  owns gameplay sound propagation; `SaveManager` (R10) owns save / load
+  orchestration; future managers (`WorldManager`) are separate autoloads
+  with single responsibilities.
 - **Data-driven content** (from Round 5 on): items, loot tables, recipes,
   zombies as `Resource` files under `data/`.
 
@@ -26,6 +27,8 @@
 ```
 core/         event_bus.gd, game_manager.gd             (autoloads)
               time_manager.gd (autoload TimeManager), game_clock.gd (GameClock) (R7)
+              save_manager.gd (autoload SaveManager), save_file.gd (SaveFile),
+              save_schema.gd (SaveSchema), saveable.gd (Saveable) (R10)
 audio/        sound_manager.gd (autoload SoundManager), sound_event.gd (SoundEvent),
               sound_category.gd (SoundCategory), sound_category_table.gd (SoundCategoryTable),
               sound_math.gd (SoundMath), spatial_hash.gd (SpatialHash) (R8)
@@ -65,14 +68,16 @@ effects/      blood_decals.gd (R4), noise_rings.gd (NoiseRings) + noise_ring.gds
 zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
               zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3; climb_window R9)
 world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5),
-              entry_planner.gd (EntryPlanner) (R9),
+              entry_planner.gd (EntryPlanner) (R9), world_snapshot.gd (WorldSnapshot) (R10),
               day_night_lighting.gd (DayNightLighting) (R7)
 ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader, hotbar.gd (HotbarWidget, R6),
               clock_widget.gd (ClockWidget), moodle_list.gd (MoodleList) (R7),
               noise_meter.gd (NoiseMeter) (R8)
+ui/menus/     main_menu.gd/.tscn (MainMenu, the main scene), pause_menu.gd (PauseMenu),
+              slot_browser.gd (SlotBrowser), menu_style.gd (MenuStyle) (R10)
 ui/inventory/ loot_window.gd/.tscn (LootWindow controller), item_list_panel.gd (ItemListPanel),
               item_context_menu.gd (ItemContextMenu), inventory_drag_drop.gd (InventoryDragDrop) (R5/R6)
-maps/         test_ground.tscn                           (main scene)
+maps/         test_ground.tscn                           (the game map; New game loads it)
 data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tres, zombies/zombie_basic.tres,
               items/<category>/*.tres (41 items, R5), loot/*.tres + loot/garage/*.tres (R5),
               combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4),
@@ -266,6 +271,61 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
   fixture). `SoundManager.obstacle_attenuation(from, to, skip_fixture)`
   multiplies each hit fixture's barricade factor once;
   `barricade_fixture_of(collider)`; openings carry `factor`.
+
+### Save / load (R10)
+- `Saveable` (core/, statics): the contract — group `saveable`,
+  `persist_id`, `save_state()` (carries a `kind`) / `load_state(d)`,
+  optional `remove_for_load()`; `collect(tree, root)`; JSON helpers
+  `vec3` / `to_vec3`, `xform` / `to_xform`, `finite_or`. Implemented by
+  LootContainer (not corpses), Door, HouseWindow (`WallFixture.persist_id`),
+  FurnitureWork. Ids are `<building>/<plan entry id>` from BuildingPlan
+  data (`BuildingPlan.id_problems()` checks presence / uniqueness;
+  `HouseBlockout._entry_id` falls back to build order only for id-less
+  test plans). Destroyed statics: `WorldConfig.destroyed_ids` /
+  `mark_destroyed` / static `record_destroyed(node)`.
+- `SaveSchema` (core/): `check(data) -> ""|"Corrupt save (path: why)"`,
+  the full typed check of a snapshot (phase 1 of every load).
+- `SaveFile` (core/, statics): `VERSION`, `migrations`, `root` (ROOT /
+  TEST_ROOT), `is_valid_slot`, `encode_slot` / `decode_slot` (injective),
+  `slot_dir` / `world_path` / `meta_path`, `allowed_maps` / `allowed_map`,
+  `to_json`, `parse`, `migrate`, `validate` (= SaveSchema.check),
+  `decode`, `write_atomic`, `read_text`, `list_slots` (typed meta),
+  `meta_num` / `meta_str` / `meta_dict`, `delete_slot`,
+  `first_difference`.
+- `WorldSnapshot` (world/, statics): `capture(map)`, `summary`,
+  `apply_static(map, data, index)` (statics + destroyed list, before the
+  bake), `apply_dynamic(map, data)` (synchronous; `index_items` /
+  `find_item(uid)` for hotbar ghosts), `player_of`, `spawners_of`.
+- `SaveManager` (autoload, PROCESS_MODE_ALWAYS): `save_game(slot, map)`,
+  `load_game` / `load_data` (two-phase coroutines), `read_slot`,
+  `has_slot`, `list_slots`, `delete_slot`, `save_block_reason`,
+  `autosave_block_reason`, `unsaved_minutes`, `request_load`,
+  `request_quit_to_menu`, `quit_to_menu`, `new_game` /
+  `instantiate_new_game(map, seed)`, `confirm(text, on_yes)` /
+  `answer(yes)` / `is_confirming` / `confirm_text`, `show_loading` /
+  `is_loading_shown` (its own CanvasLayer "SaveOverlay", layer 50),
+  `find_saveable`, `current_map`, F9 / F10 (`quick_slot`), autosave.
+- Records: `Player.save_state / load_state`, `Zombie.save_record /
+  apply_record`, `ZombieSpawner.save_state / load_state / restore_zombie`
+  (+ `near_count` / `near_center` / `near_radius` /
+  `near_min_player_distance`), `ZombieCorpse.save_record / restore`,
+  `ZombieProfile.registry / by_id / id_of`, `HealthComponent.to_dict /
+  from_dict`, `Injury.save_dict / from_save`, `InjuryComponent.to_dict /
+  from_dict` (+ `restoring`), `BloodDecals.to_dict / from_dict`,
+  `IsometricCamera.view_state / restore_view`, `ItemInstance` uid in
+  `to_dict / from_dict`, `Equipment` hotbar refs `{uid}`,
+  `WorldConfig.prepare_new_game / player_start / starter_items /
+  last_saved_minute`.
+- UI: `PauseMenu` (Resume / Save / Load / Quit; `browser: SlotBrowser`),
+  `MainMenu` (`continue_button`, `browser`), `SlotBrowser` (VBox: `open(mode)`,
+  `save_new`, `ask_overwrite`, `ask_delete`, `load_slot`, `name_edit`,
+  `list_box`, `status`), `MenuStyle` (`slot_text` type-safe). HUD:
+  `game_notice`, `game_loaded` (resync).
+- Items: `ItemData.tear_into / tear_count`, `ItemActions.TEAR /
+  is_tearable / tear`. Zombies: `ZombieProfile.window_land_down_seconds`,
+  `ZombieAI.down_seconds`, `knock_down(source, seconds)`;
+  `HouseWindow.WINDOW_NAV_LAYER` (links on navigation layer 2; zombie
+  agents 1 + 2).
 
 ### `Building` / `Room` / `BuildingPlan` / `HouseBlockout` (buildings/)
 - `Room` (Node3D): axis-aligned box (`position` = floor centre, `size`);
@@ -511,8 +571,8 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
   (layer 4 only, "Search corpse").
 - `WorldConfig` (world/, node "World" in the map, group `world_config`):
   `world_seed`, `world_age_days`, owns a `WorldState` (persist registry:
-  snapshot/apply by `persist_id`, pending entries for late nodes; Round
-  10 serializes it).
+  snapshot/apply by `persist_id`, pending entries for late nodes; the
+  Round-10 save uses the `saveable` group + WorldSnapshot instead).
 
 ### `LootWindow` (ui/inventory/loot_window.gd, CanvasLayer 2, R5 / R6)
 - R6 split: `ItemListPanel` (one panel: title bar, column header,
@@ -801,6 +861,8 @@ Round 9: `barricade_changed(fixture, planks)`, `barricade_plank_broken(fixture,
 source)`, `furniture_moved(furniture, door)` (door null = moved back),
 `furniture_destroyed(furniture, source)`, `skill_xp_gained(character, skill,
 xp)`, `skill_leveled(character, skill, level)`.
+Round 10: `game_saved(slot)`, `game_loaded(map)`, `game_notice(text,
+seconds)`.
 
 ## Physics layers
 1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders ·
@@ -830,7 +892,7 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `glass_shards`, `noise_rings`, `sound_debug` (R8), `vehicle`, `day_night` (R8.5),
 `navigation_mesh_source_group` (the map root; parsed by NavBaker),
 `barricade`, `splinters`, `interaction_extension` (R9); planks and blocking
-furniture join `breakable` while they block.
+furniture join `breakable` while they block. `saveable`, `pause_menu` (R10).
 
 ## Testing
 
@@ -860,5 +922,19 @@ furniture join `breakable` while they block.
   it refreshes once per second and covers whole catch-up bursts.
 - `scripts/test.sh` fails on any `SCRIPT ERROR` and on any plain
   `ERROR:` line except the audio-device and `ERR_CANT_OPEN` ones.
+- R10: `tests/integration/test_unstaged_{1337,7,99}.gd` play the brief's
+  FINAL ACCEPTANCE TEST unstaged (new game on that world seed, the map's
+  own zombies, no item injection / stat forcing, only time advanced) with
+  the bot in `acceptance_bot.gd` (navmesh walking with the real
+  controller, door opening, PZ tactics: hold behind the smashed window,
+  shout to lure, shove-and-hit, aim-walk backwards vs groups, retreat to
+  the garage doorway; teleports only when stuck, reported);
+  `test_acceptance.gd` is the staged save / load-focused variant (+
+  corrupt / busy / static round trips), `test_save_scene.gd` the critic
+  fixes (tampering, data ids + reordering, ghost hotbar, infection
+  events, autosave rules, menus / confirmations / overlay, new game); `tests/unit/test_save.gd` covers
+  every to_dict / from_dict pair, versioning, corrupt JSON and atomic
+  writes; `tests/perf/perf_save.gd` (`scripts/perf.sh --save`) times
+  save / load with 200 zombies.
 - Integration tests of other systems disable the map's zombie spawner
   (`scene.get_node("Zombies").auto_spawn = false`) in `setup()`.

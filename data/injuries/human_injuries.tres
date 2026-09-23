@@ -36,7 +36,7 @@ max_stamina_penalty = 10.0
 [sub_resource type="Resource" id="Spec_bite"]
 script = ExtResource("2_spec")
 bleed_rate = 0.2
-bleed_seconds = 180.0
+bleed_seconds = 60.0
 pain = 25.0
 heal_seconds = 1200.0
 infection_chance = 1.0

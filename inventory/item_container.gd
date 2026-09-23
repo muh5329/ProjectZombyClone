@@ -422,7 +422,7 @@ func clear() -> void:
 func to_dict() -> Dictionary:
 	var list: Array = []
 	for it in items:
-		var e := {"id": String(it.id()), "count": it.stack, "condition": it.condition}
+		var e := {"id": String(it.id()), "count": it.stack, "condition": it.condition, "uid": it.uid}
 		it._spoil_to_dict(e)
 		if it.contents != null and not it.contents.is_empty():
 			e["contents"] = it.contents.to_dict()
@@ -456,7 +456,12 @@ func from_dict(d: Dictionary) -> void:
 			if fit <= 0:
 				continue
 			inst.stack = fit
-		_insert(inst)
+		# Saved stacks come back exactly as they were (no merging: a split
+		# stack stays split and keeps its uid); oversize ones are split.
+		if inst.stack <= inst.data.max_stack and (inst.data.is_stackable() or inst.stack == 1):
+			_append(inst)
+		else:
+			_insert(inst)
 		_weight_cache = -1.0
 	_touch()
 

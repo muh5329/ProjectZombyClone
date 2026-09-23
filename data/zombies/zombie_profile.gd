@@ -96,6 +96,10 @@ extends Resource
 @export var door_check_distance: float = 1.2
 ## Round 9 — windows / barricades: seconds to climb through a window.
 @export var window_climb_seconds: float = 1.6
+## Round 10 (PZ): a zombie that climbed through a window tumbles in and
+## lies on the floor this long (knocked down: no bites, ×1.5 damage) —
+## what makes holding a window a real defence. 0 = lands on its feet.
+@export var window_land_down_seconds: float = 1.4
 ## A window on the path is "reached" within this distance of its link end.
 @export var window_link_distance: float = 0.9
 ## Facing a barricaded opening, a zombie goes to another entry of the
@@ -174,3 +178,35 @@ extends Resource
 
 func vision_fov_radians() -> float:
 	return deg_to_rad(vision_fov_degrees)
+
+
+# --- Registry (Round 10: saves name profiles by id, never by path) -------------------
+
+const REGISTRY_DIR := "res://data/zombies"
+static var _registry: Dictionary = {}
+
+
+## Profiles shipped in data/zombies, by file name ("zombie_basic").
+static func registry() -> Dictionary:
+	if _registry.is_empty():
+		var da := DirAccess.open(REGISTRY_DIR)
+		if da != null:
+			for f in da.get_files():
+				var fname := f.trim_suffix(".remap")
+				if fname.ends_with(".tres"):
+					var p := load("%s/%s" % [REGISTRY_DIR, fname]) as ZombieProfile
+					if p != null:
+						_registry[fname.get_basename()] = p
+	return _registry
+
+
+static func by_id(id: String) -> ZombieProfile:
+	return registry().get(id) as ZombieProfile
+
+
+## The registry id of [p] ("" for a runtime / duplicated profile).
+static func id_of(p: ZombieProfile) -> String:
+	if p == null or not p.resource_path.begins_with(REGISTRY_DIR + "/"):
+		return ""
+	var id := p.resource_path.get_file().get_basename()
+	return id if registry().has(id) else ""

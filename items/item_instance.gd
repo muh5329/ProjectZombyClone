@@ -230,7 +230,7 @@ func split(n: int) -> ItemInstance:
 
 
 func to_dict() -> Dictionary:
-	var d := {"id": String(id()), "path": data.resource_path if data else "", "condition": condition, "count": stack}
+	var d := {"id": String(id()), "condition": condition, "count": stack, "uid": uid}
 	_spoil_to_dict(d)
 	if contents != null and not contents.is_empty():
 		d["contents"] = contents.to_dict()
@@ -238,22 +238,24 @@ func to_dict() -> Dictionary:
 
 
 ## Rebuild from to_dict() / ItemContainer entries ({id, count, condition,
-## contents?}; the old "stack" key is accepted as a fallback).
-## The id is resolved through ItemDB; the path is a fallback. A bag's
-## "contents" are restored too (nested bags recurse).
+## uid?, contents?}; the old "stack" key is accepted as a fallback).
+## Items resolve through ItemDB ids ONLY (Round 10: nothing from a save is
+## ever load()ed; an old "path" key is ignored). A saved uid is kept (the
+## hotbar / weapon-cycle identity) and the uid counter moves past it. A
+## bag's "contents" are restored too (nested bags recurse).
 static func from_dict(d: Dictionary) -> ItemInstance:
-	var res: ItemData = null
 	var id := StringName(String(d.get("id", "")))
-	if id != &"":
-		res = ItemDB.get_item(id)
-	if res == null and String(d.get("path", "")) != "":
-		res = load(String(d.get("path", "")))
+	var res: ItemData = ItemDB.get_item(id) if id != &"" else null
 	if res == null:
 		return null
 	# "count" everywhere (ItemContainer entries too); "stack" is the
 	# pre-Round-6 key, still read.
 	var n := int(d.get("count", d.get("stack", 1)))
 	var inst := ItemInstance.new(res, int(d.get("condition", -1)), n)
+	var saved_uid: Variant = d.get("uid")
+	if (saved_uid is float or saved_uid is int) and float(saved_uid) >= 1.0 and float(saved_uid) < 1e15:
+		inst.uid = int(saved_uid)
+		_next_uid = maxi(_next_uid, inst.uid + 1)
 	if inst.contents != null and d.has("contents") and d.contents is Dictionary:
 		var cd: Dictionary = (d.contents as Dictionary).duplicate()
 		cd.erase("capacity")  # the data decides the bag's capacity

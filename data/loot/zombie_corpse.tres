@@ -62,6 +62,20 @@ entries = Array[Dictionary]([{
 "max_count": 1,
 "chance": 0.60,
 "rarity": &"common"
+}, {
+"item_id": &"tshirt",
+"weight": 10.0,
+"min_count": 1,
+"max_count": 1,
+"chance": 0.6,
+"rarity": &"common"
+}, {
+"item_id": &"jacket",
+"weight": 4.0,
+"min_count": 1,
+"max_count": 1,
+"chance": 0.5,
+"rarity": &"uncommon"
 }])
 empty_chance = 0.4
 condition_min = 0.3

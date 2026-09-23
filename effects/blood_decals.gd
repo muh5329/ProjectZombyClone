@@ -74,3 +74,27 @@ func _on_character_damaged(character: Node, amount: float, _source: Node, _info:
 
 func _on_blood_spilled(p: Vector3, amount: float) -> void:
 	add_splat(p, amount * 0.5)
+
+
+# --- Save (Round 10, optional, capped) --------------------------------------------------
+
+## The newest [cap] splats, oldest first: 12 floats each (transform).
+func to_dict(cap: int = 64) -> Dictionary:
+	var out: Array = []
+	var n := mini(count, cap)
+	for i in n:
+		var slot := posmod(_next - n + i, max_decals)
+		out.append(Saveable.xform(multimesh.get_instance_transform(slot)))
+	return {"splats": out}
+
+
+func from_dict(d: Dictionary) -> void:
+	count = 0
+	_next = 0
+	for t in d.get("splats", []):
+		if max_decals <= 0:
+			break
+		multimesh.set_instance_transform(_next, Saveable.to_xform(t))
+		_next = (_next + 1) % max_decals
+		count = mini(count + 1, max_decals)
+	multimesh.visible_instance_count = count

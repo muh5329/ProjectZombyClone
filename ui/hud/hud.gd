@@ -123,6 +123,8 @@ func _ready() -> void:
 	EventBus.skill_leveled.connect(_on_skill_leveled)
 	EventBus.sound_emitted.connect(_on_sound_for_notice)
 	EventBus.barricade_plank_broken.connect(_on_plank_broken)
+	EventBus.game_notice.connect(_on_game_notice)
+	EventBus.game_loaded.connect(_on_game_loaded)
 	_build_survival()
 	_build_action_bar()
 	_build_weight_label()
@@ -135,7 +137,7 @@ func _ready() -> void:
 	health_bar.modulate = COL_HEALTH
 	health_label.add_theme_color_override(&"font_color", Color.WHITE)
 	_set_flash(0.0)
-	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 4-7 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · 1-3 hotbar · B bandage · Tab inventory · G drop · Q/R rotate · Wheel zoom · F5-F8 time speed · H shout · F3 debug · F4 sound debug"
+	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 4-7 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · 1-3 hotbar · B bandage · Tab inventory · G drop · Q/R rotate · Wheel zoom · F5-F8 time speed · H shout · F3 debug · F4 sound debug · F9 save · F10 load · Esc menu"
 	aim_label.text = ""
 	_on_weapon_changed(GameManager.player, {"name": "Fists", "max_condition": 0})
 	_refresh_body()
@@ -812,6 +814,33 @@ func _on_plank_broken(fixture: Node, _source: Node) -> void:
 	if p.global_position.distance_to((fixture as Node3D).global_position) <= 12.0:
 		var left := BarricadeComponent.planks_on(fixture)
 		_notice("A plank gave way! (%d left)" % left if left > 0 else "The barricade is down!", 2.0)
+
+
+# --- Save / load (Round 10) ----------------------------------------------------------
+
+func _on_game_notice(text: String, seconds: float) -> void:
+	_notice(text, seconds)
+
+
+## A saved world was applied after this HUD was built: pull everything
+## the events did not already push (stamina, mode, health, body panel).
+func _on_game_loaded(map: Node) -> void:
+	if map != null and not map.is_ancestor_of(self):
+		return
+	_sync_from_player()
+	var p := GameManager.player as Character
+	if p != null:
+		# Percentages are of the BASE max (a lowered cap shows as "max N%").
+		_frac = p.stats.get_value(Character.STAMINA) / maxf(_stamina_base(), 0.001)
+		_stamina_cap = p.stats.get_max(Character.STAMINA) / maxf(_stamina_base(), 0.001)
+		if p.injuries:
+			_infection_stage = p.injuries.infection_stage
+		if p.health:
+			_on_health_changed(p, p.health.health, p.health.max_health)
+		if p.injuries:
+			_on_injuries_changed(p, p.injuries.summary())
+	_refresh_body()
+	_refresh()
 
 
 func _notice(text: String, seconds: float) -> void:

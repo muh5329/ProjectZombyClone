@@ -21,7 +21,7 @@ func exit(_to: StringName) -> void:
 
 
 func update(_delta: float) -> StringName:
-	if time_in_state < profile().knockdown_seconds:
+	if time_in_state < ai.down_seconds:
 		return &""
 	if ai.target_valid() and ai.memory_left > 0.0:
 		return ZombieAI.S_CHASE

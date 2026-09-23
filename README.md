@@ -2,8 +2,9 @@
 
 Isometric 3D survival sandbox in **Godot 4.6 / GDScript**, inspired by the
 systemic gameplay of Project Zomboid. Blockout visuals (primitives), systems
-first. Built through a "gauntlet" of verified rounds; **Rounds 1–9 (+8.5 models) of 10 are
-done and committed.**
+first. Built through a "gauntlet" of verified rounds; **All 10 rounds (+8.5 models) of the first vertical slice are done and
+committed. Next per the brief: a full vertical-slice review before
+expanding the world.**
 
 ## Status at handoff (2026-09-22)
 
@@ -19,9 +20,9 @@ done and committed.**
 | 8 | Sound propagation, attenuation, hearing, moans, noise UI, glass | ✅ done |
 | 8.5 | Procedural people, zombies (48 looks, 31 animations) and 6 vehicle types | ✅ done |
 | 9 | Barricades, furniture blocking, disassembly, carpentry, zombies breaking in | ✅ done |
-| 10 | Save/load of the whole micro-world | ⬜ next |
+| 10 | Save/load of the whole world, menus, natural-play acceptance test (3 seeds) | ✅ done |
 
-- **382 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, `integration-a` ~335 s, `integration-b` ~320 s).
+- **417 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, then `integration-a`/`-b`/`-c`/`-d` ~265–355 s each; run them as separate calls).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,
@@ -29,19 +30,21 @@ done and committed.**
 - Git history: one commit per round; nothing uncommitted.
 
 ## Run the game
-Open `project.godot` in Godot **4.6** and press Play (main scene
-`maps/test_ground.tscn`). Controls: WASD move · Shift sprint · Ctrl sneak ·
+Open `project.godot` in Godot **4.6** and press Play (main scene: the
+title screen `ui/menus/main_menu.tscn` — New game loads
+`maps/test_ground.tscn`; Continue / Load open a save). Controls: WASD move · Shift sprint · Ctrl sneak ·
 Alt walk · E interact · 4-7 pick action · 1-3 hotbar · LMB attack
 (hold to charge) · RMB aim · Space shove · X cycle weapon · B bandage ·
 Tab inventory (right-click items, drag, Ctrl+click split, G drop) · Q/R
-rotate camera · wheel or +/− zoom · F5-F8 (or , .) time speed · H shout · F3 debug · F4 sound debug · R restart after death. Beds: Sleep / Rest, sofa: Rest, sinks: Drink / Fill bottle; right-click food: Eat / Eat half.
+rotate camera · wheel or +/− zoom · F5-F8 (or , .) time speed · H shout · F3 debug · F4 sound debug · R restart after death · F9 quick-save ·
+F10 quick-load · Esc pause menu (Save / Load / Quit). Beds: Sleep / Rest, sofa: Rest, sinks: Drink / Fill bottle; right-click food: Eat / Eat half.
 
 ## Run the tests
 ```
 GODOT=/path/to/godot scripts/test.sh                 # all (unit + integration)
 GODOT=/path/to/godot scripts/test.sh unit
-GODOT=/path/to/godot scripts/test.sh integration-a       # half of the integration files
-GODOT=/path/to/godot scripts/test.sh integration-b       # the other half (--shard=K/N also works)
+GODOT=/path/to/godot scripts/test.sh integration-a       # a quarter of the integration files
+GODOT=/path/to/godot scripts/test.sh integration-b       # … -c, -d: the other quarters (--shard=K/N also works)
 GODOT=/path/to/godot scripts/test.sh --filter=zombie
 GODOT=/path/to/godot scripts/screenshots.sh          # real-input gameplay run + PNGs
 GODOT=/path/to/godot scripts/perf.sh                 # 200-zombie benchmark

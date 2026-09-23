@@ -1061,10 +1061,117 @@ plank.
   tool crate; a box of nails (10 %, "Open box" → 50 nails); hammers /
   crowbars / saws in the tool crate.
 
+## Save / load ✅ (Round 10)
+
+"Never serialize entire scenes blindly": the world is saved as DATA and
+loaded onto a freshly instanced map.
+
+- **Files**: `<root>/<encoded slot>/world.json` (the world; sorted keys,
+  records sorted by id / item uid, no timestamp) + `meta.json` (version,
+  unix timestamp + datetime, map, game minutes / clock / date / day,
+  player summary). Root `user://saves`; the test runner, screenshot run
+  and perf probes write to `user://test_saves` (SaveManager switches when
+  one of them is the main loop). Slot names are 1–48 characters ("" is
+  refused, never mapped to a default) and encoded injectively into
+  directory names: letters, digits and "-" stay, every other byte
+  becomes `_xx` ("a b" → `a_20b`, "a_20b" → `a_5f20b`). Slots: `quick`
+  (F9 / F10), named ones from the menus, `autosave`. Writes are atomic
+  (`<file>.tmp` → flush → old file to `.old` → rename → `.old` removed; a
+  read falls back to `.old`). "Identical" saves are compared as data
+  (`SaveFile.first_difference`, 1e-9 relative): Godot's JSON number parser
+  can change the last bit of a double.
+- **Two-phase load**: phase 1 touches nothing — read, parse, migrate
+  (`version: 1`, `SaveFile.migrations` hook), then `SaveSchema.check`
+  type-checks EVERY field (finite in-range numbers, bools, strings,
+  dicts / lists, enum values, item ids known to ItemDB, count 1..max_stack,
+  condition ≤ max, contents only on bags, nesting ≤ 8, zombie profile ids
+  from the `ZombieProfile` registry, wound regions / types, hotbar refs,
+  blood transforms…) and the saved map is instanced to check it is a game
+  map (has a WorldConfig). Any failure → "Corrupt save (<path>: why)",
+  HUD notice, running game untouched. Phase 2 swaps the maps under a
+  "Loading…" overlay. **Nothing named by a save is ever `load()`ed**: items
+  by ItemDB id (the old `path` key is ignored), profiles by registry id,
+  the map only from the `res://maps/*.tscn` allow-list.
+- **Saveable contract** (`Saveable`, group `saveable`): stable `persist_id`
+  + `save_state()` (with a `kind`: container / door / window / furniture)
+  / `load_state(d)` (silent) + optional `remove_for_load()`. **Ids come
+  from data**: every room, opening and furniture entry of a BuildingPlan
+  has an explicit unique `id` (validated), so persist ids are
+  `<building>/<id>` (`HouseA/front_door`, `HouseA/kitchen/2`,
+  `HouseA/sofa/furniture`); reordering a plan never re-maps a save.
+  Destroyed statics (furniture smashed / taken apart) are recorded in
+  `WorldConfig.destroyed_ids` and saved as an explicit `destroyed` list —
+  only those are removed on load; an object merely missing from a save
+  keeps its default state; an unknown saved id → warning, skipped.
+- **Dynamic records**: living zombies (spawn id, look seed, position,
+  facing, health, home, calm state or "investigate the last known target",
+  profile id), corpses (id, look seed, position, yaw, pose, container),
+  dropped WorldItems, spawner counter + 64-bit rng state (string), the
+  newest 64 blood splats, camera heading + zoom. **Items keep their uid**
+  (weapon-cycle order; saved stacks come back unmerged), so hotbar slots
+  are saved by uid — a slot pointing at an item left in a container or on
+  the floor comes back pointing at that very item.
+- **Player**: position, facing, health, every stat, wounds with all timers
+  (INF → −1), needs, carpentry XP, inventory + equipment + hotbar. Load
+  applies wounds → needs → stats → health; infection / wound events are
+  suppressed while restoring (no "You feel feverish" for a state you
+  already had). **Saving is refused while busy** (eating, bandaging,
+  sleeping…) or dead.
+- **Load flow**: phase 1 → instance the map (spawners off, NavBaker not
+  baking) → remove the old map (TimeManager reset, SoundManager cleared)
+  → one frame → static state by id + destroyed list → bake the navmesh →
+  time, items, corpses, zombies, player (hotbar ghosts resolved through
+  an item-uid index), blood, camera in one synchronous step →
+  `game_loaded` (HUD resync). A save right after a load equals the loaded one.
+- **UX**: F9 quick-save; F10 quick-load and "Quit to menu" ask
+  "Unsaved progress will be lost…" when the last save / load / start is
+  more than 2 game minutes old (`SaveManager.confirm`, a dialog on the
+  SaveManager's own overlay layer that pauses the game). Esc pause menu:
+  Resume / Save (named slots: type a name → "Save as new", or Overwrite
+  an existing one — confirmed) / Load (slot list with day, clock, health,
+  real date; Load / Delete — confirmed) / Quit to menu. Title screen
+  (main scene): New game / Continue (newest) / Load (same browser) /
+  Quit. `meta.json` fields are read type-safely (`SaveFile.meta_num /
+  meta_str / meta_dict`): a tampered meta shows "?" instead of crashing.
+  Autosave (slot `autosave`) after a RESTED wake-up (any wake reason →
+  none) and every 30 real minutes, never with a zombie chasing or within
+  15 m, only for the running game.
+- **New game** (`SaveManager.new_game` / `instantiate_new_game(map,
+  seed)`, `WorldConfig.prepare_new_game`): the player starts at the map's
+  `PlayerStart` marker in House A's living room with the starter kit (a
+  spare t-shirt); a seed reseeds the loot and the zombie spawner.
+- **Numbers** (2-core dev box, headless): 200 living zombies + 20 corpses
+  ≈ 67 KB, save ≈ 5 ms, load ≈ 0.4 s incl. the ≈ 150 ms navmesh bake;
+  3000 dropped items: save ≈ 50 ms, load ≈ 0.7 s (`scripts/perf.sh
+  --save`; budgets 200 ms / 3 s and 200 ms / 2 s).
+
+### Round-10 natural-play fixes (the brief's loop, unstaged)
+- **New game spawns inside House A** (above).
+- **Dressings are always obtainable**: "Tear into rags" (`ItemActions.TEAR`,
+  `ItemData.tear_into` / `tear_count`: t-shirt → 3 rags, jacket → 4,
+  socks → 1) on the spare t-shirt and on clothes looted from corpses
+  (the corpse table now carries t-shirts / jackets); the bathroom cabinet
+  table yields a bandage or rag on ≈ 92 % of seeds (2–4 rolls, rag /
+  bandage weights up, 3 % empty).
+- **A hammer is always found**: a map-placed hammer lies on the garage
+  workbench (like PZ's map-placed items).
+- **Zombies within earshot**: 2 of the spawner's 10 start in a street
+  zone 8–13 m south of House A (`near_count` / `near_center` /
+  `near_radius`), the other 8 at least 25 m from the start (a first
+  breather, PZ-like); a smashed window is heard.
+- **Windows as a defence** (PZ): a zombie that climbs through a window
+  tumbles in and lies on the floor for `window_land_down_seconds` (1.4 s:
+  no bites, ×1.5 damage). Window navigation links are on navigation layer
+  2 (zombie agents use 1 + 2): survivors' path queries on layer 1 never
+  route through a window.
+- **Bites bleed 60 s** (was 180 s: 36 hp of bleeding per bite on top of
+  the 12 hp bite made every multi-zombie fight fatal once dressings ran
+  out).
+
 ## Planned (see MASTER_PLAN for order)
 
 Sound propagation ✅ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
 Loot tables ✅ · Needs ✅ (hunger / thirst / fatigue / sickness; temperature, wetness, stress ⬜) ·
-Barricades ✅ (R9: planks, furniture, carpentry) · Save/load ⬜ · Crafting ⬜ · World time ✅ · Vehicles 🔶 (parked, R8.5) · Character models ✅ (R8.5) ·
+Barricades ✅ (R9: planks, furniture, carpentry) · Save/load ✅ (R10) · Crafting ⬜ · World time ✅ · Vehicles 🔶 (parked, R8.5) · Character models ✅ (R8.5) ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·
 World streaming ⬜ · NPC survivors ⬜

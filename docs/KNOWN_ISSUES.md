@@ -5,6 +5,41 @@ that fixed them.
 
 ## Open
 
+- (R10, integrator) Hotbar ghost entries survive save/load but their icons render as empty slots after load (tests/output/36_after_load.png slots 1 and 3).
+
+000000000. **Round-10 save / load gaps** (ordered):
+   - **The unstaged acceptance playthroughs are stochastic**: the bot
+     (acceptance_bot.gd) plays real combat (wound rolls use randomized
+     rngs); with the tactics it uses (hold behind the smashed window,
+     shout to lure, shove-and-hit, aim-walk backwards, garage doorway)
+     seeds 1337 / 7 / 99 passed every run after the fixes, but a very
+     unlucky fight can still kill the survivor. Each takes 150–220 s.
+   - **Zombie AI state is simplified on save**: idle / wander / investigate
+     (+ target) are kept; chase, attack, banging, stunned, knocked down
+     and climbing come back as "investigate the last known position". AI
+     rngs restart from the seed.
+   - **Saving is refused while busy** (eating, bandaging, searching,
+     climbing, hammering, sleeping); dead players cannot save. The wake
+     autosave retries 30 frames, then gives up.
+   - **A corpse lying in a window frame steals the interaction target**
+     (a zombie killed mid-climb): the window's actions are still there via
+     its own Interactable, but the player's E prompt shows the corpse.
+     Zombies can also get stuck against a wall corner next to a window,
+     out of anyone's reach (neither side can hit the other).
+   - **Transient bits are not saved**: sounds in flight, noise rings,
+     splinters, running TimedWork, the needs' sub-minute remainder, the
+     injury tick accumulator, only the newest 64 blood splats.
+   - **"Identical" saves are identical data, not bytes** (Godot's JSON
+     number parser is not correctly rounded; compared with a 1e-9
+     relative tolerance).
+   - **One map, one file** (~67 KB with 200 zombies); streaming will need
+     per-chunk records and a population sim.
+   - **Menus are minimal**: no save thumbnails, no slot rename, the
+     autosave overwrites a single slot; the "Loading…" curtain is a plain
+     panel (no progress).
+   - **`WorldState` (Round 5 registry) is redundant** with the `saveable`
+     group; kept for the older tests.
+
 00000000. **Round-9 barricade / carpentry gaps** (ordered):
    - **Doors have no navigation cost**: doorways are baked walkable, so
      a zombie's path always prefers a door, barricaded or not; only when it
@@ -33,10 +68,6 @@ that fixed them.
      furniture ids but no data, welding or sheet items yet. Carpentry is
      the only real skill (SkillComponent); no skill UI panel beyond the
      level-up notice.
-   - **Save**: `BarricadeComponent.to_dict/from_dict`,
-     `SkillComponent.to_dict/from_dict` exist but nothing registers them
-     with `WorldState` yet (Round 10); moved / destroyed furniture is not
-     persisted either.
 
 0000000. **Round-8.5 models / animation / vehicles gaps** (ordered):
    - **Rigid skinning** (one bone per vertex, no weights): elbows,
@@ -141,10 +172,6 @@ that fixed them.
      carried inside the main inventory (or in a container) is a closed,
      full-weight item — no tab for it. Deliberate (keeps every capacity
      invariant), but PZ lets you open any carried bag.
-   - **Dropped items are not persisted**: they are children of the map
-     (they stay for the session), but not registered in `WorldState`;
-     Round 10 must add them (and the player's `carried_to_dict`) to the
-     save.
    - **No attacking while the inventory screen is open** (by design since
      the Round-6 critic); shove (Space) still works.
    - **Clothing is not wearable** yet (t-shirt / jacket / socks have no
@@ -172,8 +199,6 @@ that fixed them.
    - **Furniture blocks windows only by placement** (the plan validator
      checks the room rect, not overlaps with doors / windows / other
      pieces).
-   - **Save / load** only has `to_dict/from_dict` + `WorldState`
-     snapshots; nothing writes them to disk until Round 10.
 00. **Round-4 combat / injury gaps** (ordered):
    - **Knocked-down zombies keep their upright capsule**: only the visual
      lies down, so the player bumps into an invisible standing body over
@@ -273,6 +298,12 @@ that fixed them.
    here).
 
 ## Fixed
+
+- R10: nothing was saved to disk — barricades / skills registered with
+  nothing, moved / destroyed furniture, dropped items and the player's
+  carried items were session-only (R5 / R6 / R9 "not saved until Round
+  10" items): the whole micro-world now saves / loads (SaveManager,
+  WorldSnapshot, the Saveable contract).
 
 - R9 critic: materials / XP spent when the plank could not go on; no walk-
   off / cancel key for hammering (now TimedWork's single cancel path, also

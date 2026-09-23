@@ -10,6 +10,11 @@ extends LootContainer
 
 
 var killer: Node = null
+## The dead zombie's look seed (Round 10: a restored corpse rebuilds the
+## same person from it).
+var look_seed: int = 0
+## Heading it fell with (radians; kept exactly for the save).
+var yaw: float = 0.0
 
 
 func _init() -> void:
@@ -20,6 +25,7 @@ func _init() -> void:
 	prompt_height = 0.4
 	search_label = "Search corpse"
 	search_noise_radius = 0.0
+	static_saveable = false
 	room_type = &""
 	building_type = &""
 
@@ -56,3 +62,39 @@ func take_damage(_amount: float, _source: Node = null, _info: Dictionary = {}) -
 
 func is_dead() -> bool:
 	return true
+
+
+# --- Save (Round 10, WorldSnapshot spawn records) ----------------------------------------
+
+## The corpse as a spawn record: id (keys the pockets' loot seed), look,
+## where it lies, its pose and the container state (searched + contents).
+func save_record() -> Dictionary:
+	var v := get_node_or_null("Visual") as ZombieVisual
+	var pose := "death"
+	if v != null and v.model != null and v.model.current == &"z_knockdown":
+		pose = "knockdown"
+	return {
+		"persist_id": persist_id, "seed": look_seed,
+		"position": Saveable.vec3(global_position), "yaw": yaw,
+		"pose": pose, "container": to_dict(),
+	}
+
+
+## Re-create a corpse from save_record() under [parent]: a fresh
+## ZombieVisual with the same look, snapped to the final pose.
+static func restore(parent: Node, d: Dictionary) -> ZombieCorpse:
+	var c := ZombieCorpse.new()
+	c.persist_id = String(d.get("persist_id", ""))
+	c.look_seed = int(d.get("seed", 0))
+	c.yaw = float(d.get("yaw", 0.0))
+	c.name = "Corpse"
+	parent.add_child(c, true)
+	c.global_transform = Transform3D(Basis(Vector3.UP, c.yaw), Saveable.to_vec3(d.get("position")))
+	var v := ZombieVisual.new()
+	v.name = "Visual"
+	v.seed_override = c.look_seed if c.look_seed != 0 else hash(c.persist_id) | 1
+	c.add_child(v)
+	v.collapse_now(String(d.get("pose", "death")) == "knockdown")
+	if d.has("container"):
+		c.from_dict(d.container)
+	return c

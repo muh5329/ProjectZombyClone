@@ -182,6 +182,14 @@ signal skill_leveled(character: Node, skill: StringName, level: int)
 ## The player entered a Room (or left all rooms: room == null).
 signal player_room_changed(room: Node, building: Node)
 
+# --- Save / load (Round 10) ----------------------------------------------------
+## A slot was written (SaveManager.save_game).
+signal game_saved(slot: String)
+## A saved world finished loading into [map] (UI resyncs from the player).
+signal game_loaded(map: Node)
+## A short player-facing notice ("Game saved", "Corrupt save …").
+signal game_notice(text: String, seconds: float)
+
 # --- World / debug ----------------------------------------------------------
 ## Free-form debug message for the on-screen log (dev only).
 signal debug_message(text: String)

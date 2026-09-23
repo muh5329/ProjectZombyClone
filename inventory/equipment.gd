@@ -467,7 +467,10 @@ func to_dict() -> Dictionary:
 			sd[String(s)] = it.to_dict()
 	var hb: Array = []
 	for i in HOTBAR_SIZE:
-		hb.append(_ref_of(hotbar_item(i)))
+		# By item uid (Round 10), carried or not: a slot pointing at an item
+		# left in a container / on the floor comes back after a load.
+		var it := hotbar.item_at(i)
+		hb.append({"uid": it.uid} if it != null and it.stack > 0 else null)
 	return {"slots": sd, "hotbar": hb}
 
 
@@ -524,6 +527,18 @@ func _resolve_ref(ref: Variant) -> ItemInstance:
 	if not ref is Dictionary:
 		return null
 	var r: Dictionary = ref
+	if r.has("uid"):
+		var uid := int(r.uid) if (r.uid is float or r.uid is int) else -1
+		for c in [main_inventory(), bag_contents()]:
+			if c != null:
+				for it in c.items:
+					if it.uid == uid:
+						return it
+		for s in SLOTS:
+			var e := item_in(s)
+			if e != null and e.uid == uid:
+				return e
+		return WorldSnapshot.find_item(uid)
 	match String(r.get("where", "")):
 		"slot":
 			return item_in(StringName(String(r.get("slot", ""))))

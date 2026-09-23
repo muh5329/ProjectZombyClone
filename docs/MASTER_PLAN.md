@@ -39,7 +39,7 @@ gameplay, and independent verification.
 | 8 | Sound propagation + zombie hearing | **DONE** (2026-09-22, 324 tests) |
 | 8.5 | Character + vehicle models (zombies, survivors, cars; PZ as style reference) | **DONE** (2026-09-23, 351 tests) |
 | 9 | Barricading windows and doors | **DONE** (2026-09-23, 382 tests) |
-| 10 | Saving and restoring the entire micro-world | next |
+| 10 | Saving and restoring the entire micro-world | **DONE** (2026-09-23, 417 tests) |
 
 After Round 10: **STOP** and run the full vertical-slice review + the Final
 Acceptance Test from the brief before expanding the map.

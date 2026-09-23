@@ -49,6 +49,9 @@ var tint: StringName = &""
 var knocked_down: bool = false
 var dead: bool = false
 var model: CharacterModel
+## Look seed when the visual is not under a Zombie (a corpse restored from
+## a save, Round 10); 0 = the parent zombie's ai_seed / the node path.
+var seed_override: int = 0
 var spray: CPUParticles3D
 var _zombie: Zombie
 var _flash_left: float = 0.0
@@ -63,6 +66,8 @@ var _one_shot: StringName = &""
 func _ready() -> void:
 	_zombie = get_parent() as Zombie
 	var seed_value := _zombie.ai_seed if _zombie and _zombie.ai_seed != 0 else hash(String(get_path()))
+	if seed_override != 0:
+		seed_value = seed_override
 	model = CharacterModel.new()
 	model.name = "Model"
 	model.appearance = CharacterAssets.of(get_tree()).zombie_appearance(seed_value)
@@ -324,6 +329,21 @@ func collapse() -> void:
 		model.finish()
 	# Nobody calls animate() any more: finish the fall on our own.
 	set_process(true)
+
+
+## Round 10: a restored corpse lies in its final pose at once (no fall).
+func collapse_now(on_back: bool = false) -> void:
+	lunge = 0.0
+	_flash_left = 0.0
+	dead = true
+	knocked_down = false
+	_one_shot = &""
+	set_tint(&"dead")
+	_aligned = true
+	if model:
+		model.play(&"z_knockdown" if on_back else &"z_death", 0.0, 1.0, true)
+		model.finish()
+	set_process(false)
 
 
 func _process(delta: float) -> void:

@@ -392,6 +392,8 @@ func die(p_killer: Node = null) -> ZombieCorpse:
 	corpse = ZombieCorpse.new()
 	corpse.name = name + "Corpse"
 	corpse.killer = p_killer
+	corpse.look_seed = ai_seed
+	corpse.yaw = visual.rotation.y
 	# Stable id: the pockets' loot is seeded from it (and it keys the save).
 	corpse.persist_id = "corpse/%s" % (spawn_id if spawn_id != "" else "%s@%d" % [name, get_instance_id()])
 	var parent := get_parent()
@@ -410,3 +412,59 @@ func die(p_killer: Node = null) -> ZombieCorpse:
 ## Current AI state id (&"" before the AI is ready).
 func state() -> StringName:
 	return ai.state_id() if ai else &""
+
+
+# --- Save (Round 10, WorldSnapshot spawn records) ----------------------------------------
+
+## A living zombie as a spawn record: identity (spawn id + look seed),
+## where it stands / faces, health, home and a SAFE state — calm states
+## are kept; anything hostile (chase, attack, banging, stunned, knocked
+## down, climbing) becomes "investigate the last known target position".
+func save_record() -> Dictionary:
+	var pos := global_position
+	if is_climbing():
+		pos = _climb_to  # never saved inside a wall
+	var s := state()
+	var target_pos: Variant = null
+	var saved_state := "idle"
+	match s:
+		ZombieAI.S_IDLE:
+			saved_state = "idle"
+		ZombieAI.S_WANDER:
+			saved_state = "wander"
+		ZombieAI.S_INVESTIGATE, ZombieAI.S_SEARCH:
+			saved_state = "investigate"
+			target_pos = Saveable.vec3(ai.investigate_position)
+		_:
+			if ai.last_known_position != Vector3.ZERO:
+				saved_state = "investigate"
+				target_pos = Saveable.vec3(ai.last_known_position)
+			elif ai.investigate_position != Vector3.ZERO:
+				saved_state = "investigate"
+				target_pos = Saveable.vec3(ai.investigate_position)
+	var d := {
+		"spawn_id": spawn_id, "seed": ai_seed,
+		"position": Saveable.vec3(pos), "facing": movement.facing,
+		"health": health(), "home": Saveable.vec3(home_position),
+		"state": saved_state, "target": target_pos,
+	}
+	var pid := ZombieProfile.id_of(profile)
+	if pid != "":
+		d["profile"] = pid
+	return d
+
+
+## Apply a save_record() to a zombie that has just entered the tree
+## (ZombieSpawner.restore_zombie sets seed / spawn id / position first).
+func apply_record(d: Dictionary) -> void:
+	stats.set_value(HEALTH, clampf(float(d.get("health", profile.health)), 1.0, profile.health))
+	home_position = Saveable.to_vec3(d.get("home"), global_position)
+	snap_facing(float(d.get("facing", 0.0)))
+	match String(d.get("state", "idle")):
+		"investigate":
+			var t: Variant = d.get("target")
+			if t != null:
+				ai.investigate_quietly(Saveable.to_vec3(t))
+				ai.change_to(ZombieAI.S_INVESTIGATE)
+		"wander":
+			ai.change_to(ZombieAI.S_WANDER)

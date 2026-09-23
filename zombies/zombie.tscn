@@ -42,5 +42,6 @@ script = ExtResource("5_ai")
 path_desired_distance = 0.5
 target_desired_distance = 0.5
 path_max_distance = 3.0
+navigation_layers = 3
 radius = 0.3
 height = 1.7

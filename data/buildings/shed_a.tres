@@ -16,6 +16,7 @@ interior_wall_color = Color(0.6, 0.6, 0.6, 1)
 floor_color = Color(0.4, 0.4, 0.42, 1)
 roof_color = Color(0.3, 0.32, 0.35, 1)
 rooms = Array[Dictionary]([{
+"id": "garage",
 "name": "Garage",
 "room_type": &"garage",
 "rect": Rect2(0, 0, 4, 3)
@@ -24,6 +25,7 @@ walls = Array[Dictionary]([{
 "from": Vector2(0, 3),
 "openings": [{
 "at": 2.0,
+"id": "door",
 "type": "door"
 }],
 "outward": Vector2(0, 1),
@@ -36,6 +38,7 @@ walls = Array[Dictionary]([{
 "from": Vector2(0, 0),
 "openings": [{
 "at": 1.5,
+"id": "window_w",
 "type": "window",
 "width": 0.8
 }],
@@ -47,16 +50,19 @@ walls = Array[Dictionary]([{
 "to": Vector2(4, 3)
 }])
 furniture = Array[Dictionary]([{
+"id": "garage/0",
 "type": &"tool_crate",
 "room": "Garage",
 "position": Vector2(0.65, 0.45),
 "rotation": 0.0
 }, {
+"id": "workbench",
 "type": &"workbench",
 "room": "Garage",
 "position": Vector2(2.6, 0.45),
 "rotation": 0.0
 }, {
+"id": "garage/1",
 "type": &"shelf",
 "room": "Garage",
 "position": Vector2(3.7, 1.8),

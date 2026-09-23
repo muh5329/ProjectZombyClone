@@ -16,18 +16,22 @@ interior_wall_color = Color(0.7, 0.68, 0.62, 1)
 floor_color = Color(0.45, 0.36, 0.28, 1)
 roof_color = Color(0.36, 0.3, 0.3, 1)
 rooms = Array[Dictionary]([{
+"id": "bedroom",
 "name": "Bedroom",
 "room_type": &"bedroom",
 "rect": Rect2(0, 0, 4, 4)
 }, {
+"id": "bathroom",
 "name": "Bathroom",
 "room_type": &"bathroom",
 "rect": Rect2(4, 0, 2.5, 4)
 }, {
+"id": "kitchen",
 "name": "Kitchen",
 "room_type": &"kitchen",
 "rect": Rect2(6.5, 0, 3.5, 4)
 }, {
+"id": "living_room",
 "name": "Living Room",
 "room_type": &"living_room",
 "rect": Rect2(0, 4, 10, 4)
@@ -36,9 +40,11 @@ walls = Array[Dictionary]([{
 "from": Vector2(0, 8),
 "openings": [{
 "at": 3.0,
+"id": "front_door",
 "type": "door"
 }, {
 "at": 7.0,
+"id": "window_living_s",
 "type": "window"
 }],
 "outward": Vector2(0, 1),
@@ -47,13 +53,16 @@ walls = Array[Dictionary]([{
 "from": Vector2(0, 0),
 "openings": [{
 "at": 2.0,
+"id": "window_bedroom_n",
 "type": "window"
 }, {
 "at": 5.25,
+"id": "window_bathroom_n",
 "type": "window",
 "width": 0.8
 }, {
 "at": 8.25,
+"id": "back_door",
 "type": "door"
 }],
 "outward": Vector2(0, -1),
@@ -62,9 +71,11 @@ walls = Array[Dictionary]([{
 "from": Vector2(0, 0),
 "openings": [{
 "at": 2.0,
+"id": "window_bedroom_w",
 "type": "window"
 }, {
 "at": 6.0,
+"id": "window_living_w",
 "type": "window"
 }],
 "outward": Vector2(-1, 0),
@@ -73,9 +84,11 @@ walls = Array[Dictionary]([{
 "from": Vector2(10, 0),
 "openings": [{
 "at": 2.0,
+"id": "window_kitchen_e",
 "type": "window"
 }, {
 "at": 6.0,
+"id": "window_living_e",
 "type": "window"
 }],
 "outward": Vector2(1, 0),
@@ -84,12 +97,15 @@ walls = Array[Dictionary]([{
 "from": Vector2(0, 4),
 "openings": [{
 "at": 2.0,
+"id": "door_bedroom",
 "type": "door"
 }, {
 "at": 5.25,
+"id": "door_bathroom",
 "type": "door"
 }, {
 "at": 8.25,
+"id": "door_kitchen",
 "type": "door"
 }],
 "to": Vector2(10, 4)
@@ -101,66 +117,79 @@ walls = Array[Dictionary]([{
 "to": Vector2(6.5, 4)
 }])
 furniture = Array[Dictionary]([{
+"id": "bed",
 "type": &"bed",
 "room": "Bedroom",
 "position": Vector2(3.25, 1.15),
 "rotation": 0.0
 }, {
+"id": "bedroom/0",
 "type": &"dresser",
 "room": "Bedroom",
 "position": Vector2(3.72, 3.1),
 "rotation": -90.0
 }, {
+"id": "bedroom/1",
 "type": &"wardrobe",
 "room": "Bedroom",
 "position": Vector2(0.4, 3.35),
 "rotation": 90.0
 }, {
+"id": "bathroom/0",
 "type": &"bathroom_cabinet",
 "room": "Bathroom",
 "position": Vector2(0.33, 1.6),
 "rotation": 90.0
 }, {
+"id": "toilet",
 "type": &"toilet",
 "room": "Bathroom",
 "position": Vector2(1.9, 0.45),
 "rotation": 0.0
 }, {
+"id": "kitchen/0",
 "type": &"kitchen_cabinet",
 "room": "Kitchen",
 "position": Vector2(0.4, 0.75),
 "rotation": 90.0
 }, {
+"id": "kitchen/1",
 "type": &"counter",
 "room": "Kitchen",
 "position": Vector2(0.4, 1.9),
 "rotation": 90.0
 }, {
+"id": "kitchen/2",
 "type": &"fridge",
 "room": "Kitchen",
 "position": Vector2(0.45, 3.2),
 "rotation": 90.0
 }, {
+"id": "kitchen/3",
 "type": &"kitchen_cabinet",
 "room": "Kitchen",
 "position": Vector2(2.95, 0.4),
 "rotation": 0.0
 }, {
+"id": "kitchen_sink",
 "type": &"sink",
 "room": "Kitchen",
 "position": Vector2(3.1, 3.3),
 "rotation": -90.0
 }, {
+"id": "bathroom_sink",
 "type": &"sink",
 "room": "Bathroom",
 "position": Vector2(2.17, 2.3),
 "rotation": -90.0
 }, {
+"id": "sofa",
 "type": &"sofa",
 "room": "Living Room",
 "position": Vector2(6.8, 1.25),
 "rotation": 0.0
 }, {
+"id": "living_room/0",
 "type": &"shelf",
 "room": "Living Room",
 "position": Vector2(0.3, 3.3),

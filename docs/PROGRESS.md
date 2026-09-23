@@ -6,6 +6,66 @@ that did not write the code).
 
 ---
 
+## Round 10 — Save/restore the micro-world, menus, natural-play acceptance (2026-09-23)
+
+### Goal
+Persist the whole world as data (never scenes), add save/load UX, and
+prove the brief's Final Acceptance Test — first staged, then in natural
+play.
+
+### What changed
+- `SaveManager` autoload (named slots, quick-save F9 / quick-load F10,
+  atomic writes with `.old` fallback, versioned schema + migration hook,
+  autosave on safe wake-ups and every 30 real minutes).
+- Two-phase load: `SaveSchema` type-checks and sanitises every field
+  before anything changes; items by ItemDB id, zombie profiles by
+  registry id, maps from an allow-list — nothing is `load()`ed from save
+  paths. Map reloads fresh, static objects restored, navmesh baked, then
+  dynamic records (zombies, corpses, dropped items, blood, spawners) and
+  the player applied.
+- Saveable contract with ids from data (explicit ids in BuildingPlans);
+  only explicitly destroyed objects are removed on load.
+- Menus: title screen (New game / Continue / Load / Quit) as main scene,
+  Esc pause menu, slot list with overwrite/delete confirmations,
+  Loading overlay, unsaved-progress prompts.
+- Natural-play fixes found by the critic: new game starts inside House A
+  with a spare t-shirt; clothing tears into rags; a hammer on the garage
+  workbench; bathroom dressings on ~92 % of seeds; 2 zombies start within
+  earshot; window-climbing zombies tumble in (1.4 s); bites bleed 60 s.
+- Tests: `test_acceptance.gd` (staged, save/load focus) and
+  `test_unstaged_{1337,7,99}.gd` driven by `acceptance_bot.gd`: real new
+  game, map zombies present, no item/stat injection, only time advanced.
+
+### Tests performed
+Unit **184**; integration shards a/b/c/d **49/32/70/82** — **417 tests, 0
+failed**. Screenshots OK (34_pause_menu, 35_main_menu, 36_before_save /
+36_after_load). Perf: save 5.6 ms / load 368 ms with 200 zombies; 3000
+dropped items save 49 ms / load 694 ms; zombie budgets still met.
+
+### Bugs discovered (critic) → all fixed
+Autosave during danger; tampered saves half-applied with SCRIPT ERRORs,
+NaN positions, 1e12 stacks; arbitrary file load from save paths (code
+execution risk); bad meta.json crashing the menu; O(n²) dropped-item
+save; build-order ids deleting furniture from old saves; spurious
+infection event on load; slot-name collisions; hotbar ghosts lost; tests
+sharing the real save folder; the acceptance loop impossible in natural
+play (no hammer/dressings on the map, road spawn, zombies out of earshot).
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8.5 (7) · System Integration 8.5 (7) · Survival Depth 7.5 (4) ·
+Architecture 8.5 (7) · Performance 8.5 (8) · UX/Feedback 7 (5) ·
+Bug Resistance 8.5 (5).
+
+### Known after Round 10
+Hotbar ghost icons render as empty slots after load in 36_after_load
+(entries persist, icon lookup doesn't). Combat randomness can still kill
+the acceptance bot on an unlucky roll.
+
+### Next action (per brief)
+STOP: full vertical-slice review before expanding the world.
+
+---
+
 ## Round 9 — Barricading, furniture blocking, carpentry (2026-09-23)
 
 ### Goal

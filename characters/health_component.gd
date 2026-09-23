@@ -89,3 +89,17 @@ func revive(full: bool = true) -> void:
 	dead = false
 	health = max_health if full else maxf(health, 1.0)
 	_emit_changed()
+
+
+# --- Save (Round 10) ------------------------------------------------------------------
+
+func to_dict() -> Dictionary:
+	return {"health": health, "max": max_health, "dead": dead}
+
+
+## Restores the value (clamped to the max); a saved death stays a death
+## but emits nothing (the save refuses dead players anyway).
+func from_dict(d: Dictionary) -> void:
+	health = clampf(float(d.get("health", max_health)), 0.0, max_health)
+	dead = bool(d.get("dead", false)) and health <= 0.0
+	_emit_changed()

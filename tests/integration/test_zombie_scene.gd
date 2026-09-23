@@ -330,12 +330,18 @@ func test_spawner_places_10_zombies_on_navmesh_outside_buildings() -> void:
 	check_eq(spawner.zombies.size(), 10, "tracked")
 	await physics_frames(5)
 	var positions := []
-	for z in list:
+	for i in list.size():
+		var z: Zombie = list[i]
 		var p: Vector3 = z.global_position
 		positions.append(p)
 		check_lt(_flat_dist(nav.closest_point(p), p), 0.3, "on the navmesh: %s" % p)
 		check(Building.locate(tree, p).building == null, "not inside a building: %s" % p)
-		check_gt(_flat_dist(p, player.global_position), spawner.min_player_distance - 0.01, ">= 15 m from the player: %s" % p)
+		# Round 10: the last near_count start in the street zone by House A.
+		var near := i >= list.size() - spawner.near_count
+		var keep := spawner.near_min_player_distance if near else spawner.min_player_distance
+		check_gt(_flat_dist(p, player.global_position), keep - 0.01, ">= %.0f m from the player: %s" % [keep, p])
+		if near:
+			check_lt(_flat_dist(p, spawner.near_center), spawner.near_radius + 1.6, "in the near zone: %s" % p)
 		check(z.ai_seed != 0, "seeded AI")
 		check_lt(p.y, 0.3, "on the ground")
 	# Determinism: a second spawner with the same seed picks the same spots
@@ -348,6 +354,11 @@ func test_spawner_places_10_zombies_on_navmesh_outside_buildings() -> void:
 	again.auto_spawn = false
 	again.seed = spawner.seed
 	again.count = 10
+	again.min_player_distance = spawner.min_player_distance
+	again.near_count = spawner.near_count
+	again.near_center = spawner.near_center
+	again.near_radius = spawner.near_radius
+	again.near_min_player_distance = spawner.near_min_player_distance
 	scene.add_child(again)
 	var list2 := again.spawn_initial()
 	await physics_frames(2)

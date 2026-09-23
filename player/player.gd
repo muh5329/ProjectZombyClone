@@ -326,3 +326,67 @@ func carried_from_dict(d: Dictionary) -> void:
 		inventory.capacity = profile.inventory_capacity
 	if equipment and d.has("equipment"):
 		equipment.from_dict(d.equipment)
+
+
+# --- Whole-player save (Round 10, WorldSnapshot) --------------------------------------
+
+## Position / facing, health, every stat (stamina, pain, infection,
+## hunger, thirst, fatigue, sickness), wounds, needs, skills and
+## everything carried. Saving is refused while busy (an item being eaten
+## or a dressing being applied is out of its container), so no busy
+## state is ever stored.
+func save_state() -> Dictionary:
+	var d := {
+		"position": Saveable.vec3(global_position),
+		"facing": movement.facing,
+		"stats": stats.to_dict(),
+		"carried": carried_to_dict(),
+	}
+	if health:
+		d["health"] = health.to_dict()
+	if injuries:
+		d["injuries"] = injuries.to_dict()
+	if needs:
+		d["needs"] = needs.to_dict()
+	var sk := SkillComponent.of(self)
+	if sk:
+		d["skills"] = sk.to_dict()
+	return d
+
+
+## Restore onto a FRESH player (the load flow reloads the map). Order
+## matters: wounds / needs set the stamina cap before the stats values.
+func load_state(d: Dictionary) -> void:
+	if is_busy and busy_context != &"dead":
+		cancel_busy()
+	velocity = Vector3.ZERO
+	global_position = Saveable.to_vec3(d.get("position"), global_position)
+	var yaw := float(d.get("facing", movement.facing))
+	movement.facing = yaw
+	if visual:
+		visual.rotation.y = yaw
+	if d.has("carried"):
+		carried_from_dict(d.carried)
+	if injuries:
+		injuries.restoring = true
+	if injuries and d.has("injuries"):
+		injuries.from_dict(d.injuries)
+	if needs and d.has("needs"):
+		needs.from_dict(d.needs)
+	if d.has("stats"):
+		stats.from_dict(d.stats)
+	if needs and d.has("needs"):
+		needs.from_dict(d.needs)  # settle levels on the final values
+	var sk := SkillComponent.of(self)
+	if sk and d.has("skills"):
+		sk.from_dict(d.skills)
+	if injuries:
+		# Stage from the restored infection value, silently (no "You feel
+		# feverish" for a state the player already had).
+		injuries.infection_stage = InjuryComponent.infection_stage_for(stats.get_value(InjuryComponent.INFECTION), injuries.profile)
+		injuries.restoring = false
+		EventBus.injuries_changed.emit(self, injuries.summary())
+	if health and d.has("health"):
+		health.from_dict(d.health)
+	if encumbrance:
+		encumbrance.recompute()

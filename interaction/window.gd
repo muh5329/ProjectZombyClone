@@ -29,6 +29,8 @@ const ACTION_CLIMB := &"climb"
 const ACTION_CLEAR_GLASS := &"clear_glass"
 const CLIMB_CONTEXT := &"climb"
 const CLEAR_GLASS_CONTEXT := &"clear_glass"
+## Navigation layer of the window links (bit 2); zombie agents use 1 + 2.
+const WINDOW_NAV_LAYER := 1 << 1
 ## Physics layer index (0-based) of "window_panes".
 const PANE_LAYER_BIT := 7
 ## SoundManager categories (radii in data/audio/sound_categories.tres).
@@ -87,6 +89,10 @@ func _ready() -> void:
 		nav_link = NavigationLink3D.new()
 		nav_link.name = "NavLink"
 		nav_link.bidirectional = true
+		# Round 10: window links are for climbers (zombies: layers 1 + 2);
+		# a path query on layer 1 only (survivors, bots) never routes
+		# through a window.
+		nav_link.navigation_layers = WINDOW_NAV_LAYER
 		nav_link.start_position = Vector3(0, 0, nav_link_offset)
 		nav_link.end_position = Vector3(0, 0, -nav_link_offset)
 		add_child(nav_link)
@@ -503,3 +509,44 @@ func climb(actor: Node) -> Dictionary:
 func _on_climb_finished(body: Node3D, hazard: bool) -> void:
 	if is_instance_valid(self) and is_instance_valid(body):
 		EventBus.window_climbed.emit(body, self, hazard)
+
+
+# --- Save (Round 10) ------------------------------------------------------------------
+
+## {state, glass, pane_hp, barricade?} (Saveable contract).
+func save_state() -> Dictionary:
+	var d := {"kind": "window", "state": String(state), "glass": has_glass(), "pane_hp": _pane_hp}
+	var b := BarricadeComponent.of(self)
+	if b != null and b.plank_count() > 0:
+		d["barricade"] = b.to_dict()
+	return d
+
+
+## Silent restore: no sound, no tween; shards come back when [glass].
+func load_state(d: Dictionary) -> void:
+	var s := StringName(String(d.get("state", "closed")))
+	if s != STATE_OPEN and s != STATE_SMASHED:
+		s = STATE_CLOSED
+	state = s
+	_pane_hp = clampf(float(d.get("pane_hp", pane_health)), 0.0, pane_health)
+	if _pane_body:
+		_pane_body.collision_layer = (1 << PANE_LAYER_BIT) if s == STATE_CLOSED else 0
+	_kill_tween()
+	if _pane != null:
+		var open_h := top_height - sill_height
+		var closed_y := sill_height + open_h * 0.5
+		_pane.visible = s != STATE_SMASHED
+		_pane.position.y = closed_y + (open_h * 0.45 if s == STATE_OPEN else 0.0)
+	var want_glass := bool(d.get("glass", false)) and s == STATE_SMASHED
+	if want_glass:
+		_spawn_glass()
+	elif has_glass():
+		glass.queue_free()
+		glass = null
+	if _shards:
+		_shards.visible = want_glass
+	if d.has("barricade"):
+		BarricadeComponent.ensure(self).from_dict(d.barricade)
+	elif BarricadeComponent.of(self) != null:
+		BarricadeComponent.of(self).from_dict({"planks": []})
+	_update_nav_cost()

@@ -42,6 +42,10 @@ const CATEGORY_IDS: Array[StringName] = [
 ## box": a box of nails → 50 nails). &"" = not a box.
 @export var unpack_item: StringName = &""
 @export var unpack_count: int = 0
+## Round 10: clothing that can be torn into dressings ("Tear into rags",
+## PZ's rip clothing): one item → [tear_count] × [tear_into]. &"" = cannot.
+@export var tear_into: StringName = &""
+@export var tear_count: int = 0
 
 
 func has_condition() -> bool:

@@ -214,6 +214,7 @@ func _run() -> void:
 	await _round8(inst, player, cam, spawner, hud)
 	await _round85(inst, player, cam, spawner, hud)
 	await _round9(inst, player, cam, spawner, hud)
+	await _round10(inst, player, cam, hud)
 	_finish()
 
 
@@ -967,6 +968,131 @@ func _round9(inst: Node, player: Node3D, _cam: Node3D, spawner: Node, hud: Node)
 		if is_instance_valid(pair[0]):
 			pair[0].queue_free()
 	await _frames(3)
+
+
+# --- Round 10: pause menu, quick save / load, main menu -----------------------
+const SHOT_SLOT := "screenshot_run"
+
+
+## HUD values that must survive a save → load (compared as text).
+func _hud_values(hud: Node) -> Dictionary:
+	return {
+		"health": hud.health_label.text, "stamina": hud.stamina_label.text,
+		"weapon": hud.weapon_label.text, "weight": hud.weight_label.text,
+		"injuries": hud.injury_label.text, "pain": hud.pain_label.text,
+		"clock": hud.clock.shown_time(), "moodles": hud.moodle_list.get_child_count(),
+	}
+
+
+func _round10(inst: Node, player: Node3D, _cam: Node3D, hud: Node) -> void:
+	var sm: Node = root.get_node("SaveManager")
+	var tm: Node = root.get_node("TimeManager")
+	sm.quick_slot = SHOT_SLOT
+	tm.set_time_of_day(15, 30)
+	var health: Node = player.get_node("Health")
+	health.invulnerable = false
+	player.inventory.remove_id(&"apple", player.inventory.count_of(&"apple"))
+	player.inventory.add_id(&"apple", 2)
+	player.inventory.add_id(&"bandage", 1)
+	player.get_node("Needs").set_need(&"hunger", 35.0)
+	player.get_node("Needs").set_need(&"thirst", 30.0)
+	player.global_position = Vector3(-9.0, 0.1, 1.0)
+	player.movement.facing = PI
+	await _frames(45)
+	# Esc (ui_cancel through the input map) → pause menu.
+	var menu: Node = inst.get_node("PauseMenu")
+	await _tap(&"ui_cancel")
+	await _frames(2)
+	if not menu.is_open() or not paused:
+		_problems.append("round 10: Esc did not open the pause menu / pause the game")
+	await _shot("34_pause_menu")
+	await _tap(&"ui_cancel")
+	await _frames(2)
+	if menu.is_open() or paused:
+		_problems.append("round 10: Esc did not close the pause menu")
+	# F9 quick-save through the input map, with the HUD values of the moment.
+	await _frames(20)
+	var before := _hud_values(hud)
+	before["hotbar"] = _carried_hotbar(player)
+	await _shot("36_before_save")
+	await _tap(&"quick_save")
+	await _frames(2)
+	if not FileAccess.file_exists(load("res://core/save_file.gd").world_path(SHOT_SLOT)):
+		_problems.append("round 10: F9 wrote no save")
+	print("round 10: save %.1f ms" % sm.last_save_ms)
+	# Change the world, then F10 quick-load puts it back.
+	player.global_position = Vector3(3.0, 0.1, 3.0)
+	player.inventory.clear()
+	health.take_damage(30.0, null, {})
+	var loaded := [null]
+	var eb: Node = root.get_node("EventBus")
+	var cb := func(m: Node): loaded[0] = m
+	eb.game_loaded.connect(cb)
+	await _tap(&"quick_load")
+	for i in 600:
+		if loaded[0] != null:
+			break
+		await physics_frame
+	eb.game_loaded.disconnect(cb)
+	var map: Node = loaded[0]
+	if map == null:
+		_problems.append("round 10: F10 did not load")
+		return
+	print("round 10: load %.1f ms" % sm.last_load_ms)
+	var p2: Node3D = map.get_node("Player")
+	var hud2: Node = map.get_node("HUD")
+	if p2.global_position.distance_to(Vector3(-9.0, 0.1, 1.0)) > 0.3:
+		_problems.append("round 10: player not back where it was saved (%s)" % p2.global_position)
+	if p2.inventory.count_of(&"apple") != 2:
+		_problems.append("round 10: inventory not restored")
+	await _frames(20)
+	var after := _hud_values(hud2)
+	after["hotbar"] = _carried_hotbar(p2)
+	await _shot("36_after_load")
+	for k in before:
+		if k == "clock":
+			continue  # a few seconds pass between the two shots
+		if str(before[k]) != str(after[k]):
+			_problems.append("round 10: HUD %s differs after load ('%s' vs '%s')" % [k, before[k], after[k]])
+	print("round 10: HUD before %s / after %s" % [str(before), str(after)])
+	var ia: Image = Image.load_from_file(ProjectSettings.globalize_path(OUT + "36_before_save.png"))
+	var ib: Image = Image.load_from_file(ProjectSettings.globalize_path(OUT + "36_after_load.png"))
+	if ia != null and ib != null and ia.get_size() == ib.get_size():
+		print("round 10: mean pixel difference before save / after load %.4f" % _mean_diff(ia, ib))
+	# The title screen (the project's main scene) lists the save.
+	map.queue_free()
+	await process_frame
+	var menu_scene: PackedScene = load("res://ui/menus/main_menu.tscn")
+	var mm := menu_scene.instantiate()
+	root.add_child(mm)
+	await _frames(10)
+	if mm.continue_button.disabled:
+		_problems.append("round 10: main menu has no Continue")
+	await _shot("35_main_menu")
+	mm.queue_free()
+	sm.delete_slot(SHOT_SLOT)
+	sm.quick_slot = "quick"
+
+
+## Hotbar slots holding carried items (a slot pointing at an item left
+## elsewhere is a by-identity ghost the save does not keep).
+func _carried_hotbar(p: Node) -> String:
+	var out: PackedStringArray = []
+	for e in p.get_node("Equipment").hotbar_summary():
+		out.append(String(e.get("id", "")) if e.get("carried", false) else "-")
+	return ",".join(out)
+
+
+func _mean_diff(a: Image, b: Image) -> float:
+	var total := 0.0
+	var n := 0
+	for y in range(0, a.get_height(), 4):
+		for x in range(0, a.get_width(), 4):
+			var ca := a.get_pixel(x, y)
+			var cb := b.get_pixel(x, y)
+			total += absf(ca.r - cb.r) + absf(ca.g - cb.g) + absf(ca.b - cb.b)
+			n += 1
+	return total / maxf(float(n) * 3.0, 1.0)
 
 
 func _right_click(p: Vector2) -> void:

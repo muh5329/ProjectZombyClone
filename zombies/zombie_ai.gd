@@ -88,6 +88,8 @@ var detour_fixture: Node3D = null
 var _last_link_check: float = -INF
 ## Seconds the zombie has wanted to move but did not (stuck detection).
 var stuck_time: float = 0.0
+## How long the current knockdown lasts (knock_down sets it).
+var down_seconds: float = 2.5
 ## True while this zombie holds an attack slot on zombie.target.
 var has_attack_slot: bool = false
 ## Duration of the next / current stun (set by stun()).
@@ -367,9 +369,10 @@ func stun(seconds: float = -1.0) -> void:
 	machine.change_to(S_STUNNED, true)
 
 
-func knock_down(source: Node = null) -> void:
+func knock_down(source: Node = null, seconds: float = -1.0) -> void:
 	if zombie.dead or is_in(S_KNOCKED_DOWN):
 		return
+	down_seconds = seconds if seconds > 0.0 else profile().knockdown_seconds
 	# The knockback of the blow that floored it keeps sliding the body.
 	machine.change_to(S_KNOCKED_DOWN)
 	EventBus.zombie_knocked_down.emit(zombie, source)

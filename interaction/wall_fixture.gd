@@ -28,6 +28,9 @@ var _tween: Tween
 
 ## Group name added by the subclass ("door", "window").
 var fixture_group: StringName = &""
+## Round 10: stable save id ("HouseA/door/2"), set by the building that
+## generates the fixture; "" = not saved.
+var persist_id: String = ""
 
 
 func _ready() -> void:
@@ -37,6 +40,8 @@ func _ready() -> void:
 	add_to_group(&"occluder")
 	if fixture_group != &"":
 		add_to_group(fixture_group)
+	if persist_id != "":
+		add_to_group(Saveable.GROUP)
 	set_meta(&"outward", outward)
 	set_meta(&"wall_height", wall_height)
 	visual = Node3D.new()

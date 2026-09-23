@@ -356,3 +356,43 @@ func _animate_to(angle: float) -> void:
 		rotation.y = angle
 		return
 	_new_tween().tween_property(self, "rotation:y", angle, swing_seconds)
+
+
+# --- Save (Round 10) ------------------------------------------------------------------
+
+## {state, health, locked, swing, barricade?} (Saveable contract).
+func save_state() -> Dictionary:
+	var d := {"kind": "door", "state": String(state), "health": health, "locked": locked, "swing": _swing}
+	var b := BarricadeComponent.of(self)
+	if b != null and b.plank_count() > 0:
+		d["barricade"] = b.to_dict()
+	return d
+
+
+## Silent restore: no sounds, no swing tween, no door events.
+func load_state(d: Dictionary) -> void:
+	_kill_tween()
+	locked = bool(d.get("locked", locked))
+	var s := StringName(String(d.get("state", "closed")))
+	if s == STATE_BROKEN:
+		state = STATE_BROKEN
+		_swing = 0.0
+		health = 0.0
+		rotation.y = 0.0
+		collision_layer = 1 << 3
+		if visual:
+			visual.visible = false
+	else:
+		state = STATE_OPEN if s == STATE_OPEN else STATE_CLOSED
+		health = clampf(float(d.get("health", health_max)), 0.0, health_max)
+		_swing = float(d.get("swing", 0.0)) if state == STATE_OPEN else 0.0
+		if state == STATE_OPEN and is_zero_approx(_swing):
+			_swing = PI * 0.5
+		rotation.y = _swing
+		collision_layer = (1 << DOOR_LAYER_BIT) | (1 << 3) | (1 << 5)
+		if visual:
+			visual.visible = true
+	if d.has("barricade"):
+		BarricadeComponent.ensure(self).from_dict(d.barricade)
+	elif BarricadeComponent.of(self) != null:
+		BarricadeComponent.of(self).from_dict({"planks": []})

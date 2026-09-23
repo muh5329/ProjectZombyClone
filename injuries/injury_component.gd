@@ -52,6 +52,10 @@ var _drip_accum: float = 0.0
 ## Wound healing speed factor set by the needs (Round 7): 1 fed and
 ## watered, lower when very hungry / parched / sick, 0 when starving.
 var heal_multiplier: float = 1.0
+## Round 10: true while a save is applied — no infection_stage_changed /
+## injuries_changed for restored values (Player.load_state settles the
+## stage silently at the end).
+var restoring: bool = false
 
 
 func _ready() -> void:
@@ -461,6 +465,9 @@ func _on_stat_changed(stat: StringName, value: float, _max_value: float) -> void
 	if stat != INFECTION:
 		return
 	var stage := infection_stage_for(value, profile)
+	if restoring:
+		infection_stage = stage
+		return
 	if stage != infection_stage:
 		infection_stage = stage
 		EventBus.infection_stage_changed.emit(character, stage)
@@ -477,3 +484,38 @@ func _apply_effects() -> void:
 	character.stats.set_value(PAIN, total_pain(injuries, profile))
 	character.movement.set_modifier(&"injury", leg_speed_multiplier(injuries, profile))
 	character.set_stamina_max_penalty(&"injury", max_stamina_penalty(injuries, profile))
+
+
+# --- Save (Round 10) ------------------------------------------------------------------
+
+## Wounds (full timers), the infection flag and stage. Pain / infection
+## values live in the character's stats (saved with them).
+func to_dict() -> Dictionary:
+	var list: Array = []
+	for inj in injuries:
+		list.append(inj.save_dict())
+	return {"injuries": list, "infected": infected}
+
+
+## Replace the wounds (no events per wound; one injuries_changed). A
+## bandage in progress is never saved (saving is refused while busy).
+func from_dict(d: Dictionary) -> void:
+	bandaging = null
+	_dressing = null
+	_dressing_from = null
+	injuries.clear()
+	for e in d.get("injuries", []):
+		if not e is Dictionary:
+			continue
+		var inj := Injury.from_save(e)
+		if inj == null:
+			push_warning("InjuryComponent.from_dict: unknown wound %s" % str(e))
+			continue
+		injuries.append(inj)
+	infected = bool(d.get("infected", false))
+	if character != null:
+		infection_stage = infection_stage_for(character.stats.get_value(INFECTION), profile)
+	if restoring:
+		_apply_effects()
+	else:
+		_changed()

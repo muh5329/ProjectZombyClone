@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Run the headless test suite.
-# Usage: scripts/test.sh [unit|integration|integration-a|integration-b] [--filter=name] [--shard=K/N]
-#   integration-a / integration-b = the two balanced halves of the
-#   integration suite (--shard=1/2 and 2/2); each stays well under a
-#   10-minute per-call cap (the whole integration run is ~9.5 min).
+# Usage: scripts/test.sh [unit|integration|integration-a..d] [--filter=name] [--shard=K/N]
+#   integration-a / -b / -c / -d = the four balanced quarters of the
+#   integration suite (--shard=1/4 … 4/4); each stays well under a
+#   10-minute per-call cap (the whole integration run is ~24 min since the
+#   Round-10 unstaged acceptance playthroughs).
 set -u
 GODOT="${GODOT:-godot}"
 command -v "$GODOT" >/dev/null 2>&1 || GODOT="/home/claude/tools/godot"
@@ -12,8 +13,10 @@ cd "$(dirname "$0")/.."
 ARGS=()
 for a in "$@"; do
   case "$a" in
-    integration-a) ARGS+=(integration --shard=1/2) ;;
-    integration-b) ARGS+=(integration --shard=2/2) ;;
+    integration-a) ARGS+=(integration --shard=1/4) ;;
+    integration-b) ARGS+=(integration --shard=2/4) ;;
+    integration-c) ARGS+=(integration --shard=3/4) ;;
+    integration-d) ARGS+=(integration --shard=4/4) ;;
     *) ARGS+=("$a") ;;
   esac
 done
