@@ -14,26 +14,23 @@ const USE := &"use"
 const DROP := &"drop"
 const DROP_ONE := &"drop_one"
 const SPLIT := &"split"
+## Round 7: eat / drink the whole item, or half of it.
+const CONSUME := &"consume"
+const CONSUME_HALF := &"consume_half"
 const HOTBAR_PREFIX := "hotbar_"
 
 
-## Why [d] cannot be used yet ("" when it can / is not a consumable).
+## Why [d] has no Use verb ("" when it has one / is not special).
 static func use_block_reason(d: ItemData) -> String:
 	if d == null:
 		return "Nothing there"
-	match d.category:
-		ItemData.Category.FOOD:
-			return "Eating comes in Round 7"
-		ItemData.Category.DRINK:
-			return "Drinking comes in Round 7"
 	return ""
 
 
-## True when [d] has a Use verb (dressings; food / drink as stubs).
+## True when [d] has a "Bandage" Use verb (dressings). Food / drink get
+## Eat / Drink entries from the actor's ConsumeAction instead (Round 7).
 static func has_use(d: ItemData) -> bool:
-	if d is MedicalData and (d as MedicalData).bandage_quality > 0.0:
-		return true
-	return d != null and (d.category == ItemData.Category.FOOD or d.category == ItemData.Category.DRINK)
+	return d is MedicalData and (d as MedicalData).bandage_quality > 0.0
 
 
 static func _a(id: StringName, label: String, enabled: bool = true, reason: String = "") -> Dictionary:
@@ -58,16 +55,18 @@ static func for_item(actor: Node, item: ItemInstance) -> Array[Dictionary]:
 			if not item.is_two_handed():
 				out.append(_a(EQUIP_SECONDARY, "Equip in secondary hand"))
 	if has_use(item.data):
-		var why := use_block_reason(item.data)
-		var label := "Bandage" if why == "" else ("Eat" if item.data.category == ItemData.Category.FOOD else "Drink")
-		out.append(_a(USE, label, why == "", "Round 7" if why != "" else ""))
+		out.append(_a(USE, "Bandage"))
+	var consume: Variant = actor.get("consume")
+	if item.data is FoodData and consume is ConsumeAction:
+		for o in (consume as ConsumeAction).options_for(item):
+			out.append(_a(o.id, o.label, o.enabled, o.reason))
 	if item.stack > 1:
 		out.append(_a(SPLIT, "Split stack"))
 		out.append(_a(DROP_ONE, "Drop one"))
 		out.append(_a(DROP, "Drop all"))
 	else:
 		out.append(_a(DROP, "Drop"))
-	if eq and Equipment.is_equippable(item):
+	if eq and (Equipment.is_equippable(item) or Equipment.is_consumable(item)):
 		for i in Equipment.HOTBAR_SIZE:
 			var cur := eq.hotbar_item(i)
 			out.append(_a(StringName(HOTBAR_PREFIX + str(i)), "Assign to hotbar %d%s" % [i + 1, "" if cur == null or cur == item else " (replace %s)" % cur.display_name()]))
@@ -87,6 +86,10 @@ static func perform(actor: Node, item: ItemInstance, id: StringName) -> Dictiona
 			return actor.call(&"unequip_item", item)
 		USE:
 			return actor.call(&"use_item", item)
+		CONSUME:
+			return actor.call(&"consume_item", item, 1.0)
+		CONSUME_HALF:
+			return actor.call(&"consume_item", item, 0.5)
 		DROP:
 			return actor.call(&"drop_item", item, -1)
 		DROP_ONE:

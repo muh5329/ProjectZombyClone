@@ -47,6 +47,10 @@ var _shards: MeshInstance3D
 var _pane_body: StaticBody3D
 
 
+## True while the pane glows (night).
+var night_glow: bool = false
+
+
 func _init() -> void:
 	fixture_group = &"window"
 
@@ -87,6 +91,21 @@ func _build_visual() -> void:
 	ps.position = Vector3(0, sill_height + open_h * 0.5, 0)
 	_pane_body.add_child(ps)
 	add_child(_pane_body)
+
+
+## Round 7: warm, emissive glass while the house lights are on (night,
+## DayNightLighting); plain glass otherwise.
+func set_night_glow(on: bool) -> void:
+	night_glow = on
+	if _pane == null:
+		return
+	var m := (_pane.mesh as BoxMesh).material as StandardMaterial3D
+	if m == null:
+		return
+	m.emission_enabled = on
+	m.emission = Color(1.0, 0.55, 0.2)
+	m.emission_energy_multiplier = 0.8
+	m.albedo_color = Color(0.95, 0.62, 0.3, 0.9) if on else glass_color
 
 
 func can_climb() -> bool:

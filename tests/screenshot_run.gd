@@ -200,6 +200,7 @@ func _run() -> void:
 	await _round4(inst, player, cam, spawner, hud)
 	await _round5(inst, player, cam, spawner, hud)
 	await _round6(inst, player, cam, spawner, hud)
+	await _round7(inst, player, cam, spawner, hud)
 
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
@@ -214,6 +215,9 @@ func _run() -> void:
 func _round4(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) -> void:
 	var combat: Node = player.get_node("Combat")
 	var injuries: Node = player.get_node("Injuries")
+	# Deterministic hits / knockdowns / wounds for the evidence run.
+	combat.rng.seed = 20260922
+	injuries.rng.seed = 7
 	# Clear the stage: every zombie so far goes away; top the player up.
 	for z in get_nodes_in_group(&"zombie"):
 		z.queue_free()
@@ -565,6 +569,88 @@ func _round6(inst: Node, player: Node3D, _cam: Node3D, _spawner: Node, hud: Node
 		_problems.append("HUD weight readout missing 'Overloaded': '%s'" % hud.weight_label.text)
 	if player.sprint_denied_reason() != "Too heavy":
 		_problems.append("sprint not refused as Too heavy")
+
+
+# --- Round 7: clock + moodles, eating, night ---------------------------------
+func _round7(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) -> void:
+	var tm: Node = root.get_node("TimeManager")
+	var window: Node = inst.get_node("LootWindow")
+	var needs: Node = player.get_node("Needs")
+	player.inventory.remove_id(&"plank", 4)
+	player.get_node("Health").heal(100.0)
+	# Keep the roaming zombies out of the kitchen for these shots.
+	for z in root.get_tree().get_nodes_in_group(&"zombie"):
+		z.get_node("Senses").set("enabled", false)
+		z.set_physics_process(false)
+		z.hostile = false
+	# Speed keys (F7 = 2×, F6 = back to 1×) through the input map.
+	await _tap(&"time_speed_2")
+	await _frames(3)
+	if not is_equal_approx(Engine.time_scale, 2.0):
+		_problems.append("F7 did not fast-forward (time_scale %.1f)" % Engine.time_scale)
+	await _tap(&"time_speed_1")
+	await _frames(3)
+	# Kitchen, in front of the sink; six hours later: hungry and thirsty.
+	player.global_position = Vector3(-5.45, 0.1, -6.7)
+	player.movement.facing = atan2(-1.0, 0.0)  # face +X (the sink)
+	await _frames(20)
+	var before_minutes: float = tm.now()
+	tm.advance(8.0 * 60.0 + 10.0)
+	await _frames(10)
+	var labels: PackedStringArray = hud.moodle_list.labels()
+	if not ((labels.has("Hungry") or labels.has("Very Hungry")) and (labels.has("Thirsty") or labels.has("Parched"))):
+		_problems.append("moodles missing after 8 h (%s)" % str(labels))
+	if tm.now() - before_minutes < 490.0 or hud.clock.shown_time() != tm.clock_text():
+		_problems.append("clock did not follow the 8 h advance (%s vs %s)" % [hud.clock.shown_time(), tm.clock_text()])
+	await _shot("23_moodles_clock")
+	# Eat the beans through the inventory context menu (the knife opens them).
+	await _tap(&"toggle_inventory")
+	await _frames(5)
+	var beans = player.inventory.find(&"canned_beans")
+	var row: Control = window.row_for(&"player", beans) if beans != null else null
+	if row == null:
+		_problems.append("no canned beans row")
+	else:
+		var at: Vector2 = row.get_viewport().get_final_transform() * row.get_global_rect().get_center()
+		_mouse_to(at)
+		await _frames(2)
+		_right_click(at)
+		await _frames(5)
+		var idx := -1
+		for i in window.context_menu.item_count:
+			if window.context_menu.get_item_text(i) == "Eat":
+				idx = i
+		window.context_menu.hide()
+		if idx < 0:
+			_problems.append("no Eat entry in the context menu")
+		else:
+			window.context_menu.id_pressed.emit(idx)
+		_mouse_to(Vector2(640, 600))
+	await _frames(3)
+	await _tap(&"toggle_inventory")
+	await _frames(60)
+	if not player.is_busy or not hud.action_bar.visible:
+		_problems.append("not eating (busy %s, bar %s)" % [player.is_busy, hud.action_bar.visible])
+	if not String(hud.notice_label.text).begins_with("Eating Canned Beans"):
+		_problems.append("eating notice missing ('%s')" % hud.notice_label.text)
+	await _shot("25_eating")
+	var h0: float = needs.value(&"hunger")
+	var guard := 0
+	while player.is_busy and guard < 600:
+		await _frames(10)
+		guard += 10
+	if needs.value(&"hunger") > h0 - 12.0:
+		_problems.append("beans did not reduce hunger (%.1f → %.1f)" % [h0, needs.value(&"hunger")])
+	# Night: 23:00 outside the front door, house lights on.
+	var dn: Node = inst.get_node("DayNight")
+	var day_energy: float = dn.sun_energy()
+	tm.set_time_of_day(23, 0)
+	player.global_position = Vector3(-8.5, 0.1, 1.5)
+	await _tap(&"camera_zoom_out")
+	await _frames(60)
+	if dn.sun_energy() >= day_energy * 0.5:
+		_problems.append("night not darker (%.2f vs %.2f)" % [dn.sun_energy(), day_energy])
+	await _shot("24_night")
 
 
 func _right_click(p: Vector2) -> void:

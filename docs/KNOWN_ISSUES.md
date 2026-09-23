@@ -5,6 +5,41 @@ that fixed them.
 
 ## Open
 
+00000. **Round-7 time / needs / food / sleep gaps** (ordered):
+   - **Injury timers are physics seconds, not game minutes** (1:1 only at
+     the default rate). 2× / 4× speed them up with the engine; during a
+     sleep RestComponent feeds wounds the skipped game time (and sleep is
+     refused while bleeding). Changing `minutes_per_second` would need
+     the injury numbers retuned.
+   - **Zombies are still under-simulated while you sleep**: Engine ×8
+     gives 192 s of zombie time for an 8 h night (vs 8 h of game time).
+     Big steps (0.13 s) at ×8 are fine for shambling; a population sim
+     would do the rest. Sleep wakes on a zombie within 10 m (not 8: an
+     investigating zombie stops ~1 m short of the door).
+   - **Temperature is display only** (no body temperature, clothing,
+     weather); wetness / stress / pain-as-need are not needs yet.
+   - **Pause freezes the HUD** (SceneTree.paused): notices do not fade and
+     the inventory cannot be used while paused.
+   - **Interrupted eating consumes nothing** (PZ gives a partial portion).
+     Walking off also interrupts (move intent while busy).
+   - **Fast-forward only checks chasing zombies**, not idle ones next to
+     you; sleep checks both (15 m).
+   - **Moodles are coloured circles with an initial**, no icon art; the
+     tooltip needs the mouse over the row.
+   - **Power is always on** (fridges always cold) until the electricity
+     round; the water shuts off on `water_shutoff_day` (14), there is no
+     rain collection yet.
+   - **The sleeper does not lie on the bed** (stands next to it, screen
+     faded); sleeping anywhere but a bed (floor, sofa) is not possible.
+   - **Stale and fresh stacks never merge; a merged stack keeps the older
+     age** (no per-item ages inside a stack). Spoil-state changes do not
+     refresh an open inventory list until it changes / reopens.
+   - **Interior lights are shadowed spotlights** (one per room, 5 in House
+     A): fine now, but a whole town at night will need a light budget /
+     distance culling. Window glow is emission only (no light cast
+     outside).
+   - **Food balance is per House A only** (kitchen tables); no pantry /
+     living-room food, store and warehouse tables are untuned.
 0000. **Round-6 inventory / equipment gaps** (ordered):
    - **Only the worn bag and bags on the ground are accessible**: a bag
      carried inside the main inventory (or in a container) is a closed,

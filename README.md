@@ -2,7 +2,7 @@
 
 Isometric 3D survival sandbox in **Godot 4.6 / GDScript**, inspired by the
 systemic gameplay of Project Zomboid. Blockout visuals (primitives), systems
-first. Built through a "gauntlet" of verified rounds; **Rounds 1–6 of 10 are
+first. Built through a "gauntlet" of verified rounds; **Rounds 1–7 of 10 are
 done and committed.**
 
 ## Status at handoff (2026-09-22)
@@ -15,9 +15,10 @@ done and committed.**
 | 4 | Melee combat, shove, body-region injuries, weapons as data | ✅ done |
 | 5 | Containers, data-driven loot tables, player inventory, ref-4 loot window | ✅ done |
 | 6 | Equipment slots, bags, hotbar, inventory screen, encumbrance | ✅ done |
-| 7–10 | Hunger/thirst, sound propagation, barricades, save/load | ⬜ planned |
+| 7 | World time, day/night, hunger/thirst/fatigue, food + water, spoilage, sleep | ✅ done |
+| 8–10 | Sound propagation, barricades, save/load | ⬜ planned |
 
-- **236 automated tests, 0 failing** (`scripts/test.sh`, ~400 s headless).
+- **288 automated tests, 0 failing** (`scripts/test.sh`, ~490 s headless).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,
@@ -30,7 +31,7 @@ Open `project.godot` in Godot **4.6** and press Play (main scene
 Alt walk · E interact · 4-7 pick action · 1-3 hotbar · LMB attack
 (hold to charge) · RMB aim · Space shove · X cycle weapon · B bandage ·
 Tab inventory (right-click items, drag, Ctrl+click split, G drop) · Q/R
-rotate camera · wheel or +/− zoom · F3 debug · R restart after death.
+rotate camera · wheel or +/− zoom · F5-F8 (or , .) time speed · F3 debug · R restart after death. Beds: Sleep / Rest, sofa: Rest, sinks: Drink / Fill bottle; right-click food: Eat / Eat half.
 
 ## Run the tests
 ```

@@ -6,6 +6,66 @@ that did not write the code).
 
 ---
 
+## Round 7 — World time, needs, eating/drinking, spoilage, sleep (2026-09-22)
+
+### Goal
+Give loot stakes: a game clock, hunger/thirst/fatigue that change
+behaviour, consumable food and water with spoilage, sinks, and sleep/rest
+that carries risk.
+
+### What changed
+- `TimeManager` autoload + pure `GameClock` (1 real s = 1 game min, starts
+  1 July 07:00, epoch-based); pause/1×/2×/4× (F5-F8, `,` `.`),
+  fast-forward refused while chased and reset on death.
+- `DayNightLighting`: sun/ambient by hour; neutral grey night, shadowed
+  per-room spotlights and warm window panes at night (ref 3).
+- `NeedsComponent` + pure `NeedsMath` (data/survival/needs_profile.tres):
+  hunger 2.5/h, thirst 3.5/h awake (half asleep), fatigue; leveled
+  moodles with hysteresis and warnings; effects on max stamina, regen,
+  speed, swing time, health drain, healing. No-water death ≈ 37 game h.
+- `ConsumeAction`: Eat / Eat half / Drink, busy + interruptible, tin opener
+  or knife (hand-scratch risk), empty bottles, sinks (Drink / Fill bottle;
+  water off from day 14). Hunger derived from kcal/25. Spoilage lazy with
+  per-container rate (fridge ×0.25); rolled food is as old as the world.
+- `RestComponent` + `RestFurniture`: Sleep (refused if not tired, danger,
+  bleeding or a need would go critical), sleep at engine ×8 / 20 game min
+  per s so zombies keep moving; wakes on hits, needs drain, zombies ≤10 m.
+  Rest triples stamina regen.
+- `Character.busy_cancelled` + `cancel_busy()` unify eat/bandage/search/
+  sleep cancellation. `EventBus.health_drained`.
+- HUD: LCD-style clock with °F/date/speed pips (ref 4), moodles, busy
+  verb in the state label.
+
+### Tests performed
+`scripts/test.sh` → **288 tests, 0 failed** (~490 s).
+`scripts/screenshots.sh` OK twice (23_moodles_clock, 24_night,
+25_eating). `scripts/perf.sh` calm 2.4 ms / hostile 5.6 ms. Balance:
+House A food averages 3.2 days (30 seeds).
+
+### Bugs discovered (critic) → all fixed
+Dying of thirst in your sleep without waking (drains emitted no event);
+food lost when dying mid-meal (no busy-cancel ownership); saved food
+double-aged depending on load order; unopened containers held fresh food
+forever; fill bottle with no room; eating while paused; balance: death in
+12 game hours, one house ≈ 1 day of food, unlimited water, sleep safe by
+construction; night light bleeding through walls.
+
+### Failed approaches
+- Waking at 8 m: investigating zombies stop ~8 m out → 10 m.
+- Unseeded combat rolls in the screenshot run occasionally lost the R4
+  fight and cascaded; the runner now seeds combat/injury RNGs.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (7) · System Integration 8 (7) · Survival Depth 7.5 (5) ·
+Architecture 8 (7) · Performance 9 (9) · UX/Feedback 7.5 (6) ·
+Bug Resistance 8 (6).
+
+### Highest-priority remaining issue
+Noise is a flat radius; Round 8 (sound propagation + zombie hearing,
+walls/doors attenuation, noise UI) is next.
+
+---
+
 ## Round 6 — Inventory, equipment, bags, encumbrance (2026-09-22)
 
 ### Goal

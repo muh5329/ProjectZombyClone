@@ -260,7 +260,8 @@ func _begin_swing(w: WeaponData, item: ItemInstance, charge: float) -> bool:
 	last_refusal = ""
 	actor.stats.modify(Character.STAMINA, -w.stamina_cost)
 	var pain := pain_modifiers()
-	swing.begin(w, item if item != null and item.data == w else null, charge, attack_direction(), pain.y)
+	var slow: float = actor.swing_time_multiplier() if actor.has_method(&"swing_time_multiplier") else 1.0
+	swing.begin(w, item if item != null and item.data == w else null, charge, attack_direction(), pain.y * slow)
 	last_hits = []
 	_set_modifier(&"attack", profile.swing_speed_multiplier)
 	_update_facing()

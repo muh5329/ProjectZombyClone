@@ -27,6 +27,8 @@ extends Resource
 ## Minimum seconds sprint stays blocked after becoming exhausted, even if
 ## stamina somehow recovers faster (e.g. future items).
 @export var winded_min_seconds: float = 4.0
+## Resting on a bed / sofa multiplies idle stamina recovery (Round 7).
+@export var stamina_rest_multiplier: float = 3.0
 
 @export_group("Carrying")
 ## Carried weight (kg) the character handles without penalty; above it
@@ -68,6 +70,11 @@ func stamina_rates() -> Dictionary:
 		&"bandage": stamina_rate_idle,
 		# Searching a container: kneeling / rummaging, idle recovery.
 		&"search": stamina_rate_idle,
+		# Round 7: eating / drinking / sleeping recover like idle; resting
+		# (sitting / lying awake) recovers faster.
+		&"eat": stamina_rate_idle,
+		&"sleep": stamina_rate_idle,
+		&"rest": stamina_rate_idle * stamina_rest_multiplier,
 	}
 
 

@@ -621,7 +621,7 @@ func test_bag_on_the_ground_opens_like_a_container() -> void:
 	check(not window.is_open(), "window closed")
 
 
-func test_use_rag_bandages_and_food_is_a_stub() -> void:
+func test_use_rag_bandages_and_use_eats_food() -> void:
 	player.inventory.add_id(&"rag", 1)
 	player.inventory.add_id(&"bandage", 1)
 	player.inventory.add_id(&"apple", 1)
@@ -634,9 +634,9 @@ func test_use_rag_bandages_and_food_is_a_stub() -> void:
 	check(await wait_physics_until(func(): return not player.is_busy, 60 * 5), "done")
 	var apple := player.inventory.find(&"apple")
 	r = window.perform_context(LootWindow.SIDE_PLAYER, apple, ItemActions.USE)
-	check(not r.ok and r.reason == "Eating comes in Round 7", "food stub (%s)" % str(r))
-	await frames(1)
-	check_eq(hud.notice_label.text, "Eating comes in Round 7", "HUD notice")
+	check(r.ok and player.is_busy, "Use on food eats it (Round 7) (%s)" % str(r))
+	check(await wait_physics_until(func(): return not player.is_busy, 60 * 5), "done eating")
+	check_eq(player.inventory.count_of(&"apple"), 0, "apple eaten")
 	# Dressings in the worn bag are found by B too.
 	var bag := ItemInstance.new(ItemDB.get_item(&"backpack"))
 	player.inventory.add(bag)

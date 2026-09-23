@@ -146,6 +146,16 @@ furniture = Array[Dictionary]([{
 "position": Vector2(2.95, 0.4),
 "rotation": 0.0
 }, {
+"type": &"sink",
+"room": "Kitchen",
+"position": Vector2(3.1, 3.3),
+"rotation": -90.0
+}, {
+"type": &"sink",
+"room": "Bathroom",
+"position": Vector2(2.17, 2.3),
+"rotation": -90.0
+}, {
 "type": &"sofa",
 "room": "Living Room",
 "position": Vector2(6.8, 1.25),

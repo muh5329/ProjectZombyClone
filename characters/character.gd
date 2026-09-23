@@ -10,6 +10,13 @@ extends CharacterBody3D
 ## Exhaustion is owned by StatsComponent's threshold state; this class only
 ## reacts to it (speed penalty, sprint denial, winded timer).
 
+## A busy action ended WITHOUT finishing: overridden by a new
+## begin_busy(), cancelled through cancel_busy(), or cut by death.
+## [context] is the cancelled action's busy context (&"eat", &"bandage",
+## &"search", &"sleep", &"rest"…); its owner restores its state (return
+## the item, refund the dressing…). Round 7.
+signal busy_cancelled(context: StringName)
+
 const STAMINA := StatsComponent.STAMINA
 const STATE_EXHAUSTED := &"exhausted"
 ## Intent directions shorter than this count as "not moving".
@@ -23,6 +30,9 @@ const INTENT_DEADZONE := BodyHelpers.INTENT_DEADZONE
 @onready var health: HealthComponent = get_node_or_null("Health")
 ## Optional InjuryComponent child named "Injuries" (Round 4).
 @onready var injuries: InjuryComponent = get_node_or_null("Injuries")
+## Optional NeedsComponent child named "Needs" (Round 7: hunger, thirst,
+## fatigue, sickness).
+@onready var needs: NeedsComponent = get_node_or_null("Needs")
 ## Visual root that is rotated to face the movement direction.
 @onready var visual: Node3D = get_node_or_null("Visual")
 
@@ -49,6 +59,13 @@ var facing_override: Vector3 = Vector3.ZERO
 ## Reasons sprinting is impossible regardless of stamina, keyed by source
 ## ({&"encumbrance": "Too heavy"}). Systems set / clear their own key.
 var sprint_locks: Dictionary = {}
+## Max stamina = (profile max − Σ penalties) × Π multipliers, keyed by
+## source (&"injury" penalty from wounds, &"needs" multiplier from hunger /
+## thirst). Systems set their own key via set_stamina_max_*().
+var _stamina_max_penalties: Dictionary = {}
+var _stamina_max_multipliers: Dictionary = {}
+## Melee swing time multipliers keyed by source (&"needs": fatigue).
+var swing_time_multipliers: Dictionary = {}
 ## Seconds of winded time remaining (physics time).
 var _winded_left: float = 0.0
 var _last_emitted_mode: MovementComponent.Mode = MovementComponent.Mode.JOG
@@ -66,6 +83,8 @@ func _ready() -> void:
 		health.died.connect(_on_died)
 	if injuries:
 		injuries.setup(self)
+	if needs:
+		needs.setup(self)
 
 
 func set_intent(direction: Vector3, mode: MovementComponent.Mode) -> void:
@@ -106,6 +125,55 @@ func sprint_denied_reason() -> String:
 	return ""
 
 
+## Lower max stamina by [amount] points for [source] (0 clears).
+func set_stamina_max_penalty(source: StringName, amount: float) -> void:
+	if amount <= 0.0:
+		_stamina_max_penalties.erase(source)
+	else:
+		_stamina_max_penalties[source] = amount
+	_refresh_stamina_max()
+
+
+## Scale max stamina by [mult] for [source] (1 clears).
+func set_stamina_max_multiplier(source: StringName, mult: float) -> void:
+	if is_equal_approx(mult, 1.0):
+		_stamina_max_multipliers.erase(source)
+	else:
+		_stamina_max_multipliers[source] = maxf(mult, 0.0)
+	_refresh_stamina_max()
+
+
+## Pure: (base − Σ penalties) × Π multipliers, never below 0.
+static func combined_max(base: float, penalties: Dictionary, multipliers: Dictionary) -> float:
+	var m := base
+	for p: float in penalties.values():
+		m -= p
+	for k: float in multipliers.values():
+		m *= k
+	return maxf(m, 0.0)
+
+
+func _refresh_stamina_max() -> void:
+	var base := profile.stamina_max if profile else 100.0
+	stats.set_max(STAMINA, combined_max(base, _stamina_max_penalties, _stamina_max_multipliers))
+
+
+## Set (1 = clear) a melee swing time multiplier for [source].
+func set_swing_time_multiplier(source: StringName, mult: float) -> void:
+	if is_equal_approx(mult, 1.0):
+		swing_time_multipliers.erase(source)
+	else:
+		swing_time_multipliers[source] = mult
+
+
+## Product of the swing time multipliers (MeleeCombat applies it).
+func swing_time_multiplier() -> float:
+	var m := 1.0
+	for v: float in swing_time_multipliers.values():
+		m *= v
+	return m
+
+
 func is_dead() -> bool:
 	return health != null and health.dead
 
@@ -122,11 +190,14 @@ func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> D
 ## Death: the body stays as a busy (input-ignoring) character. Round 4
 ## replaces this with a proper death sequence.
 func _on_died(_source: Node) -> void:
+	var cut := busy_context if is_busy and busy_tween != null and busy_tween.is_valid() else &""
 	if busy_tween and busy_tween.is_valid():
 		busy_tween.kill()
 	busy_tween = null
 	is_busy = true
 	busy_context = &"dead"
+	if cut != &"":
+		busy_cancelled.emit(cut)
 	intent_direction = Vector3.ZERO
 	velocity = Vector3.ZERO
 
@@ -142,7 +213,10 @@ func eye_height() -> float:
 ## caller (a window, a car…) is freed mid-way.
 func begin_busy(context: StringName = &"idle") -> Tween:
 	if busy_tween and busy_tween.is_valid():
+		var old := busy_context
 		busy_tween.kill()
+		busy_tween = null
+		busy_cancelled.emit(old)
 	is_busy = true
 	busy_context = context
 	velocity = Vector3.ZERO
@@ -156,6 +230,23 @@ func end_busy() -> void:
 	is_busy = false
 	busy_context = &"idle"
 	busy_tween = null
+
+
+## Stop the running busy action (only when it is [context], or any when
+## &""): kill its tween, free the body (the dead stay busy) and emit
+## busy_cancelled. Returns true when something was cancelled. The one
+## place that ends a busy action early (eat, bandage, search, sleep, rest).
+func cancel_busy(context: StringName = &"") -> bool:
+	if not is_busy or busy_context == &"dead":
+		return false
+	if context != &"" and busy_context != context:
+		return false
+	var ctx := busy_context
+	if busy_tween and busy_tween.is_valid():
+		busy_tween.kill()
+	end_busy()
+	busy_cancelled.emit(ctx)
+	return true
 
 
 ## Legacy toggle (tests / simple callers).

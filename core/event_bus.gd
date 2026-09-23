@@ -43,6 +43,10 @@ signal window_climbed(actor: Node, window: Node, hazard: bool)
 signal character_damaged(character: Node, amount: float, source: Node, info: Dictionary)
 ## A character's health reached 0.
 signal character_died(character: Node, source: Node)
+## Slow health loss that is not a hit (bleeding, infection, starvation,
+## thirst, food poisoning): cause &"bleeding" / &"infection" / &"needs".
+## Not a character_damaged: it does not interrupt actions (Round 7).
+signal health_drained(character: Node, amount: float, cause: StringName)
 ## Any change of a character's health (damage, bleeding, infection, heal).
 signal health_changed(character: Node, value: float, max_value: float)
 
@@ -110,6 +114,34 @@ signal encumbrance_changed(character: Node, state: StringName, weight: float)
 signal inventory_screen_toggled(visible: bool)
 ## An item was dropped to the ground. item: {id, name, count}.
 signal item_dropped(character: Node, item: Dictionary)
+
+# --- World time (Round 7) ----------------------------------------------------
+## Game time moved from [from_minute] to [to_minute] (game minutes since the
+## world start; every physics tick while time runs, once per advance()).
+signal time_advanced(from_minute: float, to_minute: float)
+## A whole game minute / hour / day went by (absolute minute, hour of day
+## 0..23 + day index, day index since the start).
+signal minute_passed(total_minute: int)
+signal hour_passed(hour: int, day: int)
+signal day_passed(day: int)
+## Speed step changed: 0 paused, 1 = 1×, 2 = 2×, 3 = 4× (scale = Engine.time_scale).
+signal time_speed_changed(step: int, scale: float)
+
+# --- Survival needs (Round 7) ------------------------------------------------
+## A need's severity level changed. need: &"hunger" / &"thirst" / &"fatigue"
+## / &"sickness"; level 0 (fine) .. 4; label e.g. "Hungry" ("" at level 0).
+signal need_level_changed(character: Node, need: StringName, level: int, label: String)
+## The visible moodles changed: [{id, label, level, max_level}] worst first.
+signal moodles_changed(character: Node, moodles: Array)
+## Something was eaten / drunk. item: {id, name, portion, hunger, thirst,
+## sickness, spoil_state}.
+signal item_consumed(character: Node, item: Dictionary)
+## Sleep / rest began or ended. reason: "" (woke rested), "Woken by noise!",
+## "Woken: under attack!", "Got up" …
+signal sleep_started(character: Node, bed: Node)
+signal sleep_ended(character: Node, reason: String)
+signal rest_started(character: Node, seat: Node)
+signal rest_ended(character: Node, reason: String)
 
 # --- Sound (stub; Round 8 adds propagation / occlusion) --------------------
 ## Something made a noise. radius in metres, intensity 0..1, category e.g.

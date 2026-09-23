@@ -418,6 +418,11 @@ func _bind_row(b: Button, d: Dictionary, item: ItemInstance) -> void:
 		cells[i].text = texts[i]
 		cells[i].add_theme_font_size_override(&"font_size", FONT)
 		cells[i].add_theme_color_override(&"font_color", col if i != 1 else (COL_EQUIPPED if equipped else COL_DIM))
+	# Round 7: spoiled food stands out in the condition column.
+	if texts[4] == "Rotten":
+		cells[4].add_theme_color_override(&"font_color", Color(0.95, 0.35, 0.3))
+	elif texts[4] == "Stale":
+		cells[4].add_theme_color_override(&"font_color", Color(0.9, 0.75, 0.35))
 	b.modulate = Color(1, 1, 1, 1.0 if bool(d.enabled) else 0.55)
 
 

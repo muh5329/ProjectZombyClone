@@ -50,6 +50,9 @@ var _stats: Dictionary = {}
 ## in tick() — e.g. encumbrance makes stamina drain faster without
 ## touching regeneration. Product of all sources.
 var _drain_multipliers: Dictionary = {}
+## Per stat: {source: multiplier} applied to POSITIVE rates only
+## (regeneration) — fatigue slows stamina recovery (Round 7).
+var _regen_multipliers: Dictionary = {}
 ## Owner character (the node whose stats these are), used for EventBus payloads.
 var character: Node = null
 
@@ -154,6 +157,27 @@ func set_drain_multiplier(stat: StringName, source: StringName, mult: float) -> 
 		_drain_multipliers[stat] = d
 
 
+## Set (1.0 = clear) the regeneration multiplier of [source] on [stat].
+func set_regen_multiplier(stat: StringName, source: StringName, mult: float) -> void:
+	var d: Dictionary = _regen_multipliers.get(stat, {})
+	if is_equal_approx(mult, 1.0):
+		d.erase(source)
+	else:
+		d[source] = mult
+	if d.is_empty():
+		_regen_multipliers.erase(stat)
+	else:
+		_regen_multipliers[stat] = d
+
+
+## Product of the regeneration multipliers on [stat] (1.0 when none).
+func regen_multiplier(stat: StringName) -> float:
+	var m := 1.0
+	for v: float in (_regen_multipliers.get(stat, {}) as Dictionary).values():
+		m *= v
+	return maxf(m, 0.0)
+
+
 ## Product of the drain multipliers on [stat] (1.0 when none).
 func drain_multiplier(stat: StringName) -> float:
 	var m := 1.0
@@ -172,6 +196,8 @@ func tick(delta: float, context: StringName, scale: float = 1.0) -> void:
 		var rate: float = s.rates.get(context, 0.0)
 		if rate < 0.0 and _drain_multipliers.has(id):
 			rate *= drain_multiplier(id)
+		elif rate > 0.0 and _regen_multipliers.has(id):
+			rate *= regen_multiplier(id)
 		if rate != 0.0:
 			modify(id, rate * delta * scale)
 

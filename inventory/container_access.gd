@@ -54,6 +54,8 @@ func search(actor: Node, seconds: float) -> Dictionary:
 	searching_actor = actor
 	if not EventBus.character_damaged.is_connected(_on_character_damaged):
 		EventBus.character_damaged.connect(_on_character_damaged)
+	if actor.has_signal(&"busy_cancelled") and not actor.is_connected(&"busy_cancelled", _on_busy_cancelled):
+		actor.connect(&"busy_cancelled", _on_busy_cancelled)
 	var tw: Tween = actor.call(&"begin_busy", SEARCH_CONTEXT)
 	tw.tween_interval(seconds)
 	tw.tween_callback(_finish.bind(actor))
@@ -64,19 +66,27 @@ func search(actor: Node, seconds: float) -> Dictionary:
 	return {"ok": true, "searching": true, "seconds": seconds}
 
 
-## Abort a running rummage: the actor's busy tween is killed, nothing opens.
+## Abort a running rummage: the actor's busy action is cancelled, nothing opens.
 func cancel_search() -> void:
+	var actor := searching_actor
+	if actor == null or not is_instance_valid(actor):
+		_stop_listening()
+		searching_actor = null
+		return
+	if not (actor.has_method(&"cancel_busy") and bool(actor.call(&"cancel_busy", SEARCH_CONTEXT))):
+		_on_busy_cancelled(SEARCH_CONTEXT)
+
+
+## The rummage busy action was cut (hurt, overridden by another busy
+## action, death): nothing opens.
+func _on_busy_cancelled(context: StringName) -> void:
+	if context != SEARCH_CONTEXT or searching_actor == null:
+		return
 	var actor := searching_actor
 	_stop_listening()
 	searching_actor = null
-	if actor == null or not is_instance_valid(actor):
+	if not is_instance_valid(actor):
 		return
-	if bool(actor.get("is_busy")) and actor.get("busy_context") == SEARCH_CONTEXT:
-		var tw: Variant = actor.get("busy_tween")
-		if tw is Tween and (tw as Tween).is_valid():
-			(tw as Tween).kill()
-		if actor.has_method(&"end_busy"):
-			actor.call(&"end_busy")
 	EventBus.timed_action_finished.emit(actor, SEARCH_CONTEXT, false)
 	EventBus.interaction_refused.emit(actor, container, "Interrupted")
 
@@ -89,11 +99,14 @@ func _on_character_damaged(character: Node, _amount: float, _source: Node, _info
 func _stop_listening() -> void:
 	if EventBus.character_damaged.is_connected(_on_character_damaged):
 		EventBus.character_damaged.disconnect(_on_character_damaged)
+	var a := searching_actor
+	if a != null and is_instance_valid(a) and a.has_signal(&"busy_cancelled") and a.is_connected(&"busy_cancelled", _on_busy_cancelled):
+		a.disconnect(&"busy_cancelled", _on_busy_cancelled)
 
 
 func _finish(actor: Node) -> void:
-	searching_actor = null
 	_stop_listening()
+	searching_actor = null
 	if not is_instance_valid(actor) or not is_instance_valid(container) or not container.is_inside_tree():
 		return
 	EventBus.timed_action_finished.emit(actor, SEARCH_CONTEXT, true)

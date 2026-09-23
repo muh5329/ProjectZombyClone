@@ -25,6 +25,9 @@ var inventory: ItemContainer = ItemContainer.new(20.0)
 @onready var combat: MeleeCombat = get_node_or_null("Combat")
 @onready var equipment: Equipment = get_node_or_null("Equipment")
 @onready var encumbrance: Encumbrance = get_node_or_null("Encumbrance")
+## Round 7: eating / drinking (child "Consume") and sleep / rest ("Rest").
+@onready var consume: ConsumeAction = get_node_or_null("Consume")
+@onready var rest: RestComponent = get_node_or_null("Rest")
 
 
 func _enter_tree() -> void:
@@ -215,8 +218,8 @@ func split_item(item: ItemInstance) -> Dictionary:
 	return {"ok": out != null, "item": out}
 
 
-## Use [item]: dressings bandage the worst wound; food / drink wait for
-## Round 7 (needs).
+## Use [item]: dressings bandage the worst wound; food / drink is eaten /
+## drunk whole (Round 7; see consume_item for half portions).
 func use_item(item: ItemInstance) -> Dictionary:
 	if item == null or not carries(item):
 		return _refuse("Not here")
@@ -225,8 +228,17 @@ func use_item(item: ItemInstance) -> Dictionary:
 		if injuries == null:
 			return _refuse("Can't bandage")
 		return injuries.bandage_worst(item)
+	if item.data is FoodData:
+		return consume_item(item, 1.0)
 	var why := ItemActions.use_block_reason(item.data)
 	return _refuse(why if why != "" else "Can't use that")
+
+
+## Eat / drink [portion] of [item] (1 = all that is left, 0.5 = half).
+func consume_item(item: ItemInstance, portion: float = 1.0) -> Dictionary:
+	if consume == null:
+		return _refuse("Can't eat")
+	return consume.start(item, portion)
 
 
 ## Hotbar key [index] (0-based): equip the assigned item / put it away.

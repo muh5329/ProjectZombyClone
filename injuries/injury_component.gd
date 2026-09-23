@@ -49,6 +49,9 @@ var _bandage_left: float = 0.0
 
 var _accum: float = 0.0
 var _drip_accum: float = 0.0
+## Wound healing speed factor set by the needs (Round 7): 1 fed and
+## watered, lower when very hungry / parched / sick, 0 when starving.
+var heal_multiplier: float = 1.0
 
 
 func _ready() -> void:
@@ -65,6 +68,7 @@ func setup(c: Character) -> void:
 	c.stats.add_stat(INFECTION, 100.0)
 	c.stats.set_value(INFECTION, 0.0)
 	c.stats.changed.connect(_on_stat_changed)
+	c.busy_cancelled.connect(_on_busy_cancelled)
 	if c.health:
 		c.health.damaged.connect(_on_damaged)
 	EventBus.window_climbed.connect(_on_window_climbed)
@@ -326,13 +330,18 @@ func bandage_progress() -> float:
 func interrupt_bandage() -> void:
 	if not is_bandaging():
 		return
+	# busy_cancelled → _on_busy_cancelled refunds and announces.
+	character.cancel_busy(BANDAGE_CONTEXT)
+
+
+## The bandaging busy action was cut (hurt, overridden, death): the
+## dressing was not used — give it back.
+func _on_busy_cancelled(context: StringName) -> void:
+	if context != BANDAGE_CONTEXT or bandaging == null:
+		return
 	var region := bandaging.region_id()
 	bandaging = null
-	# The dressing was not used: give it back.
 	_refund_dressing()
-	if character.busy_tween and character.busy_tween.is_valid():
-		character.busy_tween.kill()
-	character.end_busy()
 	EventBus.bandage_interrupted.emit(character, region)
 
 
@@ -424,7 +433,7 @@ func tick(dt: float) -> void:
 			if inj.bleed_left <= 0.0:
 				inj.bleeding = false
 				dirty = true
-		inj.heal_left -= dt * heal_rate(inj, profile)
+		inj.heal_left -= dt * heal_rate(inj, profile) * heal_multiplier
 		if inj.heal_left <= 0.0 and inj != bandaging:
 			injuries.remove_at(i)
 			dirty = true
@@ -467,5 +476,4 @@ func _apply_effects() -> void:
 		return
 	character.stats.set_value(PAIN, total_pain(injuries, profile))
 	character.movement.set_modifier(&"injury", leg_speed_multiplier(injuries, profile))
-	var base := character.profile.stamina_max if character.profile else 100.0
-	character.stats.set_max(Character.STAMINA, base - max_stamina_penalty(injuries, profile))
+	character.set_stamina_max_penalty(&"injury", max_stamina_penalty(injuries, profile))

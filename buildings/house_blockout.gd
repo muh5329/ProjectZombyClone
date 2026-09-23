@@ -28,6 +28,8 @@ const DEFAULT_CATALOG := "res://data/buildings/furniture_catalog.tres"
 @export var furniture_catalog: FurnitureCatalog
 ## Furniture at least this tall fades when it hides the player.
 @export var occluder_min_height: float = 1.2
+## Round 7: one warm OmniLight3D per room, on at night (DayNightLighting).
+@export var interior_lights: bool = true
 
 var doors: Array[Door] = []
 var windows: Array[HouseWindow] = []
@@ -145,6 +147,32 @@ func _build_room(r: Dictionary) -> void:
 	room.position = Vector3(rect.position.x + rect.size.x * 0.5, 0.0, rect.position.y + rect.size.y * 0.5)
 	add_child(room)
 	rooms.append(room)
+	if interior_lights:
+		_add_room_light(room, rect)
+
+
+## Round 7: a warm ceiling light per room (group `interior_light`),
+## hidden by day — DayNightLighting switches them on at night. A shadowed
+## SpotLight3D aimed at the floor whose cone just covers the room: walls
+## keep the light inside (no bleeding through into the dark), light only
+## escapes through doorways / windows.
+func _add_room_light(room: Room, rect: Rect2) -> void:
+	var l := SpotLight3D.new()
+	l.name = "Light"
+	var h := plan.wall_height - 0.3
+	l.light_color = Color(1.0, 0.78, 0.5)
+	l.light_energy = 3.0
+	l.spot_range = h + 0.8
+	l.spot_attenuation = 0.6
+	var half := maxf(rect.size.x, rect.size.y) * 0.5
+	l.spot_angle = clampf(rad_to_deg(atan(half / h)) + 6.0, 30.0, 80.0)
+	l.spot_angle_attenuation = 0.6
+	l.shadow_enabled = true
+	l.position = Vector3(0.0, h, 0.0)
+	l.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+	l.visible = false
+	l.add_to_group(&"interior_light")
+	room.add_child(l)
 
 
 func _build_wall(wall: Dictionary) -> void:
@@ -304,6 +332,7 @@ func _build_furniture() -> void:
 			c.size = spec.size
 			c.color = spec.color
 			c.lid_style = StringName(spec.lid)
+			c.spoil_multiplier = float(spec.get("spoil_multiplier", 1.0))
 			c.occluder_min_height = occluder_min_height
 			var fixed: Array[Dictionary] = []
 			for f in entry.get("fixed", []):
@@ -312,7 +341,7 @@ func _build_furniture() -> void:
 			body = c
 			containers.append(c)
 		else:
-			body = StaticBody3D.new()
+			body = _interactive_piece(spec)
 			_furnish(body, spec)
 		body.name = "%s%s" % [String(type).to_pascal_case(), String(room_type).to_pascal_case()]
 		body.position = place.position
@@ -321,6 +350,27 @@ func _build_furniture() -> void:
 		body.set_meta(&"furniture_type", type)
 		holder.add_child(body, true)
 		furniture.append(body)
+
+
+## Round 7: a bed / sofa (RestFurniture) or a sink (Sink) when the catalog
+## entry has an `interaction`; a plain StaticBody3D otherwise.
+func _interactive_piece(spec: Dictionary) -> StaticBody3D:
+	var kind := StringName(spec.get("interaction", &""))
+	var nm := String(spec.get("name", ""))
+	match kind:
+		&"sink":
+			var sk := Sink.new()
+			sk.size = spec.size
+			if nm != "":
+				sk.display_name = nm
+			return sk
+		&"bed", &"seat":
+			var rf := RestFurniture.new()
+			rf.kind = kind
+			rf.size = spec.size
+			rf.display_name = nm if nm != "" else String(kind).capitalize()
+			return rf
+	return StaticBody3D.new()
 
 
 ## Blockout mesh + collision for a plain (non-container) piece: layer 1
@@ -354,6 +404,23 @@ func _furnish(body: StaticBody3D, spec: Dictionary) -> void:
 		pl.mesh = pb
 		pl.position = Vector3(0, size.y + 0.06, -size.z * 0.5 + 0.25)
 		visual.add_child(pl)
+	elif StringName(spec.get("detail", &"")) == &"basin":
+		var bn := MeshInstance3D.new()
+		bn.name = "Basin"
+		var bm := BoxMesh.new()
+		bm.size = Vector3(size.x * 0.6, 0.04, size.z * 0.6)
+		bm.material = _material(Color(0.55, 0.62, 0.7))
+		bn.mesh = bm
+		bn.position = Vector3(0, size.y + 0.005, 0.03)
+		visual.add_child(bn)
+		var tap := MeshInstance3D.new()
+		tap.name = "Tap"
+		var tm := BoxMesh.new()
+		tm.size = Vector3(0.05, 0.18, 0.05)
+		tm.material = _material(Color(0.75, 0.76, 0.8))
+		tap.mesh = tm
+		tap.position = Vector3(0, size.y + 0.09, -size.z * 0.5 + 0.06)
+		visual.add_child(tap)
 	elif StringName(spec.get("detail", &"")) == &"backrest":
 		var br := MeshInstance3D.new()
 		br.name = "Backrest"

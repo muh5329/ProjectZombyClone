@@ -14,5 +14,6 @@ color = Color(0.6, 0.4, 0.2, 1)
 world_size = Vector3(0.09, 0.1, 0.09)
 tags = Array[StringName]([&"jar"])
 calories = 2000.0
-hunger = 20.0
+hunger = 80.0
 thirst = -5.0
+eat_seconds = 5.0

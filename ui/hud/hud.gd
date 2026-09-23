@@ -62,6 +62,16 @@ var hotbar: HotbarWidget
 var _enc_state: StringName = &""
 var _action_start_frame: int = -1
 var _action_seconds: float = 0.0
+## Round 7: top-right clock, moodle column under it, sleep fade.
+var clock: ClockWidget
+var moodle_list: MoodleList
+var sleep_overlay: ColorRect
+var sleep_label: Label
+var _sleep_tween: Tween
+## "Eating" / "Bandaging" / "Sleeping"… while busy ("" otherwise).
+var _busy_label: String = ""
+const BUSY_LABELS := {&"eat": "Eating", &"bandage": "Bandaging", &"sleep": "Sleeping",
+	&"search": "Searching", &"rest": "Resting", &"climb": "Climbing"}
 
 
 func _ready() -> void:
@@ -94,6 +104,15 @@ func _ready() -> void:
 	EventBus.encumbrance_changed.connect(_on_encumbrance_changed)
 	EventBus.item_dropped.connect(_on_item_dropped)
 	EventBus.equipment_changed.connect(_on_equipment_changed)
+	EventBus.moodles_changed.connect(_on_moodles_changed)
+	EventBus.need_level_changed.connect(_on_need_level_changed)
+	EventBus.item_consumed.connect(_on_item_consumed)
+	EventBus.sleep_started.connect(_on_sleep_started)
+	EventBus.sleep_ended.connect(_on_sleep_ended)
+	EventBus.rest_started.connect(_on_rest_started)
+	EventBus.rest_ended.connect(_on_rest_ended)
+	EventBus.time_speed_changed.connect(_on_time_speed_changed)
+	_build_survival()
 	_build_action_bar()
 	_build_weight_label()
 	_build_hotbar()
@@ -104,7 +123,7 @@ func _ready() -> void:
 	health_bar.modulate = COL_HEALTH
 	health_label.add_theme_color_override(&"font_color", Color.WHITE)
 	_set_flash(0.0)
-	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 4-7 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · 1-3 hotbar · B bandage · Tab inventory · G drop · Q/R rotate · Wheel zoom · F3 debug"
+	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 4-7 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · 1-3 hotbar · B bandage · Tab inventory · G drop · Q/R rotate · Wheel zoom · F5-F8 time speed · F3 debug"
 	aim_label.text = ""
 	_on_weapon_changed(GameManager.player, {"name": "Fists", "max_condition": 0})
 	_refresh_body()
@@ -426,6 +445,148 @@ func _on_equipment_changed(c: Node, slot: StringName, item: Dictionary) -> void:
 	_notice("Wearing %s" % String(item.name) if item.has("name") else "Took the bag off", 1.5)
 
 
+# --- Survival: clock, moodles, sleep (Round 7) -------------------------------------
+
+func _build_survival() -> void:
+	clock = ClockWidget.new()
+	clock.anchor_left = 1.0
+	clock.anchor_right = 1.0
+	clock.offset_left = -176.0
+	clock.offset_right = -8.0
+	clock.offset_top = 8.0
+	clock.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	add_child(clock)
+	moodle_list = MoodleList.new()
+	moodle_list.anchor_left = 1.0
+	moodle_list.anchor_right = 1.0
+	moodle_list.offset_left = -240.0
+	moodle_list.offset_right = -10.0
+	moodle_list.offset_top = 112.0
+	moodle_list.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	add_child(moodle_list)
+	sleep_overlay = ColorRect.new()
+	sleep_overlay.name = "SleepOverlay"
+	sleep_overlay.color = Color(0.0, 0.0, 0.02, 0.0)
+	sleep_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sleep_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sleep_overlay.visible = false
+	add_child(sleep_overlay)
+	move_child(sleep_overlay, 1)
+	sleep_label = Label.new()
+	sleep_label.set_anchors_preset(Control.PRESET_CENTER)
+	sleep_label.offset_left = -200.0
+	sleep_label.offset_right = 200.0
+	sleep_label.offset_top = -30.0
+	sleep_label.offset_bottom = 30.0
+	sleep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sleep_label.add_theme_font_size_override(&"font_size", 28)
+	sleep_label.add_theme_color_override(&"font_color", Color(0.75, 0.82, 1.0))
+	sleep_overlay.add_child(sleep_label)
+	_layout_right.call_deferred()
+
+
+## Clock → moodles → body panel, stacked down the right edge.
+func _layout_right() -> void:
+	if clock == null or not is_inside_tree():
+		return
+	var y := clock.offset_top + maxf(clock.size.y, 90.0) + 6.0
+	moodle_list.offset_top = y
+	var n := moodle_list.moodles.size()
+	var body := get_node_or_null(^"BodyMargin") as Control
+	if body:
+		body.offset_top = y + (n * 30.0 + 2.0 if n > 0 else 0.0)
+
+
+func _on_moodles_changed(c: Node, _list: Array) -> void:
+	if _is_player(c):
+		_layout_right.call_deferred()
+
+
+func _on_need_level_changed(c: Node, need: StringName, level: int, label: String) -> void:
+	if not _is_player(c) or level < 2 or label == "":
+		return
+	var n := (c as Character).needs
+	var mx := NeedsMath.thresholds_of(need, n.profile).size() if n else 4
+	if level >= mx - 1:
+		# Second-worst and worst levels: loud warning + pulsing moodle.
+		_notice(format_need_warning(need, label, level >= mx), 4.0)
+		moodle_list.pulse.call_deferred(need)
+		return
+	_notice("You feel %s" % label.to_lower() if need != &"sickness" else label, 2.0)
+
+
+## Pure: "WARNING: Parched — drink something soon!" / "DANGER: Dying of
+## Thirst — you are losing health!".
+static func format_need_warning(need: StringName, label: String, worst: bool) -> String:
+	if worst:
+		return "DANGER: %s — you are losing health!" % label
+	var fix := {&"hunger": "eat something soon", &"thirst": "drink something soon",
+		&"fatigue": "find a bed", &"sickness": "rest it off"}
+	return "WARNING: %s — %s!" % [label, String(fix.get(need, "do something"))]
+
+
+func _on_item_consumed(c: Node, item: Dictionary) -> void:
+	if not _is_player(c):
+		return
+	var state := StringName(item.get("spoil_state", &"fresh"))
+	var verb := "Drank" if float(item.get("hunger", 0.0)) <= 0.0 and float(item.get("thirst", 0.0)) > 0.0 else "Ate"
+	var t := "%s %s" % [verb, String(item.get("name", "it"))]
+	if state == &"rotten":
+		t += " — it was rotten!"
+	elif state == &"stale":
+		t += " (stale)"
+	_notice(t, 2.0)
+
+
+func _on_sleep_started(c: Node, _bed: Node) -> void:
+	if not _is_player(c):
+		return
+	sleep_overlay.visible = true
+	sleep_label.text = "Sleeping…"
+	_fade_sleep(0.82)
+
+
+func _on_sleep_ended(c: Node, reason: String) -> void:
+	if not _is_player(c):
+		return
+	_fade_sleep(0.0)
+	_notice(reason if reason != "" else "You wake up rested", 2.5)
+
+
+func _fade_sleep(to_alpha: float) -> void:
+	if _sleep_tween and _sleep_tween.is_valid():
+		_sleep_tween.kill()
+	_sleep_tween = create_tween()
+	_sleep_tween.tween_property(sleep_overlay, ^"color:a", to_alpha, 0.6)
+	if to_alpha <= 0.0:
+		_sleep_tween.tween_callback(func() -> void: sleep_overlay.visible = false)
+
+
+## True while the sleep fade is showing (tests / screenshots).
+func sleep_shown() -> bool:
+	return sleep_overlay.visible and sleep_overlay.color.a > 0.01
+
+
+func _on_rest_started(c: Node, seat: Node) -> void:
+	if _is_player(c):
+		var nm := String(seat.call(&"interaction_display_name")) if seat and seat.has_method(&"interaction_display_name") else ""
+		_notice("Resting%s… (move to get up)" % (" on the " + nm.to_lower() if nm != "" else ""), 3.0)
+
+
+func _on_rest_ended(c: Node, reason: String) -> void:
+	if _is_player(c) and reason != "":
+		_notice(reason, 1.5)
+
+
+func _on_time_speed_changed(step: int, _scale: float) -> void:
+	if TimeManager.sleeping:
+		return
+	match step:
+		0: _notice("Paused (F6 / . to resume)", 2.0)
+		1: _notice("Normal speed", 1.2)
+		_: _notice("Fast forward ×%d" % int(TimeManager.speed_scale()), 1.5)
+
+
 # --- Timed actions (Round 5) ----------------------------------------------------
 
 func _build_action_bar() -> void:
@@ -598,11 +759,23 @@ func _refresh() -> void:
 	health_bar.value = _health_frac * 100.0
 	health_label.text = "♥ Health %d%%" % int(round(_health_frac * 100.0)) if not _dead else "♥ Dead"
 	stamina_label.text = format_stamina(_frac, _stamina_cap, _stamina_state == &"low")
-	var mode := "Idle" if _idle else String(_mode).capitalize()
+	var mode := _busy_label if _busy_label != "" else ("Idle" if _idle else String(_mode).capitalize())
 	if _exhausted:
 		mode += "  (EXHAUSTED)"
 	mode_label.text = mode
 	stamina_bar.modulate = COL_EXHAUSTED if _exhausted else (COL_LOW if _stamina_state == &"low" else COL_OK)
+
+
+## State label while [p] is busy: the busy context's verb ("Eating";
+## "Drinking" when the eat action is a drink), "" when not busy / dead.
+static func busy_label_for(p: Character) -> String:
+	if p == null or not p.is_busy or p.is_dead():
+		return ""
+	if p.busy_context == &"eat":
+		var c := p.get_node_or_null("Consume") as ConsumeAction
+		if c and not c.current.is_empty() and StringName(c.current.get("action", &"")) != ConsumeAction.ACTION_EAT:
+			return "Drinking" if StringName(c.current.action) != ConsumeAction.ACTION_FILL else "Filling"
+	return String(BUSY_LABELS.get(p.busy_context, String(p.busy_context).capitalize()))
 
 
 ## "Stamina 60 %" (+ " (low)") (+ " · max 80 %" when wounds lower the cap).
@@ -636,6 +809,10 @@ func _process(delta: float) -> void:
 		if idle != _idle:
 			_idle = idle
 			_refresh()
+		var bl := busy_label_for(p)
+		if bl != _busy_label:
+			_busy_label = bl
+			_refresh()
 		# Continuous meters (not events): charge and bandage progress.
 		var combat := p.get_node_or_null("Combat")
 		var cf: float = combat.charge_fraction() if combat else -1.0
@@ -658,6 +835,9 @@ func _process(delta: float) -> void:
 		_prune_chasers()
 		if _chasers.size() != n:
 			danger_label.text = format_danger(_chasers.size())
+
+	if sleep_overlay and sleep_overlay.visible and TimeManager.sleeping:
+		sleep_label.text = "Sleeping…  %s" % TimeManager.clock_text()
 
 	debug_label.visible = GameManager.debug_overlay
 	if debug_label.visible and p:

@@ -57,11 +57,12 @@ func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> D
 
 ## Slow loss (bleeding, infection): no `damaged` / character_damaged (no
 ## hit flash, no injury), only `changed` and death. [cause] is for logs.
-func drain(amount: float, source: Node = null, _cause: StringName = &"bleeding") -> void:
+func drain(amount: float, source: Node = null, cause: StringName = &"bleeding") -> void:
 	if dead or invulnerable or amount <= 0.0:
 		return
 	health = maxf(0.0, health - amount)
 	_emit_changed()
+	EventBus.health_drained.emit(character, amount, cause)
 	_check_death(source)
 
 

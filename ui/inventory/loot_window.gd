@@ -501,8 +501,11 @@ static func row_texts(it: ItemInstance) -> Dictionary:
 	var cond := ""
 	if it.data and it.data.has_condition():
 		cond = "%d%%" % int(round(it.condition_fraction() * 100.0))
+	elif it.perishable():
+		# Round 7: food freshness in the condition column.
+		cond = FoodData.SPOIL_LABELS[it.spoil_state()]
 	return {
-		"name": it.display_name(),
+		"name": it.display_name() + (" (%d%%)" % int(round(it.portion * 100.0)) if it.is_partial() else ""),
 		"category": category_short(it.data),
 		"count": ("×%d" % it.stack) if it.stack > 1 else "",
 		"weight": "%.2f" % it.total_weight(),

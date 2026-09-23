@@ -35,6 +35,9 @@ const CATEGORY_IDS: Array[StringName] = [
 @export var color: Color = Color(0.7, 0.7, 0.7)
 ## Size of the blockout box lying on the ground (metres, X = length).
 @export var world_size: Vector3 = Vector3(0.4, 0.08, 0.12)
+## Item this becomes when filled with water at a sink (empty bottle →
+## &"water_bottle"); &"" = cannot be filled (Round 7).
+@export var fill_item_id: StringName = &""
 
 
 func has_condition() -> bool:

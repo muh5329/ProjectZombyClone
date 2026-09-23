@@ -18,7 +18,9 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
   movement code.
 - Interactions with other systems (planned): sprinting produces louder
   footsteps (R8); exhaustion will increase pain/stress and reduce melee
-  effectiveness (R4/P3); hunger/thirst lower max stamina (R7).
+  effectiveness (R4/P3). R7: hunger / thirst / sickness lower max
+  stamina, fatigue slows stamina regen (see Survival needs); resting on a
+  bed / sofa triples idle regen.
 
 ## Camera ✅ (Round 1, dimetric in Round 2)
 
@@ -115,6 +117,16 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
   player (y 428) with an outline so they never sit under the inventory
   panels; the key-hint strip is a bottom-right block; prompt / aim /
   charge moved up above the hotbar.
+- Round 7: top-right `ClockWidget` (ref 4: cyan "08:10", "71.6°F 07/12",
+  speed steps `|| > >> >>>` with the current one lit), `MoodleList`
+  under it (one row per need above fine: "Hungry" + a severity-coloured
+  circle with the need's initial, tooltip "Hunger: level 2 / 4"); the
+  body panel is pushed below the moodles. Notices for need levels ≥ 2
+  ("You feel hungry"), eating ("Ate Canned Beans — it was rotten!"),
+  speed changes ("Fast forward ×4", "Paused"), sleep / rest
+  ("Resting on the sofa… (move to get up)", "Woken by noise!", "You
+  wake up rested"). Sleep fades the screen to near-black with
+  "Sleeping…  02:13". Hint strip: "F5-F8 time speed".
 - Round 5: generic timed-action bar + label (`timed_action_started /
   finished`: "Rummaging in kitchen cabinet…"), "Wound on … reopened!",
   "No bandages", hint "Tab inventory". The loot window is its own
@@ -571,10 +583,172 @@ anything with `take_damage`). On death the character is busy forever
 (input ignored), the HUD shows "You died — Press R to restart" (`restart`
 action reloads the scene) and zombies lose interest.
 
+## World time ✅ (Round 7)
+
+`TimeManager` autoload (core/time_manager.gd) + pure `GameClock`
+(core/game_clock.gd), tuning in `data/world/time_config.tres`
+(`TimeConfig`).
+
+- Game minutes since the start instant (float). Start: **1 July, 07:00**.
+  1 real second = 1 game minute at 1× → a day lasts 24 real minutes.
+- Calendar: real month lengths (no leap years), MM/DD date, seasons
+  (Dec-Feb winter … Sep-Nov autumn), display temperature (seasonal mean
+  1 °C Jan … 24 °C Jul + ±5 °C daily sine, coolest 03:00 / warmest
+  15:00) → "°F" on the clock. Weather is a later round.
+- Advances in `_physics_process` by the scaled physics delta; emits
+  `time_advanced(from, to)` every tick and `minute_passed` /
+  `hour_passed(hour, day)` / `day_passed(day)` once per whole unit (also
+  for a large `advance(minutes)`). `set_minutes` / `set_time_of_day`
+  jump without simulating (load, tests).
+- Speed steps: **F5 pause · F6 1× · F7 2× · F8 4×**, `,` slower / `.`
+  faster. Pause = `SceneTree.paused` (TimeManager keeps processing
+  input). 2× / 4× = `Engine.time_scale` (the whole simulation, like PZ):
+  refused "Can't fast-forward: danger" while any zombie chases the
+  player, and dropped back to 1× ("Danger! Time back to normal") within
+  0.25 s of one starting to.
+- `WorldConfig._ready/_exit_tree` → `TimeManager.reset()` (minute 0, 1×,
+  engine normal, unpaused) so every loaded map starts fresh and a freed
+  map never leaves the engine sped up. `to_dict/from_dict`.
+
+## Day / night lighting ✅ (Round 7)
+
+`DayNightLighting` (world/, node "DayNight" in the map) drives the Sun
+(DirectionalLight3D) and the WorldEnvironment from the hour
+(`lighting_at(h)` pure, smoothstep between keyframes): daylight
+07:00-18:30 (energy 0.85 = the Round 1-6 look), warm dusk 20:00, night
+from 21:30 to 04:30 (faint cold moonlight 0.1, neutral dark-grey ambient
+0.3 — never pitch black), pink-grey dawn 05:45. Every building room has a
+warm shadowed SpotLight3D aimed at the floor whose cone just covers the
+room (group `interior_light`, HouseBlockout `interior_lights`), on while
+the sun is below 0.5 — no light bleeds through walls, it only escapes
+through doorways / windows — and window panes glow warm
+(`HouseWindow.set_night_glow`), like the lit houses of reference 3.
+
+## Survival needs ✅ (Round 7)
+
+`NeedsComponent` (survival/, child "Needs" of the player), pure maths in
+`NeedsMath`, tuning in `data/survival/needs_profile.tres`
+(`NeedsProfile`). Needs are StatsComponent stats 0 (fine) … 100.
+
+| Need | Rate / game h | Levels (enter) | Effects |
+|---|---|---|---|
+| Hunger | +2.5 awake (×1.5 jog / sprint / climb), +1.2 asleep | Peckish 15 · Hungry 25 · Very Hungry 50 · Starving 80 | max stamina ×0.9 (hungry) / ×0.75; very hungry: no health regen, wounds heal ×0.5; starving: −6 HP / game h, wounds don't heal |
+| Thirst | +3.5 awake (same exertion ×1.5), +1.8 asleep | Thirsty 25 · Parched 55 · Dying of Thirst 88 | max stamina ×0.9 / ×0.75 / ×0.6; parched: no regen, heal ×0.5, speed ×0.95; dying: −10 HP / game h, speed ×0.85 |
+| Fatigue | +4 awake, −12.5 asleep, −2 resting | Tired 30 · Very Tired 55 · Exhausted 80 | stamina regen ×0.85 / ×0.7 / ×0.5; very tired swing ×1.1; exhausted speed ×0.9, swing ×1.2 |
+| Sickness | −8 (recovers) | Queasy 20 · Nauseous 45 · Food Poisoning 70 | max stamina ×0.95 / 0.85 / 0.7; nauseous: no regen, −6 HP / h; poisoning −30 HP / h |
+
+- Start 5 / 5 / 5 / 0. Eight game hours idle → Hungry + Thirsty. A
+  normal day (16 h awake, 8 h asleep) costs ≈ 50 hunger / 70 thirst; no
+  water → dead after ≈ 37 game hours (balance test: 36-48), no food ≈ 2.5
+  days. Entering the second-worst level (Very Hungry, Parched, Very
+  Tired, Nauseous) or the worst one gives a loud 4 s notice ("WARNING:
+  Parched — drink something soon!", "DANGER: … you are losing health!")
+  and the moodle pulses.
+- Health drains go out as `EventBus.health_drained(character, amount,
+  cause)` (bleeding / infection / needs) — never as `character_damaged`,
+  so they don't interrupt actions.
+- Levels use hysteresis: a level is left only 5 points below its enter
+  value. Changes → `need_level_changed`, `moodles_changed`.
+- Simulated in whole game-minute steps from `time_advanced`, so speed
+  controls and sleep scale it; activity sampled per step.
+- Effects applied on level change: `Character.set_stamina_max_multiplier
+  (&"needs")` (combined with the injury penalty: `(base − Σ penalties) ×
+  Π multipliers`), `StatsComponent.set_regen_multiplier(stamina)`,
+  movement modifier `needs`, `Character.set_swing_time_multiplier`
+  (MeleeCombat applies it on top of pain), `InjuryComponent
+  .heal_multiplier`. Per step: health drain, or health regen +6 / game h
+  when fed, watered, not sick and without wounds.
+
+## Eating & drinking ✅ (Round 7)
+
+`ConsumeAction` (survival/, child "Consume"). `FoodData`: `hunger` /
+`thirst` (reductions), `eat_seconds`, `can_eat_half`, `requires_tool`
+(item tag), `fallback_tool_tag` + `fallback_injury_chance`,
+`empty_item_id`, `fresh_days` / `rotten_days`.
+
+- Inventory context menu **Eat / Eat half / Drink / Drink half**
+  (ItemActions `consume`, `consume_half`); "Use" and hotbar keys eat
+  whole (food / drink can be assigned to the hotbar).
+- Busy `eat` context for `eat_seconds × portion` ("Eating Canned Beans…"
+  bar). The item (one of its stack) leaves its container at the start and
+  goes back on interruption: damage (e.g. a zombie hit) or walking off.
+  Nothing is consumed when interrupted.
+- Half: the rest stays as a half-eaten item (`ItemInstance.portion` 0.5,
+  weighs half, never stacks; row "Bread (50%)").
+- Hunger reduction derives from calories: 1 hunger point = 25 kcal
+  (`NeedsProfile.kcal_per_hunger`; beans 380 kcal = 15.2, bread 48, peanut
+  butter 80); `FoodData.hunger` matches and is only used for 0-kcal items.
+  House A's kitchen / fridge / counter feed one person ≈ 3.2 days on
+  average (30-seed balance test: mean 2.5-7 days, every seed > 1 day).
+- Refused "Paused" while the game is paused; "Fill bottle" disabled "No
+  empty bottles" / "No room for the water".
+- Canned beans: tin opener (tag `can_opener`) anywhere carried, else a
+  knife (tag `blade`, hands included, not broken) with a 25 % chance of a
+  hand scratch (3 dmg; the meal continues); neither → "Need a can opener".
+- Water bottle → `water_bottle_empty` (misc, `fill_item_id`).
+- Spoiled food: stale ×0.8 nutrition + 5 sickness, rotten ×0.5 + 45
+  sickness (per whole item).
+- **Sink** (`interaction/sink.gd`, kitchen + bathroom of House A):
+  "Drink" (−60 thirst in 4 s; "Not thirsty" below 1), "Fill bottle"
+  (all carried empty bottles in 2.5 s, only what the container weight
+  allows; "No empty bottles"). The mains water runs until
+  `WorldConfig.water_shutoff_day` (default 14, days since the outbreak =
+  world_age_days + days played; < 0 never) → "The water is off".
+
+## Spoilage ✅ (Round 7)
+
+- `ItemInstance.created_minute` + lazily synced `age_minutes`: age grows
+  by elapsed game minutes × the holding container's
+  `ItemContainer.spoil_multiplier` (re-rated on every move). Fresh <
+  `fresh_days`, stale < `rotten_days` (default 2 × fresh), then rotten.
+  Canned / dry food never spoils. Saved ages are elapsed minutes; a
+  loaded or reset clock bumps `TimeManager.epoch`, so items re-stamp
+  instead of ageing whatever the load order.
+- Lazily rolled container loot is as old as the world: age = (world_age_days
+  × 1440 + game minutes so far) × the container's spoil rate (a fridge
+  opened on day 40 holds rotten milk).
+- Fridges (`furniture_catalog.tres` `spoil_multiplier` 0.25 →
+  `LootContainer.spoil_multiplier`): bread / milk last 4× longer.
+  Electricity is always on until a later round.
+- Stacks only merge with the same spoil state (and whole portions); the
+  merged stack keeps the older age. Inventory condition column shows
+  Fresh / Stale (amber) / Rotten (red). Age and portion are saved in
+  `to_dict` entries.
+
+## Sleep & rest ✅ (Round 7)
+
+`RestComponent` (survival/, child "Rest"); `RestFurniture`
+(interaction/rest_furniture.gd) for beds (Sleep + Rest) and the sofa
+(Rest), built by HouseBlockout from the catalog `interaction` key.
+
+- **Sleep**: listed disabled "Not tired" below Tired; "Can't sleep:
+  danger nearby" while chased or with a zombie within 15 m. Asleep =
+  busy `sleep`, needs sleeping (fatigue −12.5 / h, hunger +1.2 / thirst
+  +1.8 per h), `TimeManager.begin_sleep()`: `Engine.time_scale` 8
+  (zombies get 192 s of simulated time in an 8 h night — Godot scales the
+  step delta, not the tick count, so it costs no CPU) + game time at 20
+  min / real s (8 h ≈ 24 s). Screen fades. Refused "Can't sleep:
+  bleeding", and "Too thirsty / Too hungry to sleep" when the need would
+  reach its critical level during the expected sleep. Wakes at fatigue 0
+  ("You wake up rested"), on damage ("Woken: under attack!"), on a needs
+  health drain ("Woken: dying of thirst"), on any sound within 8 m that
+  reaches the sleeper or a zombie within 10 m / chasing ("Woken by
+  noise!"), or after 600 real s. Wounds get the skipped game time.
+- Busy actions end early through `Character.cancel_busy(context)`; any
+  override (`begin_busy` while busy), cancel or death emits
+  `Character.busy_cancelled(context)` and the owner restores its state:
+  eating returns the item, bandaging refunds the dressing, a rummage
+  never opens, sleep / rest end cleanly. Death also resets the game speed
+  to 1×. The HUD state label shows the busy verb ("Eating", "Drinking",
+  "Bandaging", "Searching", "Sleeping", "Resting", "Climbing").
+- **Rest**: busy `rest` (stamina idle regen ×3 via the stats profile's
+  `stamina_rest_multiplier`, fatigue −2 / h) until the player moves,
+  gets hurt, or 1 h real.
+
 ## Planned (see MASTER_PLAN for order)
 
 Sound propagation ⬜ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
-Loot tables ✅ · Needs (hunger/thirst/fatigue/temperature) ⬜ ·
-Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ⬜ · Vehicles ⬜ ·
+Loot tables ✅ · Needs ✅ (hunger / thirst / fatigue / sickness; temperature, wetness, stress ⬜) ·
+Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ✅ · Vehicles ⬜ ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·
 World streaming ⬜ · NPC survivors ⬜

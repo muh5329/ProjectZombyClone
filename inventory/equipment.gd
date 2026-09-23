@@ -373,7 +373,7 @@ func assign_hotbar(index: int, item: ItemInstance) -> Dictionary:
 		return _no("No such hotbar slot")
 	if item != null and not carries(item):
 		return _no(REASON_NOT_CARRIED)
-	if item != null and not is_equippable(item):
+	if item != null and not is_equippable(item) and not is_consumable(item):
 		return _no(REASON_CANT_HOLD)
 	hotbar.assign(index, item)
 	return {"ok": true}
@@ -387,13 +387,24 @@ func hotbar_item(index: int) -> ItemInstance:
 	return it if it != null and carries(it) else null
 
 
-## Key 1-3: equip the assigned item (unequip it when already held).
+## Food / drink can sit on the hotbar too (Round 7): its key eats /
+## drinks it (through the owner's use_item).
+static func is_consumable(item: ItemInstance) -> bool:
+	return item != null and item.data is FoodData
+
+
+## Key 1-3: equip the assigned item (unequip it when already held); a
+## consumable is eaten / drunk instead (owner.use_item).
 func use_hotbar(index: int) -> Dictionary:
 	var item := hotbar.item_at(index)
 	if item == null:
 		return _no("Hotbar slot %d is empty" % (index + 1))
 	if not carries(item):
 		return _no(REASON_NOT_CARRIED)
+	if is_consumable(item):
+		if character != null and character.has_method(&"use_item"):
+			return character.call(&"use_item", item)
+		return _no("Can't use that")
 	if is_equipped(item):
 		return unequip(item)
 	return equip(item)

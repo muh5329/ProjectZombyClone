@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="TimeConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/world/time_config.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+start_month = 7
+start_day = 1
+start_hour = 7
+start_minute = 0
+minutes_per_second = 1.0
+speed_steps = Array[float]([0.0, 1.0, 2.0, 4.0])
+sleep_minutes_per_second = 20.0
+sleep_engine_time_scale = 8.0
+sleep_max_real_seconds = 600.0

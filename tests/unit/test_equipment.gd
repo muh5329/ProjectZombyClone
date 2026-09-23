@@ -290,9 +290,13 @@ func test_hotbar_assign_use_and_prune() -> void:
 	var knife := _inst(&"kitchen_knife")
 	_main().add(knife)
 	check(not eq.assign_hotbar(0, _inst(&"hammer")).ok, "not carried → refused")
+	var nails := _inst(&"nails")
+	_main().add(nails)
+	check_eq(eq.assign_hotbar(0, nails).get("reason", ""), "Can't hold that", "materials not on the hotbar")
 	var apple := _inst(&"apple")
 	_main().add(apple)
-	check_eq(eq.assign_hotbar(0, apple).get("reason", ""), "Can't hold that", "food not on the hotbar")
+	check(eq.assign_hotbar(0, apple).ok, "food / drink can go on the hotbar (R7)")
+	eq.assign_hotbar(0, null)
 	check(eq.assign_hotbar(0, knife).ok, "assigned")
 	check(eq.assign_hotbar(2, knife).ok and eq.hotbar_item(0) == null and eq.hotbar_item(2) == knife, "one slot per item")
 	check(eq.use_hotbar(2).ok and eq.primary() == knife, "key 3 equips")
@@ -318,11 +322,10 @@ func test_item_actions_lists() -> void:
 	check(ids.has(ItemActions.USE) and ids.has(ItemActions.DROP), "rag: use + drop (%s)" % str(ids))
 	var beans := _inst(&"canned_beans", 3)
 	acts = ItemActions.for_item(fake, beans)
-	var use: Dictionary = acts.filter(func(a): return a.id == ItemActions.USE)[0]
-	check(not use.enabled and use.reason == "Round 7" and use.label == "Eat", "food use is a Round-7 stub")
+	check(not acts.any(func(a): return a.id == ItemActions.USE or a.id == ItemActions.CONSUME),
+			"no eat entry without a ConsumeAction on the actor (R7)")
 	check(acts.any(func(a): return a.id == ItemActions.SPLIT), "stack → split")
 	check(acts.any(func(a): return a.id == ItemActions.DROP_ONE), "stack → drop one")
-	check_eq(ItemActions.use_block_reason(_d(&"soda")), "Drinking comes in Round 7", "drink stub")
 	fake.free()
 
 

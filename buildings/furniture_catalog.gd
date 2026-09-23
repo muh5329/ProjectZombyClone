@@ -5,11 +5,14 @@ extends Resource
 ##                 color: Color, container_type: StringName (omit for
 ##                 plain furniture), capacity: float (kg), name: String,
 ##                 lid: &"front" | &"top" | &"none" (containers),
-##                 detail: &"pillow" | &"backrest" (plain pieces)}}.
+##                 detail: &"pillow" | &"backrest" (plain pieces),
+##                 spoil_multiplier: float (containers: fridge 0.25, R7),
+##                 interaction: &"bed" | &"seat" | &"sink" (plain pieces
+##                 that offer Sleep / Rest / Drink, R7)}}.
 ## BuildingPlan.furniture entries reference a type and may override any
 ## of these per piece.
 
-const KEYS := ["size", "color", "container_type", "capacity", "name", "lid", "detail"]
+const KEYS := ["size", "color", "container_type", "capacity", "name", "lid", "detail", "spoil_multiplier", "interaction"]
 
 @export var types: Dictionary = {}
 
@@ -24,7 +27,7 @@ func resolve(type: StringName, overrides: Dictionary = {}) -> Dictionary:
 	var out := {
 		"size": Vector3(1, 1, 1), "color": Color(0.6, 0.6, 0.6),
 		"container_type": null, "capacity": 20.0, "name": "", "lid": &"front",
-		"detail": &"",
+		"detail": &"", "spoil_multiplier": 1.0, "interaction": &"",
 	}
 	out.merge(base, true)
 	for k in KEYS:

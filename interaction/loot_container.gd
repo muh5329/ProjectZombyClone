@@ -54,6 +54,9 @@ const LAYER_OCCLUDERS := 1 << 5
 @export var prompt_height: float = 1.0
 ## Label of the search action ("" → "Search <display name>").
 @export var search_label: String = ""
+## Spoil rate of food stored inside (fridge 0.25 — power is always on
+## until electricity exists; Round 7).
+@export var spoil_multiplier: float = 1.0
 @export_group("Blockout")
 ## Box size (x width, y height, z depth; the front faces +Z). ZERO = the
 ## node brings its own visual / collision (corpses).
@@ -85,6 +88,7 @@ func _ready() -> void:
 	add_to_group(GROUP)
 	add_to_group(WorldState.GROUP)
 	inventory.capacity = capacity
+	inventory.set_spoil_multiplier(spoil_multiplier)
 	inventory.changed.connect(_on_inventory_changed)
 	if display_name == "":
 		display_name = default_name(container_type)
@@ -138,6 +142,12 @@ func world_age_days() -> float:
 	return cfg.world_age_days if cfg else 0.0
 
 
+## How old lazily rolled loot is (game minutes): the world's age at
+## the start plus the game time played so far (Round 7).
+func loot_age_minutes() -> float:
+	return world_age_days() * 1440.0 + TimeManager.now()
+
+
 func loot_seed() -> int:
 	return LootResolver.seed_for(world_seed(), persist_id if persist_id != "" else String(name))
 
@@ -162,7 +172,12 @@ func ensure_loot() -> void:
 			continue
 		var n := inventory.fit_count(d, int(e.count))
 		if n > 0:
-			inventory.add_new(d, n, int(e.condition))
+			var inst := ItemInstance.new(d, int(e.condition), n)
+			if inst.perishable():
+				# Rolled food is as old as the world (outbreak day 0 +
+				# game time so far), aged at this container's rate.
+				inst.age_minutes = loot_age_minutes() * spoil_multiplier
+			inventory.add(inst)
 
 
 # --- Interactable provider API --------------------------------------------------

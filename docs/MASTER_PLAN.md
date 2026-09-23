@@ -35,8 +35,8 @@ gameplay, and independent verification.
 | 4 | Melee combat and player health | **DONE** (2026-09-22, 154 tests) |
 | 5 | Interactable containers and loot (data-driven loot tables) | **DONE** (2026-09-22, 188 tests) |
 | 6 | Inventory and equipment (weight, encumbrance → movement) | **DONE** (2026-09-22, 236 tests) |
-| 7 | Hunger / thirst + consumable food | next |
-| 8 | Sound propagation + zombie hearing | |
+| 7 | Hunger / thirst + consumable food | **DONE** (2026-09-22, 288 tests) |
+| 8 | Sound propagation + zombie hearing | next |
 | 9 | Barricading windows and doors | |
 | 10 | Saving and restoring the entire micro-world | |
 

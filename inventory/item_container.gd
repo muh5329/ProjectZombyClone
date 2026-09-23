@@ -44,6 +44,9 @@ var capacity: float = -1.0
 var items: Array[ItemInstance] = []
 ## Non-empty for an Equipment slot container (&"primary_hand"…).
 var equipment_slot: StringName = &""
+## Spoil rate of perishable food stored here (fridge 0.25; Round 7).
+## Change it through set_spoil_multiplier() so stored items re-rate.
+var spoil_multiplier: float = 1.0
 ## Weak ref to the bag ItemInstance whose contents this is (null = none).
 var _owner_item_ref: WeakRef = null
 ## Cached total weight (< 0 = dirty).
@@ -392,6 +395,14 @@ func split_stack(item: ItemInstance, n: int) -> ItemInstance:
 	return out
 
 
+## Set the spoil rate (fridge 0.25) and re-rate the perishables stored here.
+func set_spoil_multiplier(m: float) -> void:
+	spoil_multiplier = maxf(m, 0.0)
+	for it in items:
+		if it.perishable():
+			it.set_age_rate(spoil_multiplier)
+
+
 func index_of(item: ItemInstance) -> int:
 	return items.find(item)
 
@@ -412,6 +423,7 @@ func to_dict() -> Dictionary:
 	var list: Array = []
 	for it in items:
 		var e := {"id": String(it.id()), "count": it.stack, "condition": it.condition}
+		it._spoil_to_dict(e)
 		if it.contents != null and not it.contents.is_empty():
 			e["contents"] = it.contents.to_dict()
 		list.append(e)
@@ -464,6 +476,7 @@ func _insert(item: ItemInstance) -> void:
 				break
 			if it.can_stack_with(item) and it.stack < data.max_stack:
 				var n := mini(data.max_stack - it.stack, left)
+				it.absorb_age(item)
 				it.stack += n
 				left -= n
 		if left == 0:

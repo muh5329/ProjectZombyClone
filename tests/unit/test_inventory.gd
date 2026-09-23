@@ -27,7 +27,7 @@ func test_item_db_loads_catalogue() -> void:
 	check(ItemDB.get_item(&"baseball_bat") == preload("res://data/items/weapons/baseball_bat.tres"), "cached weapon resource")
 	check(_d(&"canned_beans") is FoodData and (_d(&"canned_beans") as FoodData).calories > 0.0, "beans are FoodData with calories")
 	check(_d(&"water_bottle") is FoodData and _d(&"water_bottle").category == ItemData.Category.DRINK, "water is a drink")
-	check((_d(&"bread") as FoodData).spoil_days > 0.0, "bread spoils")
+	check((_d(&"bread") as FoodData).fresh_days > 0.0, "bread spoils")
 	check(_d(&"bandage") is MedicalData and (_d(&"bandage") as MedicalData).bandage_quality == 1.0, "bandage quality 1")
 	var rag := _d(&"rag") as MedicalData
 	check(rag.bandage_quality < 1.0 and is_equal_approx(rag.rebleed_chance, 0.5) and is_equal_approx(rag.rebleed_after, 60.0), "rag: worse dressing, 50 % rebleed after 60 s")

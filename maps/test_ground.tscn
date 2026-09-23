@@ -19,6 +19,7 @@
 [ext_resource type="Script" path="res://interaction/loot_container.gd" id="17_loot"]
 [ext_resource type="PackedScene" path="res://ui/inventory/loot_window.tscn" id="18_lootwin"]
 [ext_resource type="Resource" path="res://data/items/containers/backpack.tres" id="19_backpack"]
+[ext_resource type="Script" path="res://world/day_night_lighting.gd" id="20_daynight"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
 size = Vector3(200, 1, 200)
@@ -181,6 +182,9 @@ target_path = NodePath("../Player")
 [node name="OcclusionManager" type="Node" parent="."]
 script = ExtResource("8_occl")
 camera_path = NodePath("../IsometricCamera")
+
+[node name="DayNight" type="Node" parent="."]
+script = ExtResource("20_daynight")
 
 [node name="HUD" parent="." instance=ExtResource("3_hud")]
 

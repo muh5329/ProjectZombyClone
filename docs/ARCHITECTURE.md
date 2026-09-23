@@ -15,7 +15,7 @@
 - **Events over references.** Cross-system notifications go through the
   `EventBus` autoload. Emitters never know their listeners.
 - **Autoloads stay thin.** `GameManager` holds only the player reference and
-  debug flags. Future managers (`TimeManager`, `SaveManager`,
+  debug flags. `TimeManager` (R7) owns world time; future managers (`SaveManager`,
   `WorldManager`) are separate autoloads with single responsibilities.
 - **Data-driven content** (from Round 5 on): items, loot tables, recipes,
   zombies as `Resource` files under `data/`.
@@ -24,12 +24,16 @@
 
 ```
 core/         event_bus.gd, game_manager.gd             (autoloads)
+              time_manager.gd (autoload TimeManager), game_clock.gd (GameClock) (R7)
 characters/   character.gd, movement_component.gd, stats_component.gd,
               health_component.gd, footstep_emitter.gd, body_helpers.gd (R3)
 player/       player.gd, player.tscn, player_controller.gd, player_interaction.gd,
               player_combat_input.gd (R4)
 camera/       isometric_camera.gd, occlusion_manager.gd
-interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2), loot_container.gd, container_visual.gd (R5)
+interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2), loot_container.gd, container_visual.gd (R5),
+              rest_furniture.gd (RestFurniture), sink.gd (Sink) (R7)
+survival/     needs_component.gd (NeedsComponent), needs_math.gd (NeedsMath), consume_action.gd
+              (ConsumeAction), rest_component.gd (RestComponent), danger.gd (Danger) (R7)
 buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2), furniture_catalog.gd (R5)
 ai/           state_machine/state_machine.gd, state.gd  (generic FSM, R3)
 items/        item_data.gd, weapon_data.gd, item_instance.gd, world_item.gd (R4),
@@ -42,21 +46,24 @@ injuries/     injury.gd, injury_type_spec.gd, injury_component.gd (R4)
 effects/      blood_decals.gd (R4)
 zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
               zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3)
-world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5)
-ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader, hotbar.gd (HotbarWidget, R6)
+world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5),
+              day_night_lighting.gd (DayNightLighting) (R7)
+ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader, hotbar.gd (HotbarWidget, R6),
+              clock_widget.gd (ClockWidget), moodle_list.gd (MoodleList) (R7)
 ui/inventory/ loot_window.gd/.tscn (LootWindow controller), item_list_panel.gd (ItemListPanel),
               item_context_menu.gd (ItemContextMenu), inventory_drag_drop.gd (InventoryDragDrop) (R5/R6)
 maps/         test_ground.tscn                           (main scene)
 data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tres, zombies/zombie_basic.tres,
               items/<category>/*.tres (41 items, R5), loot/*.tres + loot/garage/*.tres (R5),
-              combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4)
+              combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4),
+              world/time_config.gd + .tres, survival/needs_profile.gd + .tres (R7)
 assets/       materials/grid_ground.gdshader
 tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd
 scripts/      test.sh, screenshots.sh, perf.sh
 docs/
 ```
 
-Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simulation/`,
+Planned folders follow the brief (`crafting/`, `simulation/`,
 `vehicles/`, `farming/`, `weather/`, `electricity/`, `audio/`, `npc/`).
 
 ## Key types
@@ -74,6 +81,17 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
   `sprint_denied_reason()` — "Too heavy" / "Too winded to sprint");
   `can_sprint()` = not exhausted and no lock.
 
+- R7: `busy_cancelled(context)` signal + `cancel_busy(context)`: the
+  single way a busy action ends early (override by `begin_busy`, cancel,
+  death); owners (ConsumeAction, InjuryComponent bandage, ContainerAccess
+  search, RestComponent) restore their state in the handler.
+- R7: max stamina = `combined_max(base, penalties, multipliers)` —
+  `set_stamina_max_penalty(source, pts)` (InjuryComponent `injury`) and
+  `set_stamina_max_multiplier(source, m)` (NeedsComponent `needs`);
+  `set_swing_time_multiplier(source, m)` / `swing_time_multiplier()`
+  (MeleeCombat multiplies it into the swing with pain). Optional `needs`
+  child ("Needs") set up in `_ready` after injuries.
+
 ### `MovementComponent`
 - Mode enum SNEAK/WALK/JOG/SPRINT with base speeds 1.3/2.0/3.4/5.6 m/s.
 - `speed_modifiers: Dictionary[StringName, float]` — multiplicative, keyed
@@ -88,6 +106,9 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
 - `to_dict()/from_dict()` for the save system.
 - R6: `set_drain_multiplier(stat, source, mult)` / `drain_multiplier()`
   scale NEGATIVE rates only in `tick()` (encumbrance).
+- R7: `set_regen_multiplier` / `regen_multiplier()` scale POSITIVE rates
+  (fatigue slows stamina recovery). Busy contexts `eat`, `sleep` (idle
+  rate) and `rest` (idle × `stamina_rest_multiplier`) in the profile.
 
 ### `PlayerController`
 - Reads the input map every physics tick and sets intent on the parent.
@@ -508,6 +529,54 @@ Planned folders follow the brief (`inventory/`, `survival/`, `crafting/`, `simul
 - Child of a Character; emits `sound_emitted` once per second while it
   moves, radius by effective mode (2 / 4 / 8 / 14 m).
 
+### `TimeManager` (core/time_manager.gd, autoload, R7) / `GameClock`
+- `minutes` (game minutes since the start instant), `config: TimeConfig`,
+  `speed_step` (0 pause … 3 = 4×), `sleeping`. Queries `now()`, `hour()`,
+  `minute()`, `hour_float()`, `day_index()`, `date()`, `month()`,
+  `season()`, `clock_text()`, `date_text()`, `temperature_f()`.
+- `advance(m)` (emits `time_advanced` + whole-unit signals),
+  `set_minutes` / `set_time_of_day` (jump, not simulated), `set_speed`
+  / `request_speed` (danger-gated fast-forward; pause = tree.paused),
+  `begin_sleep` / `end_sleep`, `reset()`, `to_dict/from_dict`, `epoch`
+  (bumped by reset / load: item ages re-stamp). Resets to 1× on the
+  player's death.
+  PROCESS_MODE_ALWAYS; handles the time_* input actions.
+- `GameClock`: pure statics (minute_of_day, hour_of, days_elapsed,
+  date_after, season_of, format_time/date, temperature_c, c_to_f).
+
+### Survival (survival/, R7)
+- `NeedsComponent` (child "Needs"): `setup(character)` registers stats
+  hunger / thirst / fatigue / sickness; listens to `time_advanced`,
+  simulates whole game minutes (`advance_minutes`), `levels`, `effects`,
+  `sleeping` / `resting` flags, `consume(effect)`, `set_need`,
+  `moodles()`, `can_sleep()`, `to_dict/from_dict`.
+- `NeedsMath` (pure): `level_for(value, current, thresholds,
+  hysteresis)`, `effects_for(levels, profile)`, `rate_per_hour(need, …)`,
+  `consume_effect(food, portion, spoil_state, profile)`, `can_sleep`.
+- `ConsumeAction` (child "Consume"): `options_for(item)`, `start(item,
+  portion)`, `interrupt()`, `drink_water(amount, s)`,
+  `fill_containers(s)`, `fillable_items()`, static `resolve_tool(food,
+  containers)`, `action_label()`. Busy context `eat`; the item is out of
+  its container while being eaten and is returned on interruption.
+- `RestComponent` (child "Rest"): `sleep_block_reason()`, `sleep(bed)`,
+  `wake(reason)`, `rest_block_reason()`, `rest(seat)`, `stop_rest()`.
+- `Danger` (static): `chasers`, `is_chased`, `nearest_zombie_distance`,
+  `threat_reason(tree, target, radius)` — duck-typed zombies (`zombie`
+  group, `hostile`, `target`).
+- Data: `FoodData` gains fresh/rotten days, eat seconds, tool tags,
+  empty item; `ItemData.fill_item_id`; `ItemInstance.portion /
+  created_minute / age_minutes` (+ `sync_age`, `set_age_rate`,
+  `spoil_state`, `absorb_age`); `ItemContainer.spoil_multiplier`
+  (`set_spoil_multiplier`); `LootContainer.spoil_multiplier`;
+  `FurnitureCatalog` keys `spoil_multiplier`, `interaction`.
+- Furniture: `RestFurniture` / `Sink` are StaticBody3D providers on
+  layers 1 + 4 built by `HouseBlockout._interactive_piece()`; they talk
+  to the actor's "Rest" / "Consume" children (duck-typed).
+- `DayNightLighting` (world/): `lighting_at(hour)` pure, `apply()`,
+  `sun_energy()`, `lights_on`.
+- HUD: `ClockWidget`, `MoodleList` (built in code by hud.gd),
+  sleep overlay; `Equipment.is_consumable()` lets food on the hotbar.
+
 ### `EventBus` signals (so far)
 `movement_mode_changed`, `stat_changed`, `stat_threshold`, `sprint_denied`,
 `camera_rotated`, `camera_zoomed`, `debug_message`,
@@ -537,6 +606,13 @@ weapon_broken(actor, item)`, `item_picked_up(actor, item)`,
 Round 6: `inventory_screen_toggled(visible)`, `equipment_changed(character, slot, item)`,
 `hotbar_changed(character, slots)`, `encumbrance_changed(character,
 state, weight)`, `item_dropped(character, item)`.
+Round 7: `health_drained(character, amount, cause)` (HealthComponent.drain),
+`time_advanced(from, to)`, `minute_passed(total_minute)`,
+`hour_passed(hour, day)`, `day_passed(day)`, `time_speed_changed(step,
+scale)`, `need_level_changed(character, need, level, label)`,
+`moodles_changed(character, moodles)`, `item_consumed(character, item)`,
+`sleep_started(character, bed)`, `sleep_ended(character, reason)`,
+`rest_started(character, seat)`, `rest_ended(character, reason)`.
 Round 5: `inventory_changed(owner)`, `container_opened(actor,
 container)`, `container_closed(actor, container)`, `item_transferred(from,
 to, item)`, `timed_action_started(actor, action, label, seconds)`,
@@ -547,7 +623,7 @@ to, item)`, `timed_action_started(actor, action, label, seconds)`,
 1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders ·
 7 doors · 8 window_panes
 
-World items (`WorldItem`): layer 4, mask 0. Loot containers /
+Beds / sofas / sinks (R7): 1 + 4 (+6 when tall). World items (`WorldItem`): layer 4, mask 0. Loot containers /
 furniture (R5): 1+4 (+6 when tall); plain furniture 1 (+6); corpses 4. Melee target query: layer 3;
 melee LOS: 1+7+8. Walls: 1+6. Windows: sill + header body 1+4+6, glass child body 8 while
 closed (0 once open / smashed). Door leaves: 7+4+6 — never on 1, so the
@@ -562,7 +638,7 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `wall`, `roof`, `floor`, `door`, `window`, `occluder`, `interactable`,
 `breakable` (doors: `take_damage` + `blocks_path`), `zombie`, `corpse`,
 `world_item` (R4; dropped items and bags on the ground too, R6), `blood_decals` (R4), `container`, `persistent`,
-`furniture`, `world_config` (R5),
+`furniture`, `world_config` (R5), `interior_light` (R7, room OmniLights),
 `navigation_mesh_source_group` (the map root; parsed by NavBaker).
 
 ## Testing

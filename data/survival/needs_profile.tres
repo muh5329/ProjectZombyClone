@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="NeedsProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://data/survival/needs_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+start_hunger = 5.0
+start_thirst = 5.0
+start_fatigue = 5.0
+hunger_per_hour = 2.5
+thirst_per_hour = 3.5
+fatigue_per_hour = 4.0
+exertion_multiplier = 1.5
+sleep_fatigue_per_hour = -12.5
+rest_fatigue_per_hour = -2.0
+health_regen_per_hour = 6.0
