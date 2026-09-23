@@ -27,6 +27,13 @@ func _run() -> void:
 	await _frames(20)
 	var player: Node3D = inst.get_node("Player")
 	var cam: Node3D = inst.get_node("IsometricCamera")
+	if OS.get_environment("SCREENSHOT_ONLY") == "world":
+		# Dev shortcut: only the Round-11 generated-world section.
+		inst.queue_free()
+		await process_frame
+		await _round11()
+		_finish()
+		return
 	if OS.get_environment("SCREENSHOT_ONLY") == "r9":
 		# Dev shortcut: only the Round-9 section (not used by screenshots.sh).
 		var sp: Node = inst.get_node("Zombies")
@@ -215,6 +222,7 @@ func _run() -> void:
 	await _round85(inst, player, cam, spawner, hud)
 	await _round9(inst, player, cam, spawner, hud)
 	await _round10(inst, player, cam, hud)
+	await _round11()
 	_finish()
 
 
@@ -1072,6 +1080,135 @@ func _round10(inst: Node, player: Node3D, _cam: Node3D, hud: Node) -> void:
 	mm.queue_free()
 	sm.delete_slot(SHOT_SLOT)
 	sm.quick_slot = "quick"
+
+
+# --- Round 11: the generated world -----------------------------------------------------
+## 37: layouts of three seeds (rendered from data); 38-41 + 42 in the real
+## world.tscn of seed 1337: main street, a farmstead, the woods edge, the
+## town from the farthest zoom, the M map overlay (real input).
+func _round11() -> void:
+	var gen: GDScript = load("res://worldgen/world_generator.gd")
+	var ren: GDScript = load("res://worldgen/world_map_renderer.gd")
+	var imgs: Array = []
+	for s in [1337, 7, 99]:
+		imgs.append(ren.render(gen.generate(s), 1.5))
+	(ren.side_by_side(imgs) as Image).save_png(OUT + "37_world_map.png")
+	print("saved ", OUT + "37_world_map.png")
+	var sm: Node = root.get_node("SaveManager")
+	var tm: Node = root.get_node("TimeManager")
+	var map: Node = sm.instantiate_new_game("res://maps/world.tscn", 1337)
+	root.add_child(map)
+	var nav: Node = map.get_node("NavRegion")
+	for i in 1200:
+		if nav.baked:
+			break
+		await physics_frame
+	await _frames(20)
+	var player: Node3D = map.get_node("Player")
+	var cam: Node3D = map.get_node("IsometricCamera")
+	var builder: Node = map.get_node("Generated")
+	var layout = builder.layout
+	player.get_node("Health").invulnerable = true
+	player.get_node("Controller").scripted = true
+	tm.set_time_of_day(11, 0)
+	var sp: Node = map.get_node("Zombies")
+	if sp.zombies.size() < 30:
+		_problems.append("round 11: only %d zombies in the generated world" % sp.zombies.size())
+	var loc: Dictionary = load("res://buildings/building.gd").locate(self, player.global_position)
+	if loc.building == null:
+		_problems.append("round 11: the new game does not start inside a building")
+	# 38: main street by a shop, default zoom.
+	var shop: Dictionary = {}
+	for b in layout.buildings:
+		if b.kind == &"convenience_store" and b.settlement == "town":
+			shop = b
+			break
+	if shop.is_empty():
+		shop = layout.buildings[0]
+	var front: Vector2 = shop.door + (shop.access - shop.door).normalized() * 3.5
+	await _teleport(player, cam, Vector3(front.x, 0.1, front.y))
+	await _shot("38_town_street")
+	# 39: a farmstead yard.
+	var farm_house: Dictionary = {}
+	for b in layout.buildings:
+		if b.kind == &"farmhouse":
+			var d := (b.door as Vector2).distance_to(layout.spawn_point)
+			if farm_house.is_empty() or d < (farm_house.door as Vector2).distance_to(layout.spawn_point):
+				farm_house = b
+	var fpos: Vector2 = farm_house.door
+	for lot in layout.lots:
+		if lot.id == farm_house.lot and lot.has("farm_yard_center"):
+			fpos = lot.farm_yard_center
+	await _tap(&"camera_zoom_out")
+	await _frames(3)
+	await _tap(&"camera_zoom_out")
+	await _teleport(player, cam, Vector3(fpos.x, 0.1, fpos.y))
+	await _shot("39_farmstead")
+	# 40: the woods edge nearest the start (meadow cell next to woods).
+	var edge := _woods_edge(layout, layout.spawn_point)
+	await _teleport(player, cam, Vector3(edge.x, 0.1, edge.y))
+	await _shot("40_woods_edge")
+	# 43 (extra): the main street at night — street lamps and lit windows.
+	await _teleport(player, cam, Vector3(front.x, 0.1, front.y))
+	tm.set_time_of_day(23, 0)
+	await _frames(30)
+	await _shot("43_town_night")
+	tm.set_time_of_day(11, 0)
+	await _frames(10)
+	# 41: the town from the farthest zoom (real input).
+	var tc: Vector2 = layout.settlement("town").center
+	await _teleport(player, cam, Vector3(tc.x + 3.0, 0.1, tc.y + 5.0))
+	for i in 4:
+		await _tap(&"camera_zoom_out")
+		await _frames(3)
+	await _frames(60)
+	await _shot("41_town_overview")
+	# 42: M opens the map overlay (real input).
+	await _tap(&"toggle_map")
+	await _frames(10)
+	var overlay: Node = map.get_node("MapOverlay")
+	if not overlay.is_open:
+		_problems.append("round 11: M did not open the map overlay")
+	await _shot("42_map_overlay")
+	await _tap(&"toggle_map")
+	await _frames(5)
+	map.queue_free()
+	await process_frame
+
+
+func _teleport(player: Node3D, cam: Node3D, p: Vector3) -> void:
+	player.global_position = p
+	player.velocity = Vector3.ZERO
+	await _frames(2)
+	cam.global_position = p + Vector3.UP * 0.9
+	await _frames(40)
+
+
+## A meadow point at the edge of a deep woods mass (woods for 40 m
+## north-east of it — up-screen at the default heading), nearest [from].
+func _woods_edge(layout, from: Vector2) -> Vector2:
+	var best := from
+	var bd := INF
+	var cell: float = layout.zone_cell
+	for z in range(1, layout.zone_h - 1):
+		for x in range(1, layout.zone_w - 1):
+			var p := Vector2((x + 0.5) * cell, (z + 0.5) * cell)
+			if layout.zone_at(p) != 0:
+				continue
+			var deep := true
+			for k in range(2, 11):
+				if layout.zone_at(p + Vector2(0.7, -0.7) * cell * k) != 1:
+					deep = false
+					break
+			if not deep:
+				continue
+			if not layout.road_at(p, 12.0).is_empty():
+				continue
+			var d := p.distance_to(from)
+			if d < bd:
+				bd = d
+				best = p
+	return best
 
 
 ## Hotbar slots holding carried items (a slot pointing at an item left

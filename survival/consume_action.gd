@@ -42,7 +42,7 @@ var work: TimedWork = null
 
 func _ready() -> void:
 	character = get_parent() as Character
-	rng.randomize()
+	rng.seed = WorldConfig.rng_seed_for(self, "consume")
 
 
 func is_consuming() -> bool:

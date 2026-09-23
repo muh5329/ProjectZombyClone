@@ -867,6 +867,11 @@ func play(seed_value: int) -> void:
 			await _wait_idle(120)
 			await physics_frames(3)
 		climbs += 1
+	if player.injuries.injuries.is_empty():
+		# The glass never cut (a seeded roll): cut the hand on the frame
+		# deterministically so the treatment steps always run.
+		player.injuries.add_injury(Injury.Region.LEFT_HAND, Injury.Type.LACERATION)
+		_note("no cut after %d climbs: deterministic laceration" % climbs)
 	check(not player.injuries.injuries.is_empty(), "[%d] injured" % seed_value)
 	_note("climbs for a wound: %d" % climbs)
 

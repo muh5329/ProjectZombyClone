@@ -30,6 +30,11 @@ signal spawned(zombies: Array)
 @export var near_min_player_distance: float = 8.0
 ## Navmesh points higher than this are prop tops (car roofs) — rejected.
 @export var max_spawn_height: float = 0.75
+## Round 11: explicit start positions (feet, world space; the generated
+## world's population from WorldLayout.zombies). When set, spawn_initial()
+## spawns one zombie per point (snapped to the navmesh; an unusable point
+## is re-picked within 6 m) instead of [count] random picks.
+@export var spawn_points: PackedVector3Array = PackedVector3Array()
 
 ## Stable id prefix of this spawner's zombies ("" → the node path relative
 ## to the scene owner, e.g. "Zombies"). Zombies get
@@ -37,11 +42,22 @@ signal spawned(zombies: Array)
 ## corpse loot ids never collide (even for two spawners on one seed).
 @export var spawner_id: String = ""
 
+## Round 11: rural groups ({id, chunk: Vector2i, points: PackedVector2Array}
+## from WorldLayout.zombie_groups), spawned once when their chunk's
+## navmesh is live (WorldNav.chunk_ready). Spawned ids are saved.
+var groups: Array = []
+var groups_spawned: Dictionary = {}
+
 var zombies: Array[Zombie] = []
 ## Zombies ever spawned by this spawner (never decreases).
 var spawn_counter: int = 0
 var rng := RandomNumberGenerator.new()
 var _nav: NavBaker
+## Start points that were not usable yet (navmesh lagging): retried.
+var _retry: Array[Vector3] = []
+var _retry_rounds: int = 0
+var _tick: float = 0.0
+var _started: bool = false
 
 
 func _ready() -> void:
@@ -63,8 +79,16 @@ func _find_nav() -> NavBaker:
 
 
 func _spawn_when_ready() -> void:
+	# A one-shot signal connection, not a coroutine: nothing is left
+	# suspended when the map is freed before the navmesh is ready.
 	if _nav != null and not _nav.baked:
-		await _nav.navigation_ready
+		if not _nav.navigation_ready.is_connected(_on_nav_ready):
+			_nav.navigation_ready.connect(_on_nav_ready, CONNECT_ONE_SHOT)
+		return
+	_on_nav_ready()
+
+
+func _on_nav_ready() -> void:
 	if not auto_spawn or not is_inside_tree():
 		return
 	spawn_initial()
@@ -72,6 +96,18 @@ func _spawn_when_ready() -> void:
 
 func spawn_initial() -> Array[Zombie]:
 	var out: Array[Zombie] = []
+	_started = true
+	if not spawn_points.is_empty():
+		for i in spawn_points.size():
+			var p := _point_near(spawn_points[i])
+			if p == Vector3.INF:
+				# The navmesh may still lag behind (heavy load): retry later
+				# instead of warning per point.
+				_retry.append(spawn_points[i])
+				continue
+			out.append(spawn_at(p))
+		spawned.emit(out)
+		return out
 	var near := clampi(near_count, 0, count)
 	for i in count:
 		var p := pick_spawn_point() if i < count - near else pick_spawn_point(near_center, near_radius, near_min_player_distance)
@@ -81,6 +117,68 @@ func spawn_initial() -> Array[Zombie]:
 		out.append(spawn_at(p))
 	spawned.emit(out)
 	return out
+
+
+## A usable point at [p] or re-picked within 6 m (INF when none).
+func _point_near(p: Vector3) -> Vector3:
+	var q := _usable_point(p)
+	if q == Vector3.INF:
+		q = pick_spawn_point(p, 6.0, min_player_distance)
+	return q
+
+
+func _physics_process(delta: float) -> void:
+	if _retry.is_empty() and (groups.is_empty() or groups_spawned.size() >= groups.size()):
+		return
+	_tick += delta
+	if _tick < 0.5:
+		return
+	_tick = 0.0
+	if not _retry.is_empty():
+		_retry_rounds += 1
+		var left: Array[Vector3] = []
+		var got: Array = []
+		for q in _retry:
+			var p := _point_near(q)
+			if p == Vector3.INF:
+				left.append(q)
+			else:
+				got.append(spawn_at(p))
+		_retry = left
+		if not got.is_empty():
+			spawned.emit(got)
+		if not _retry.is_empty() and _retry_rounds >= 20:
+			push_warning("ZombieSpawner: %d start points had no valid spawn spot" % _retry.size())
+			_retry.clear()
+	_spawn_groups()
+
+
+## Rural groups whose chunk navmesh is live now (WorldNav only).
+func _spawn_groups() -> void:
+	if not _started or _nav == null or not _nav.baked or not _nav.has_method(&"chunk_ready"):
+		return
+	for g in groups:
+		var gid := String(g.id)
+		if groups_spawned.has(gid) or not bool(_nav.call(&"chunk_ready", g.chunk)):
+			continue
+		groups_spawned[gid] = true
+		var got: Array = []
+		for q2 in (g.points as PackedVector2Array):
+			var p := _point_near(Vector3(q2.x, 0.0, q2.y))
+			if p != Vector3.INF:
+				got.append(spawn_at(p))
+		if not got.is_empty():
+			spawned.emit(got)
+
+
+## [p] snapped to the navmesh when it is a valid spawn spot (INF otherwise).
+func _usable_point(p: Vector3) -> Vector3:
+	var q := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p)
+	if q.distance_to(p) > 1.5 or q.y > max_spawn_height:
+		return Vector3.INF
+	if WorldQuery.is_inside_building(get_tree(), q, building_margin):
+		return Vector3.INF
+	return Vector3(q.x, 0.0, q.z)
 
 
 ## A valid spawn point, or Vector3.INF when none was found in 60 tries.
@@ -154,10 +252,15 @@ func alive_count() -> int:
 ## Spawner bookkeeping: the spawn counter (ids stay unique after a load)
 ## and the rng state (64-bit → a String: JSON numbers are doubles).
 func save_state() -> Dictionary:
-	return {"spawn_counter": spawn_counter, "rng_state": str(rng.state)}
+	var gs: Array = groups_spawned.keys()
+	gs.sort()
+	return {"spawn_counter": spawn_counter, "rng_state": str(rng.state), "groups_spawned": gs}
 
 
 func load_state(d: Dictionary) -> void:
+	_started = true
+	for gid in (d.get("groups_spawned", []) as Array):
+		groups_spawned[String(gid)] = true
 	spawn_counter = maxi(int(d.get("spawn_counter", spawn_counter)), spawn_counter)
 	var st := String(d.get("rng_state", ""))
 	if st.is_valid_int():

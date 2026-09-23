@@ -115,7 +115,7 @@ func setup(z: Zombie) -> void:
 	if zombie.ai_seed != 0:
 		rng.seed = zombie.ai_seed
 	else:
-		rng.randomize()
+		rng.seed = WorldConfig.rng_seed_for(zombie, "ai")
 	_obstacle_ray = PhysicsRayQueryParameters3D.new()
 	_obstacle_ray.collision_mask = BREAKABLE_MASK
 	_obstacle_ray.collide_with_areas = false

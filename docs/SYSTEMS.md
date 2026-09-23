@@ -350,6 +350,8 @@ closed door is handled by the AI (attack_door). Roofs (layer 6) and
 characters are not baked. `navigation_ready` fires once the map is
 queryable (~200 ms after load); the spawner waits for it. Windows are
 walls for navigation (you climb, never walk).
+Round 11: the generated world uses `WorldNav` (per-chunk regions, see
+World generation); test_ground keeps the single NavBaker.
 
 ## Melee combat ✅ (Round 4)
 
@@ -1168,10 +1170,185 @@ loaded onto a freshly instanced map.
   the 12 hp bite made every multi-zombie fight fatal once dressings ran
   out).
 
+## World generation ✅ (Round 11, reworked after the critic pass)
+
+A procedurally generated starting county (`maps/world.tscn`, the map a
+main-menu **New game** starts; `maps/test_ground.tscn` stays the systems
+test map). Pure data first, nodes second.
+
+- **Params** (`data/worldgen/default_world.tres`, `WorldGenParams`): world
+  384-2048 m (default 768, 64 m chunks), zone cell 4 m, route cell 8 m
+  (×1.5 above 1024 m), road widths (highway 8, main street 8, streets 7 +
+  2 m sidewalks, county 6.5, dirt 4, driveways 3, paths 1.2), rural
+  `road_wiggle` 0.85, town 2-4 blocks × 1-3 rows (64 × 56 m blocks, 22 m
+  lots, 20-60 lots, ≤ 2 cul-de-sacs), 1-3 hamlets of 2-12 houses (40 %
+  crossroads), 3-8 farmsteads, 40 start zombies in a 2-chunk radius, rural
+  groups (hamlet 2-6, farm 1-3). Counts "at 768 m" scale with the area
+  (`scaled_range`); `validate()` lists bad params (the generator clamps).
+- **Layout** (`WorldGenerator.generate(seed, params) -> WorldLayout`,
+  pure, cached per (seed, params, version); 0.1 s at 384 m, 0.25-0.45 s at
+  768 m, ≤ 1.3 s at 1536 m):
+  1. **Town**: 60 candidate centres anywhere, rotated at any angle; a
+     block grid with L / T shapes (end blocks dropped), a straight main
+     street with continuous shop frontage both sides (convenience store,
+     diner, hardware store, pharmacy, bar, church or post office, more
+     repeats / parking / older homes), parking behind the shops, house rows
+     on the other streets, optional outward rows, cul-de-sacs with turning
+     circles, warehouse + gas station on the highway approaches (inside
+     the world), top-up to ≥ 20 lots, trim to ≤ 60.
+  2. Woods (noise + a mass beside the town), **hamlets** as linear or
+     crossroads villages on the county roads / a highway leaving town
+     (fallback: a standalone hamlet with its own link road), ponds (never
+     on a planned road).
+  3. **Roads** on an AStarGrid2D cost grid: water, settlements and every
+     existing road's cells solid (only the cells near a new route's own
+     ends open → it can only meet a road at a junction); wiggle waypoints
+     (length / chord ≈ 1.24 mean), RDP + Chaikin; highway through town to
+     both edges, county roads through the hamlets, a loop road between two
+     hamlets or (≥ 1024 m) a second highway, 2-4 country lanes. Any
+     unavoidable crossing gets a shared junction vertex; new roads that
+     would run alongside one are rejected.
+  4. **Farmsteads** along the rural roads (arc-length candidates, both
+     sides): fenced 48 × 40 m yard (farmhouse + gambrel barn, silo, hay,
+     pickup), a straight or routed dirt drive ≥ 22 m from other junctions,
+     never along a road or through water, own fields around the yard;
+     fallback yards anywhere with a routed drive (small maps).
+  5. **Buildings**: every record is an oriented box (`xf: Transform2D` +
+     `size`, `rect` = world AABB); plans are placed in their lot's frame
+     facing the road (HouseBlockout node rotated). Houses: front path,
+     driveway, mailbox on the other side of the path, trash can clear of
+     every door. Spawn: a random town (50 %) / hamlet (30 %) / farm (20 %)
+     house, its living room.
+  6. Fields (only next to a road or a farm; exact polygon tests vs lots,
+     reserves, roads, other fields), fences (lot-local), props (lamps every
+     26 m ≥ 10 m from junctions and 2 m from driveways; utility poles every
+     36 m on rural roads; benches / bins; canopy + pumps), vehicles
+     (rotated boxes checked against buildings, fences, other vehicles,
+     sidewalks and every door; kerb parking ≥ 8.6 m from junctions and
+     clear of driveways; stalls inside the parking strips), trees, the
+     start population and rural `zombie_groups`.
+- **Ids** are deterministic: `town_07`, `hamlet1_03`, `farm2_house`,
+  `town_warehouse`, `town_gas`; plan entries carry explicit ids, so save
+  ids are `<building id>/<entry id>`; plans are seeded by
+  `sub_seed(world seed, "plan:" + building id)`.
+- **Validation** (`WorldLayoutValidator.layout_problems` / `all_problems`):
+  rotated-box overlaps (buildings, lots, fields, reserves, vehicles),
+  road-road crossings without a junction and roads running on top of each
+  other, roads in water, props on roads / driveways / in front of doors,
+  lamps near driveways, mailbox side, vehicles on sidewalks / fences /
+  blocking doors, one connected network reaching every building through a
+  walk path, doors on the road side, content minimums (small maps:
+  ≥ 12 lots, ≥ 1 hamlet, ≥ 2 farms), zone ratios, plans. Unit test: 30
+  seeds, 0 problems; `scripts/worldgen_sweep.sh [first] [count] [--size=]
+  [--plans]` (perf lane): 200 seeds, 0 problems.
+
+### Building plans (`BuildingPlanGenerator`)
+
+Plans in the HouseBlockout format, front wall on local +Z. Kinds: house,
+farmhouse, convenience store, hardware store, pharmacy, diner, bar,
+church, post office, gas station, warehouse, barn. Looks (seeded): gable
+or hip roofs with overhang (`roof_style`, `roof_pitch`), a second storey
+look on 25 % of houses / 60 % of farmhouses (`storeys`), porches (50 % /
+70 %, `porch`), storefront awnings + sign boards with the shop name
+(`awning_color`, `sign_text`, Label3D), gambrel barn roofs, a pitched
+church. Improvised weapons in houses: kitchen knife 40 % of kitchens, pan
+/ rolling pin 25 %, hammer or screwdriver in half the garages, bat 10 %;
+one guaranteed hammer per hamlet (`opts.hammer`), the hardware store
+counter and the barn tool crate hold one. Interior walls from room
+adjacency, doors as a spanning tree, windows on exterior walls, furniture
+against walls clear of door clearances. Loot tables for every building
+kind (`bar/`, `church/`, `post_office/` added). `BuildingPlanGenerator.exterior_doors(plan)`
+lists every exterior door (the generator keeps props and cars off them).
+
+### Instantiation (`WorldBuilder`, node `Generated`)
+
+At `_ready`: seed from `WorldConfig.world_seed`, params from
+`WorldConfig.worldgen_params`; generates (cached) and builds the whole
+world (~1 s, ~27 k nodes): ground body + a splat-shaded plane
+(`world_ground.gdshader`: olive / desaturated greens, value noise, worn
+dirt patches, dry tufts; gravel verges beside rural roads), bounds, and
+per 64 m chunk `C_x_z` with its buildings (HouseBlockout at the plan's
+transform), one road mesh (roads, sidewalks, cul-de-sac circles, kerb
+lines, dashed centre lines, zebra crossings on every arm of town
+junctions, driveways, paths, rotated parking lots with stall lines, gas
+apron), a `Solids` StaticBody (shape owners: fences, props, poles, silos,
+trunks, pond walls), a box MultiMesh (fences, lamps, mailboxes, bins,
+benches, hay, utility poles, crop rows along each field's axis), tree
+MultiMeshes, vehicles, pumps, the rotated canopy, lamp OmniLights (range
+9 m, unshadowed).
+
+**Night light budget** (`WorldBuilder.update_lights`, 4×/s and whenever
+DayNightLighting switches lights): room lights and lamps are on only
+within 2 chunks and 60 m of the player; only the nearest 10 room lights
+cast shadows (`light_stats` for tests).
+
+### Navigation (`WorldNav`, node `NavRegion`)
+
+Extends NavBaker (same contract), 0.1 m cells / 0.2 m agent radius in the
+generated world (rotated door gaps stay open; the map's cell size is set
+to match). One region per chunk, the 5 × 5 around the player baked on
+worker threads (~3.5-4 s); no coroutines — a `_physics_process` state
+machine. `navigation_ready` / `rebaked` fire only after **verification**:
+every region processed, listed by the map and answering a closest-point
+query at a probe vertex within 1 m (timeout → warning). While walking:
+chunks around the player and 4 s ahead along its velocity are queued (≤ 2
+bakes in flight, ≤ 1 chunk source parsed per tick), regions beyond
+`keep_radius` 4 are freed with their sources (hysteresis). `chunk_ready(c)`
+= region live and verified.
+
+### Population
+
+`layout.zombies` (40 around the start) → `ZombieSpawner.spawn_points`
+(spawned on `navigation_ready` via a one-shot signal; points not yet
+usable are retried every 0.5 s, one summary warning after 20 rounds).
+`layout.zombie_groups` (a group per hamlet / farm outside the start area)
+→ `ZombieSpawner.groups`: each spawns once when `WorldNav.chunk_ready`
+for its chunk; spawned ids are saved (`groups_spawned`).
+
+### Map overlay (M)
+
+`WorldMapOverlay` (CanvasLayer 6): `toggle_map` (M) shows
+`WorldMapRenderer.render(layout)` (oriented lots / buildings / fields
+with rows / parking / vehicles, roads, silos, names, seed, player arrow).
+Tools: `world_map_preview.gd -- [seeds] [--size=] [--mpp=] [--crop=]`,
+`world_variety.gd -- first count [--size=]` (variety stats),
+`world_loot_census.gd -- [seeds]` (food / weapons / hammers per county),
+`world_validate.gd`, `world_probe.gd`.
+
+### Game flow / save
+
+Main menu **New game** → random or typed seed → `world.tscn`. The save
+stores `world.seed`, `world.worldgen_params` and `world.worldgen =
+{version, layout_hash}`. A load first regenerates the layout (cached, the
+map build reuses it): same hash → loads (an older generator version with
+the same hash loads unchanged); different hash → refused ("This save was
+made with world generator vN; this build (vM) generates a different
+world for seed S…"), the running game untouched. Then the config goes on
+the fresh map before it enters the tree and `WorldNav.focus_on(saved
+player)` bakes around the player. Loot: `WorldConfig.loot_food_multiplier`
+(0.5 in world.tscn) thins rolled food to ~140-170 items per county.
+
+### Determinism
+
+`WorldConfig.rng_seed_for(node, tag)` = `sub_seed(world seed, "<spawn_id
+or character name>/<tag>")` seeds InjuryComponent, MeleeCombat,
+ConsumeAction and unseeded ZombieAI streams (no `randomize()` anywhere).
+
+### Numbers (2-core box, headless, seed 1337)
+
+Layout 0.25-0.34 s · build ~1.0 s · nav 3.5-4.2 s (25 regions) · load
+~6 s (budget 20 s) · 59 buildings, 7.2 k trees · perf `--world`: hostile
+1.2 ms avg / 8 ms p99 physics; walking 300 m at 6.5 m/s: 0.9 ms avg /
+9.4 ms p99 main-thread work, worst 23 ms, 31 regions baked ahead, 20
+freed, player chunk always baked. Variety (100 seeds): town centre x / z
+0.24-0.76 of the map, orientations over all 30° bins, 20 block shapes,
+22-60 lots (mean 36), hamlets 1 / 2 / 3 = 38 / 40 / 22 (62 crossroads,
+122 linear), farms 3-8, loop road on 26 %, rural length / chord mean 1.24.
+
 ## Planned (see MASTER_PLAN for order)
 
 Sound propagation ✅ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
 Loot tables ✅ · Needs ✅ (hunger / thirst / fatigue / sickness; temperature, wetness, stress ⬜) ·
 Barricades ✅ (R9: planks, furniture, carpentry) · Save/load ✅ (R10) · Crafting ⬜ · World time ✅ · Vehicles 🔶 (parked, R8.5) · Character models ✅ (R8.5) ·
-Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·
-World streaming ⬜ · NPC survivors ⬜
+Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ (R11: density records only) ·
+World generation ✅ (R11) · World streaming 🔶 (R11: chunk nodes + per-chunk nav; R12 streams) · NPC survivors ⬜

@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"frying_pan"
+display_name = "Frying Pan"
+description = "Heavy cast iron. Clang."
+category = 3
+weight = 1.4
+max_stack = 1
+max_condition = 25
+color = Color(0.2, 0.2, 0.22, 1)
+world_size = Vector3(0.45, 0.06, 0.28)
+damage_min = 7
+damage_max = 11
+crit_chance = 0.1
+crit_multiplier = 2.0
+head_hit_chance = 0.25
+reach = 0.9
+arc_degrees = 70
+max_targets = 1
+swing_time = 0.65
+stamina_cost = 6
+knockback = 0.35
+knockdown_chance = 0.12
+condition_loss_chance = 0.08
+noise_radius = 9
+tags = Array[StringName]([&"blunt", &"kitchen"])

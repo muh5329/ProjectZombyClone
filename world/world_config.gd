@@ -17,7 +17,15 @@ extends Node
 ## Round 10: where a NEW game puts the player (a Marker3D inside House A)
 ## and what the survivor starts with (a spare t-shirt: "Tear into rags").
 @export var player_start: NodePath = ^"../PlayerStart"
+## Round 11: generated worlds — the WorldGenParams resource the layout is
+## generated from (with world_seed it fully determines the layout; saved
+## so a load regenerates the identical world). "" on hand-made maps.
+@export var worldgen_params: String = ""
 @export var starter_items: Dictionary = {"tshirt": 1}
+## Round 11: share of rolled (not fixed) food kept in containers — the
+## generated county has many more kitchens than the test ground, so it
+## thins food to ~120-200 items per county (1.0 = tables as authored).
+@export var loot_food_multiplier: float = 1.0
 
 var state: WorldState = WorldState.new()
 ## Round 10: persist_ids of static objects destroyed in this world
@@ -67,6 +75,32 @@ static func find(tree: SceneTree) -> WorldConfig:
 	if tree == null:
 		return null
 	return tree.get_first_node_in_group(&"world_config") as WorldConfig
+
+
+## Round 11 (determinism): the seed of [node]'s random stream [tag] —
+## WorldGenerator.sub_seed(world seed, "<owner id>/<tag>"), the owner id
+## being the nearest ancestor's spawn_id (zombies) or node name (player).
+## Components call this instead of randomize(), so a run repeats exactly.
+static func rng_seed_for(node: Node, tag: String) -> int:
+	var ws := 0
+	if node != null and node.is_inside_tree():
+		var cfg := find(node.get_tree())
+		if cfg != null:
+			ws = cfg.world_seed
+	var owner_id := ""
+	var n := node
+	while n != null:
+		var sid: Variant = n.get(&"spawn_id")
+		if sid is String and String(sid) != "":
+			owner_id = String(sid)
+			break
+		if n is Character:
+			owner_id = String(n.name)
+			break
+		n = n.get_parent()
+	if owner_id == "" and node != null:
+		owner_id = String(node.name)
+	return WorldGenerator.sub_seed(ws, "%s/%s" % [owner_id, tag])
 
 
 ## Round 10: set up a NOT yet added [map] as a new game — the player at

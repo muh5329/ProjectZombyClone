@@ -98,6 +98,13 @@ static func capture(map: Node) -> Dictionary:
 		},
 		"time": {"minutes": TimeManager.now()},
 	}
+	if cfg != null and cfg.worldgen_params != "":
+		data.world["worldgen_params"] = cfg.worldgen_params
+	# Round 11: generated maps record the generator version and the layout
+	# hash; a load regenerates the layout and refuses a mismatch.
+	var wb := WorldBuilder.of(tree)
+	if wb != null and wb.layout != null and map.is_ancestor_of(wb):
+		data.world["worldgen"] = {"version": wb.layout.version, "layout_hash": wb.layout_hash()}
 	var statics := {}
 	for n in Saveable.collect(tree, map):
 		var id := String(n.get(&"persist_id"))
@@ -166,6 +173,22 @@ static func summary(data: Dictionary) -> Dictionary:
 
 
 # --- Apply ---------------------------------------------------------------------------------
+
+## Phase 0 (Round 11), on the fresh map BEFORE it enters the tree: the
+## world config a generated map needs at _ready (seed + worldgen params:
+## WorldBuilder regenerates the identical layout, so every saved static id
+## exists again).
+static func apply_world_config(map: Node, data: Dictionary) -> void:
+	var w: Dictionary = data.get("world", {})
+	for c in map.get_children():
+		if c is WorldConfig:
+			var cfg := c as WorldConfig
+			cfg.world_seed = int(w.get("seed", cfg.world_seed))
+			cfg.world_age_days = float(w.get("age_days", cfg.world_age_days))
+			cfg.water_shutoff_day = int(w.get("water_shutoff_day", cfg.water_shutoff_day))
+			var gp := String(w.get("worldgen_params", ""))
+			if gp != "":
+				cfg.worldgen_params = gp
 
 ## Phase 1, right after the fresh map is ready and BEFORE the navmesh is
 ## baked (so moved / destroyed furniture bakes correctly): world config,

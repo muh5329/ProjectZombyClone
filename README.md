@@ -21,8 +21,10 @@ expanding the world.**
 | 8.5 | Procedural people, zombies (48 looks, 31 animations) and 6 vehicle types | ✅ done |
 | 9 | Barricades, furniture blocking, disassembly, carpentry, zombies breaking in | ✅ done |
 | 10 | Save/load of the whole world, menus, natural-play acceptance test (3 seeds) | ✅ done |
+| 11 | Procedurally generated county: towns, hamlets, farms, woods, road network (New game) | ✅ done |
+| 12 | World streaming, off-screen zombie population sim, delta saves | ⬜ next |
 
-- **417 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, then `integration-a`/`-b`/`-c`/`-d` ~265–355 s each; run them as separate calls).
+- **452 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, then `integration-a`/`-b`/`-c`/`-d` ~265–355 s each; run them as separate calls).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,
@@ -31,13 +33,14 @@ expanding the world.**
 
 ## Run the game
 Open `project.godot` in Godot **4.6** and press Play (main scene: the
-title screen `ui/menus/main_menu.tscn` — New game loads
-`maps/test_ground.tscn`; Continue / Load open a save). Controls: WASD move · Shift sprint · Ctrl sneak ·
+title screen `ui/menus/main_menu.tscn` — New game generates a county
+`maps/world.tscn` from a random or typed seed (Round 11; `maps/test_ground.tscn`
+is the hand-made systems test map); Continue / Load open a save). Controls: WASD move · Shift sprint · Ctrl sneak ·
 Alt walk · E interact · 4-7 pick action · 1-3 hotbar · LMB attack
 (hold to charge) · RMB aim · Space shove · X cycle weapon · B bandage ·
 Tab inventory (right-click items, drag, Ctrl+click split, G drop) · Q/R
 rotate camera · wheel or +/− zoom · F5-F8 (or , .) time speed · H shout · F3 debug · F4 sound debug · R restart after death · F9 quick-save ·
-F10 quick-load · Esc pause menu (Save / Load / Quit). Beds: Sleep / Rest, sofa: Rest, sinks: Drink / Fill bottle; right-click food: Eat / Eat half.
+F10 quick-load · M map · Esc pause menu (Save / Load / Quit). Beds: Sleep / Rest, sofa: Rest, sinks: Drink / Fill bottle; right-click food: Eat / Eat half.
 
 ## Run the tests
 ```

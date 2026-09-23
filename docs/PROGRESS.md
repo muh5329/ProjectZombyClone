@@ -6,6 +6,68 @@ that did not write the code).
 
 ---
 
+## Round 11 — Procedurally generated starting world (2026-09-23)
+
+### Goal
+Owner request: "an entire starting world, randomly generated, with
+interconnecting roads and buildings that make sense, fields, small towns
+and woods". Also closes the vertical-slice review's neighbourhood gap.
+
+### What changed
+- `worldgen/` pure seeded `WorldGenerator.generate(seed, params) →
+  WorldLayout` (data/worldgen/default_world.tres): 768 m county in 64 m
+  chunks; noise woods / farmland / meadow / ponds; a town placed along the
+  highway anywhere on the map at any angle (2×1..4×3 blocks, L/T shapes,
+  bent main street, organic outer streets, 22-60 lots) with continuous shop
+  frontage (store, diner, hardware, pharmacy, bar…), warehouse and gas
+  station; 1-3 hamlets (crossroads or linear villages) on county roads;
+  3-8 farmsteads with field clusters; A* roads with noise-perturbed curves
+  (ratio ≈1.24), junction-only crossings, loop road on ~26 % of maps.
+  Rotated lots/buildings/fields/parking; driveways, fences, mailboxes,
+  lamps, utility poles, crosswalks, curbs, silos, hay, parked vehicles.
+- `BuildingPlanGenerator`: 9 building kinds in the HouseBlockout format
+  with stable seed-derived ids; pitched/hip roofs, two-storey facades,
+  porches, awnings + signs, gambrel barns; every room reachable, furniture
+  never blocks doors; 23 new loot tables (weapons more common in homes,
+  food thinned per world setting).
+- `maps/world.tscn`: `WorldBuilder` (chunk-grouped), `WorldNav` per-chunk
+  navmesh with verified readiness, bake-ahead and freeing; zombies by zone
+  density (40 around the start, groups at hamlets/farms as chunks bake);
+  spawn in a random town/hamlet/farm house; M map overlay; night light
+  budget (lights within 60 m, ≤10 shadowed). New game → random or typed
+  seed; saves store seed, params, generator version and layout hash.
+- Determinism: combat/injury/eat RNGs seeded from the world seed.
+- `scripts/worldgen_sweep.sh`: layout validator over 200 seeds, 0 problems.
+
+### Tests performed
+Unit **206**; integration a/b/c/d **42/70/59/75** (246) — **452 tests, 0
+failed**. Screenshots OK (37 world maps, 38 town street, 39 farmstead,
+40 woods edge, 41 town overview, 42 map overlay, 43 night). Perf world:
+layout 0.28 s, load 5.5 s, avg 1.1 ms / p99 5.4 ms; walking 300 m p99
+9.4 ms; existing budgets met.
+
+### Bugs discovered (critic) → all fixed
+Same central 3×2 grid town on every seed; navmesh readiness race
+(flaky test, dropped zombies, leaked coroutine); fields overlapping lots;
+parking clipping fences; roads crossing without junctions and farm drives
+on the highway; lamps/mailboxes in driveways; vehicle in a barn; edge
+world sizes placing buildings outside; no layout hash in saves; street
+parking in intersections; empty countryside; 287 lights / 253 shadowed at
+night; unseeded RNG making the acceptance bot flaky; saturated grass;
+flat-box buildings.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (6) · System Integration 8 (7) · Survival Depth 7 (5) ·
+Architecture 8.5 (8) · Performance 8 (7) · UX/Visual 7 (4) ·
+Bug Resistance 8 (6).
+
+### Next
+Round 12: world streaming (instantiate/free chunk content around the
+player), off-screen zombie population simulation per chunk, saves storing
+only changed objects, perf at full scale.
+
+---
+
 ## Round 10 — Save/restore the micro-world, menus, natural-play acceptance (2026-09-23)
 
 ### Goal

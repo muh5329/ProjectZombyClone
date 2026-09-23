@@ -4,7 +4,8 @@
 # 30 random sound events / s through SoundManager) and horde-noise (60
 # clustered zombies + 10 window smashes / s). Every mode checks avg and p99
 # frame time. Pass --noisy or --horde-noise to run only that mode; --save runs
-# only the Round-10 save / load timing (tests/perf/perf_save.gd).
+# only the Round-10 save / load timing (tests/perf/perf_save.gd); --world runs
+# only the Round-11 generated-world probe (tests/perf/perf_world.gd).
 # Prints avg physics ms; exits 1 when over budget (see tests/perf/perf_zombies.gd).
 set -u
 GODOT="${GODOT:-godot}"
@@ -22,6 +23,18 @@ run_horde() {
   "$GODOT" --headless --path . -s tests/perf/perf_zombies.gd -- --horde-noise 2>&1 | grep -v -E "$FILTER"
   return ${PIPESTATUS[0]}
 }
+run_world() {
+  echo "== world (Round 11: generated county seed 1337, player on the main street + 40 zombies; layout < 2 s, load < 20 s, avg 10 ms, p99 16 ms)"
+  "$GODOT" --headless --path . -s tests/perf/perf_world.gd 2>&1 | grep -v -E "$FILTER"
+  return ${PIPESTATUS[0]}
+}
+if [ "${1:-}" = "--world" ]; then
+  run_world
+  R=$?
+  if [ "$R" -ne 0 ]; then echo "perf.sh: OVER BUDGET (world)"; exit 1; fi
+  echo "perf.sh: OK"
+  exit 0
+fi
 if [ "${1:-}" = "--save" ]; then
   echo "== save / load (200 living zombies + 20 corpses; save < 200 ms, load < 3 s)"
   "$GODOT" --headless --path . -s tests/perf/perf_save.gd 2>&1 | grep -v -E "$FILTER"
@@ -50,8 +63,10 @@ HORDE=$?
 echo "== save / load (Round 10: 200 living zombies + 20 corpses: save < 200 ms, load < 3 s; 3000 dropped items: save < 200 ms, load < 2 s)"
 "$GODOT" --headless --path . -s tests/perf/perf_save.gd 2>&1 | grep -v -E "$FILTER"
 SAVE=${PIPESTATUS[0]}
-if [ "$CALM" -ne 0 ] || [ "$HOSTILE" -ne 0 ] || [ "$NOISY" -ne 0 ] || [ "$HORDE" -ne 0 ] || [ "$SAVE" -ne 0 ]; then
-  echo "perf.sh: OVER BUDGET (calm $CALM, hostile $HOSTILE, noisy $NOISY, horde-noise $HORDE, save/load $SAVE)"
+run_world
+WORLD=$?
+if [ "$CALM" -ne 0 ] || [ "$HOSTILE" -ne 0 ] || [ "$NOISY" -ne 0 ] || [ "$HORDE" -ne 0 ] || [ "$SAVE" -ne 0 ] || [ "$WORLD" -ne 0 ]; then
+  echo "perf.sh: OVER BUDGET (calm $CALM, hostile $HOSTILE, noisy $NOISY, horde-noise $HORDE, save/load $SAVE, world $WORLD)"
   exit 1
 fi
 echo "perf.sh: OK"

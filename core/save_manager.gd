@@ -199,6 +199,9 @@ func load_data(data: Dictionary, map: Node = null) -> Dictionary:
 	var packed := load(String(data.map)) as PackedScene  # allow-listed res://maps scene
 	if packed == null:
 		return _fail("Save refers to a missing map (%s)" % data.map)
+	var gen_why := check_worldgen(data)
+	if gen_why != "":
+		return _fail(gen_why)
 	var fresh := packed.instantiate()
 	if not _has_world_config(fresh):
 		fresh.free()
@@ -216,6 +219,9 @@ func load_data(data: Dictionary, map: Node = null) -> Dictionary:
 	var index := map.get_index() if map != null else -1
 	var was_current := map != null and tree.current_scene == map
 	_disable_spawners(fresh)
+	# Round 11: seed + worldgen params before _ready (generated maps build
+	# their layout from them).
+	WorldSnapshot.apply_world_config(fresh, data)
 	# The navmesh is baked AFTER the static objects are applied (furniture
 	# moved / destroyed in the saved world bakes correctly, no re-bake).
 	var nav := _nav_of(fresh)
@@ -236,6 +242,9 @@ func load_data(data: Dictionary, map: Node = null) -> Dictionary:
 	WorldSnapshot.apply_static(fresh, data, _index)
 	if nav != null:
 		await tree.physics_frame  # freed furniture leaves the physics space
+		# Chunked navigation (generated world) bakes around the saved player.
+		if nav.has_method(&"focus_on") and (data.get("player", {}) as Dictionary).has("position"):
+			nav.call(&"focus_on", Saveable.to_vec3(data.player.position))
 		nav.bake_now()
 		if not nav.baked:
 			await nav.navigation_ready
@@ -252,6 +261,34 @@ func load_data(data: Dictionary, map: Node = null) -> Dictionary:
 	EventBus.game_loaded.emit(fresh)
 	EventBus.game_notice.emit("Game loaded", 2.0)
 	return {"ok": true, "map": fresh, "ms": last_load_ms}
+
+
+## Round 11: a save of a generated world stores the generator version and
+## the layout hash. The layout is regenerated from (seed, params) — cached,
+## the map build reuses it — and must hash the same; a different version
+## with the same hash is accepted (nothing to migrate). "" = fine.
+static func check_worldgen(data: Dictionary) -> String:
+	var w: Dictionary = data.get("world", {})
+	if not w.has("worldgen"):
+		return ""
+	var wg: Dictionary = w.worldgen
+	var prm: WorldGenParams = null
+	var gp := String(w.get("worldgen_params", ""))
+	if gp != "" and gp.begins_with("res://data/worldgen/"):
+		prm = load(gp) as WorldGenParams
+	if prm == null:
+		prm = WorldGenerator.default_params()
+	var seed := int(w.get("seed", 0))
+	var layout := WorldGenerator.generate(seed, prm)
+	var saved_v := int(wg.get("version", 0))
+	if layout.layout_hash() == String(wg.get("layout_hash", "")):
+		if saved_v != WorldGenerator.VERSION:
+			print("SaveManager: save from world generator v%d loads unchanged in v%d" % [saved_v, WorldGenerator.VERSION])
+		return ""
+	if saved_v != WorldGenerator.VERSION:
+		return "This save was made with world generator v%d; this build (v%d) generates a different world for seed %d, so it can't be loaded" % [
+			saved_v, WorldGenerator.VERSION, seed]
+	return "This save's world doesn't match its seed %d (layout hash mismatch): can't load" % seed
 
 
 static func _has_world_config(n: Node) -> bool:

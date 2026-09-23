@@ -167,14 +167,26 @@ func ensure_loot() -> void:
 	var list: Array[Dictionary] = []
 	for f in fixed_items:
 		list.append({"id": StringName(f.get("id", &"")), "count": int(f.get("count", 1)), "condition": int(f.get("condition", -1))})
+	var fixed_n := list.size()
 	var t := resolve_table()
 	if t:
 		list.append_array(LootResolver.roll(t, rng, world_age_days()))
-	for e in list:
+	var cfg := WorldConfig.find(get_tree()) if is_inside_tree() else null
+	var food_keep := cfg.loot_food_multiplier if cfg != null else 1.0
+	for i in list.size():
+		var e: Dictionary = list[i]
 		var d := ItemDB.get_item(e.id)
 		if d == null:
 			push_warning("%s: unknown loot item '%s'" % [persist_id, e.id])
 			continue
+		if i >= fixed_n and food_keep < 1.0 and d.category == ItemData.Category.FOOD:
+			var keep := 0
+			for k in int(e.count):
+				if rng.randf() < food_keep:
+					keep += 1
+			if keep == 0:
+				continue
+			e.count = keep
 		var n := inventory.fit_count(d, int(e.count))
 		if n > 0:
 			var inst := ItemInstance.new(d, int(e.condition), n)

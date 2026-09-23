@@ -183,7 +183,11 @@ func _build_wall(wall: Dictionary) -> void:
 	var yaw := atan2(-dir.z, dir.x)  # local +X -> wall direction
 	var exterior := _is_exterior(wall)
 	var n2: Vector2 = wall.get("outward", Vector2.ZERO)
+	# Round 11: consumers (occlusion, sound, entry planner) read `outward`
+	# as a WORLD vector — a rotated building turns its plan normals.
 	var outward := Vector3(n2.x, 0.0, n2.y)
+	if outward.length_squared() > 0.5 and is_inside_tree():
+		outward = (global_basis * outward).normalized()
 	var color := plan.wall_color if exterior else plan.interior_wall_color
 	var origin := Vector3(from.x, 0.0, from.y)
 	for seg in segments_for_wall(wall, plan):
@@ -271,21 +275,257 @@ func _build_roof() -> void:
 	var visual := Node3D.new()
 	visual.name = "Visual"
 	body.add_child(visual)
-	var mi := MeshInstance3D.new()
-	mi.name = "Mesh"
-	var box := BoxMesh.new()
-	box.size = Vector3(plan.footprint.x + t, 0.15, plan.footprint.y + t)
-	box.material = _material(plan.roof_color)
-	mi.mesh = box
-	visual.add_child(mi)
+	var fp := plan.footprint
+	var style := StringName(plan.roof_style)
+	var upper := UPPER_STOREY_HEIGHT if plan.storeys >= 2 else 0.0
+	var rise := 0.0
+	if style == &"flat":
+		var mi := MeshInstance3D.new()
+		mi.name = "Mesh"
+		var box := BoxMesh.new()
+		box.size = Vector3(fp.x + t, 0.15, fp.y + t)
+		box.material = _material(plan.roof_color)
+		mi.mesh = box
+		mi.position = Vector3(0, upper, 0)
+		visual.add_child(mi)
+	else:
+		var span := minf(fp.x, fp.y) * 0.5 + ROOF_OVERHANG
+		rise = plan.roof_pitch * span
+		var mi2 := MeshInstance3D.new()
+		mi2.name = "Mesh"
+		mi2.mesh = roof_mesh(style, fp, rise, ROOF_OVERHANG, plan.roof_color, plan.wall_color)
+		mi2.position = Vector3(-fp.x * 0.5, upper - 0.075, -fp.y * 0.5)
+		visual.add_child(mi2)
+	if upper > 0.0:
+		_build_upper_storey(visual, upper)
+	if not plan.porch.is_empty():
+		_build_porch(visual)
 	var shape := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = box.size
+	bs.size = Vector3(fp.x + t, 0.15 + rise + upper, fp.y + t)
 	shape.shape = bs
+	shape.position = Vector3(0, (rise + upper) * 0.5, 0)
 	body.add_child(shape)
-	body.position = Vector3(plan.footprint.x * 0.5, plan.wall_height + 0.075, plan.footprint.y * 0.5)
+	body.position = Vector3(fp.x * 0.5, plan.wall_height + 0.075, fp.y * 0.5)
 	add_child(body)
 	roof = body
+	_build_facade_extras()
+
+
+const ROOF_OVERHANG := 0.4
+const UPPER_STOREY_HEIGHT := 2.6
+
+
+## Pure: a pitched roof mesh over footprint [fp] (plan-local, origin at
+## the footprint's min corner, eaves at y 0): gable / hip / gambrel with
+## the ridge along the longer axis. Surface 0 = roof, 1 = gable ends.
+static func roof_mesh(style: StringName, fp: Vector2, rise: float, o: float, roof_col: Color, wall_col: Color) -> ArrayMesh:
+	var along_x := fp.x >= fp.y
+	# Work in (a, b): a along the ridge (length L), b across (width B).
+	var L := fp.x if along_x else fp.y
+	var B := fp.y if along_x else fp.x
+	var P := func(a: float, y: float, b: float) -> Vector3:
+		return Vector3(a, y, b) if along_x else Vector3(b, y, a)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var ends := SurfaceTool.new()
+	ends.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var quad := func(tool: SurfaceTool, q: Array) -> void:
+		for idx in [0, 1, 2, 0, 2, 3]:
+			tool.add_vertex(q[idx])
+	var tri := func(tool: SurfaceTool, q: Array) -> void:
+		for v in q:
+			tool.add_vertex(v)
+	var mid := B * 0.5
+	match style:
+		&"hip":
+			var inset := minf(B * 0.5 + o, L * 0.5 + o)
+			var r0: Vector3 = P.call(-o + inset, rise, mid)
+			var r1: Vector3 = P.call(L + o - inset, rise, mid)
+			var c00: Vector3 = P.call(-o, 0.0, -o)
+			var c10: Vector3 = P.call(L + o, 0.0, -o)
+			var c11: Vector3 = P.call(L + o, 0.0, B + o)
+			var c01: Vector3 = P.call(-o, 0.0, B + o)
+			quad.call(st, [c00, c10, r1, r0])
+			quad.call(st, [c11, c01, r0, r1])
+			tri.call(st, [c01, c00, r0])
+			tri.call(st, [c10, c11, r1])
+		&"gambrel":
+			var knee := B * 0.2
+			var kh := rise * 0.72
+			var prof := [[-o, 0.0], [knee, kh], [mid, rise], [B - knee, kh], [B + o, 0.0]]
+			for i in 4:
+				var p0: Array = prof[i]
+				var p1: Array = prof[i + 1]
+				quad.call(st, [P.call(-o, p0[1], p0[0]), P.call(L + o, p0[1], p0[0]), P.call(L + o, p1[1], p1[0]), P.call(-o, p1[1], p1[0])])
+			for a in [0.0, L]:
+				var ctr: Vector3 = P.call(a, rise * 0.45, mid)
+				for i in 4:
+					var p0b: Array = prof[i]
+					var p1b: Array = prof[i + 1]
+					tri.call(ends, [ctr, P.call(a, maxf(p0b[1], 0.0), clampf(p0b[0], 0.0, B)), P.call(a, maxf(p1b[1], 0.0), clampf(p1b[0], 0.0, B))])
+				tri.call(ends, [ctr, P.call(a, 0.0, B), P.call(a, 0.0, 0.0)])
+		_:  # gable
+			var r0g: Vector3 = P.call(-o, rise, mid)
+			var r1g: Vector3 = P.call(L + o, rise, mid)
+			quad.call(st, [P.call(-o, 0.0, -o), P.call(L + o, 0.0, -o), r1g, r0g])
+			quad.call(st, [P.call(L + o, 0.0, B + o), P.call(-o, 0.0, B + o), r0g, r1g])
+			for a2 in [0.0, L]:
+				tri.call(ends, [P.call(a2, 0.0, 0.0), P.call(a2, 0.0, B), P.call(a2, rise, mid)])
+	st.generate_normals()
+	ends.generate_normals()
+	var mesh := ArrayMesh.new()
+	st.commit(mesh)
+	ends.commit(mesh)
+	var rm := StandardMaterial3D.new()
+	rm.albedo_color = roof_col
+	rm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.surface_set_material(0, rm)
+	if mesh.get_surface_count() > 1:
+		var wm := StandardMaterial3D.new()
+		wm.albedo_color = wall_col
+		wm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mesh.surface_set_material(1, wm)
+	return mesh
+
+
+## A decorative upper storey (walls + windows) on the roof node: hidden
+## with the roof when the player is inside (the interior is one floor).
+func _build_upper_storey(visual: Node3D, h: float) -> void:
+	var fp := plan.footprint
+	var t := plan.wall_thickness
+	var box := MeshInstance3D.new()
+	box.name = "Upper"
+	var bm := BoxMesh.new()
+	bm.size = Vector3(fp.x + t, h, fp.y + t)
+	bm.material = _material(plan.wall_color)
+	box.mesh = bm
+	box.position = Vector3(0, h * 0.5 - 0.075, 0)
+	visual.add_child(box)
+	var glass := _material(Color(0.32, 0.4, 0.48))
+	var trim := _material(plan.wall_color.lightened(0.35))
+	for side in 4:
+		var along_x := side < 2
+		var length := fp.x if along_x else fp.y
+		var n := maxi(1, int(length / 3.2))
+		for i in n:
+			var off := -length * 0.5 + length * (i + 0.5) / n
+			var w := MeshInstance3D.new()
+			var wbm := BoxMesh.new()
+			wbm.size = Vector3(0.95, 1.15, 0.05) if along_x else Vector3(0.05, 1.15, 0.95)
+			wbm.material = glass
+			w.mesh = wbm
+			var sgn := -1.0 if side % 2 == 0 else 1.0
+			w.position = Vector3(off, h * 0.55, sgn * (fp.y + t) * 0.5) if along_x else Vector3(sgn * (fp.x + t) * 0.5, h * 0.55, off)
+			visual.add_child(w)
+			var sill := MeshInstance3D.new()
+			var sbm := BoxMesh.new()
+			sbm.size = Vector3(1.15, 0.08, 0.1) if along_x else Vector3(0.1, 0.08, 1.15)
+			sbm.material = trim
+			sill.mesh = sbm
+			sill.position = w.position + Vector3(0, -0.62, 0)
+			visual.add_child(sill)
+
+
+## Porch: deck + posts in front of the front wall (+Z side); its little
+## roof rides on the roof node (hidden inside).
+func _build_porch(visual: Node3D) -> void:
+	var fp := plan.footprint
+	var at := float(plan.porch.get("at", fp.x * 0.5))
+	var pw := float(plan.porch.get("width", 4.0))
+	var pd := float(plan.porch.get("depth", 2.0))
+	var deck := MeshInstance3D.new()
+	deck.name = "PorchDeck"
+	var dm := BoxMesh.new()
+	dm.size = Vector3(pw, 0.08, pd)
+	dm.material = _material(Color(0.52, 0.42, 0.3))
+	deck.mesh = dm
+	deck.position = Vector3(at, 0.04, fp.y + pd * 0.5)
+	add_child(deck)
+	var posts := StaticBody3D.new()
+	posts.name = "PorchPosts"
+	posts.collision_layer = 1
+	posts.collision_mask = 0
+	add_child(posts)
+	for sx in [-1.0, 1.0]:
+		var pos := Vector3(at + sx * (pw * 0.5 - 0.12), plan.wall_height * 0.5, fp.y + pd - 0.12)
+		var mi := MeshInstance3D.new()
+		var pm := BoxMesh.new()
+		pm.size = Vector3(0.14, plan.wall_height, 0.14)
+		pm.material = _material(Color(0.9, 0.88, 0.82))
+		mi.mesh = pm
+		mi.position = pos
+		posts.add_child(mi)
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = pm.size
+		cs.shape = bs
+		cs.position = pos
+		posts.add_child(cs)
+	# Porch roof (roof node local: origin at the footprint centre, wall top).
+	var pr := MeshInstance3D.new()
+	pr.name = "PorchRoof"
+	var prm := BoxMesh.new()
+	prm.size = Vector3(pw + 0.3, 0.12, pd + 0.2)
+	prm.material = _material(plan.roof_color)
+	pr.mesh = prm
+	pr.position = Vector3(at - fp.x * 0.5, -0.1, fp.y * 0.5 + pd * 0.5)
+	visual.add_child(pr)
+
+
+## Sign board (Label3D) and awning over the front door.
+func _build_facade_extras() -> void:
+	if plan.sign_text == "" and plan.awning_color.a <= 0.0:
+		return
+	var door := Vector2.INF
+	var n2 := Vector2.ZERO
+	var along := Vector2.RIGHT
+	for w in plan.walls:
+		for o in w.get("openings", []):
+			if String(o.get("id", "")) == "front_door":
+				var from: Vector2 = w.from
+				var to: Vector2 = w.to
+				along = (to - from).normalized()
+				door = from + along * float(o.at)
+				n2 = w.get("outward", Vector2.ZERO)
+	if door == Vector2.INF:
+		return
+	var outward := Vector3(n2.x, 0, n2.y)
+	var base := Vector3(door.x, 0, door.y)
+	var yaw := atan2(outward.x, outward.z)
+	if plan.awning_color.a > 0.0:
+		var aw := MeshInstance3D.new()
+		aw.name = "Awning"
+		var am := BoxMesh.new()
+		am.size = Vector3(plan.door_width + 2.6, 0.12, 1.3)
+		am.material = _material(plan.awning_color)
+		aw.mesh = am
+		aw.position = base + outward * 0.7 + Vector3.UP * (plan.door_height + 0.2)
+		aw.rotation.y = yaw
+		aw.rotation.x = 0.0
+		add_child(aw)
+	if plan.sign_text != "":
+		var y := minf(plan.door_height + 0.7, plan.wall_height - 0.15)
+		var board := MeshInstance3D.new()
+		board.name = "SignBoard"
+		var bm := BoxMesh.new()
+		var bw := clampf(plan.sign_text.length() * 0.32 + 0.8, 2.0, 6.0)
+		bm.size = Vector3(bw, 0.55, 0.08)
+		bm.material = _material(Color(0.12, 0.14, 0.18))
+		board.mesh = bm
+		board.position = base + outward * 0.16 + Vector3.UP * y
+		board.rotation.y = yaw
+		add_child(board)
+		var label := Label3D.new()
+		label.name = "Sign"
+		label.text = plan.sign_text
+		label.font_size = 48
+		label.pixel_size = 0.0075
+		label.outline_size = 6
+		label.modulate = Color(0.98, 0.92, 0.72)
+		label.position = base + outward * 0.215 + Vector3.UP * y
+		label.rotation.y = yaw
+		add_child(label)
 
 
 # --- Furniture (Round 5) -----------------------------------------------------

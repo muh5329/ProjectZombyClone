@@ -77,17 +77,26 @@ ui/menus/     main_menu.gd/.tscn (MainMenu, the main scene), pause_menu.gd (Paus
               slot_browser.gd (SlotBrowser), menu_style.gd (MenuStyle) (R10)
 ui/inventory/ loot_window.gd/.tscn (LootWindow controller), item_list_panel.gd (ItemListPanel),
               item_context_menu.gd (ItemContextMenu), inventory_drag_drop.gd (InventoryDragDrop) (R5/R6)
-maps/         test_ground.tscn                           (the game map; New game loads it)
+worldgen/     world_gen_params.gd (WorldGenParams), world_layout.gd (WorldLayout),
+              world_generator.gd (WorldGenerator), building_plan_generator.gd
+              (BuildingPlanGenerator), world_layout_validator.gd (WorldLayoutValidator),
+              world_map_renderer.gd (WorldMapRenderer), world_builder.gd (WorldBuilder),
+              world_nav.gd (WorldNav) (R11)
+maps/         world.tscn (R11: the generated county; main-menu New game),
+              test_ground.tscn (the hand-made systems test map)
 data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tres, zombies/zombie_basic.tres,
               items/<category>/*.tres (41 items, R5), loot/*.tres + loot/garage/*.tres (R5),
               combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4),
               world/time_config.gd + .tres, survival/needs_profile.gd + .tres (R7),
               audio/sound_categories.tres (R8), characters/outfits/*.tres (14 outfits),
               vehicles/*.tres (6 vehicle types), loot/vehicle_trunk + vehicle_glovebox (R8.5),
-              barricades/wood_planks.tres (R9)
-assets/       materials/grid_ground.gdshader
+              barricades/wood_planks.tres (R9), worldgen/default_world.tres (R11),
+              loot/{store_shelf,desk}.tres + loot/{convenience_store,hardware_store,pharmacy,
+              gas_station,diner,warehouse,barn}/*.tres (R11)
+assets/       materials/grid_ground.gdshader, world_ground.gdshader, tree_canopy.gdshader (R11)
 tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd,
-              tools/ (dev previews: model_preview.gd, street_preview.gd — not tests)
+              tools/ (dev previews: model_preview.gd, street_preview.gd; R11:
+              world_map_preview.gd, world_validate.gd, world_probe.gd — not tests)
 scripts/      test.sh, screenshots.sh, perf.sh
 docs/
 ```
@@ -326,6 +335,65 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
   `ZombieAI.down_seconds`, `knock_down(source, seconds)`;
   `HouseWindow.WINDOW_NAV_LAYER` (links on navigation layer 2; zombie
   agents 1 + 2).
+
+### World generation (worldgen/, R11)
+- `WorldGenParams` (Resource, data/worldgen): sizes (384-2048 m), noise,
+  road widths, `road_wiggle`, town blocks / rows / lots, hamlet / farm
+  counts, population + rural group sizes; `area_scale()`,
+  `scaled_range(lo, hi, floor)`, `effective_route_cell()`, `validate()`.
+- `WorldLayout` (RefCounted, pure data): `version`, zones raster +
+  records. Area records are **oriented boxes**: `xf: Transform2D` (local →
+  world, rotation only) + `size`, `rect` = world AABB (lots: x along the
+  front edge, y away from the road). Roads (`points`, `width`,
+  `sidewalk`, `cap`), `junctions`, settlements, lots, buildings (`xf`,
+  `size`, `local`, `door`, `door_x`, `access`, `access_path`), paths,
+  parking, fields (`axis`, `crop`), fences, ponds, props, vehicles (`yaw`:
+  forward = (sin, cos)), trees, zombies, `zombie_groups`, chunk_density,
+  spawn, `plans` (not serialized). Geometry helpers: `obb_poly`,
+  `poly_of`, `poly_aabb`, `obb_has_point`, `rec_has_point`, `polys_overlap`,
+  `seg_poly_distance`, `polyline_poly_distance`, `vehicle_poly`; chunk
+  helpers; `to_dict` / `to_json`, `layout_hash()` (cached; excludes the
+  version), `plan_hash()`.
+- `WorldGenerator` (RefCounted): `VERSION`, static `generate(seed,
+  params)` (cached), `generate_fresh`, `sub_seed(seed, tag)` (one rng per
+  stage), `frame_rec`, `rot90`. Routing: AStarGrid2D, road cells solid
+  (`_mark_road_cells`), `_route(a, b, allow_cross, wiggle)`,
+  `_split_crossings`, `_runs_along(_crossing)`, `_insert_junction`.
+  Debug counters `stats.rej_*`.
+- `BuildingPlanGenerator` (RefCounted): static `generate(kind, seed,
+  opts)` (opts: `garage`, `hamlet`, `hammer`, `max_width`, `max_depth`),
+  `rotate_plan`, `opening_point`, `opening_outward`, `exterior_doors`,
+  `check(plan)`; `KINDS` (+ bar, church, post_office). Buildings are
+  placed by node transform (HouseBlockout rotates its plan normals to
+  world space: `outward` is a world vector).
+- `WorldLayoutValidator` (static): `all_problems` (with plans),
+  `layout_problems` (fast), `overlap_problems`, `road_problems`,
+  `vehicle_problems`, `prop_problems`, `connectivity_problems`,
+  `door_problems`, `content_problems`, `plan_problems`,
+  `exterior_door_segments`.
+- `WorldMapRenderer` (static): `render(layout, mpp, detail) -> Image`,
+  `side_by_side(images)`.
+- `WorldBuilder` (Node3D "Generated", groups `world_builder`,
+  `light_budget`): `generate_and_build()`, `build()`, `layout`,
+  `layout_hash()`, `chunks`, `buildings`, `start_position()`,
+  `update_lights()` + `light_chunk_radius` / `light_far` /
+  `shadowed_lights` / `light_stats`, static `olive(c)`, `splat_image`.
+- `WorldNav extends NavBaker` (node "NavRegion"): `radius` 2,
+  `keep_radius` 4, `lookahead` 4 s, `max_parallel` 2, `border` 2.4,
+  `verify_timeout_frames`; `regions`, `focus_on`, `wanted_chunks`,
+  `bake_now`, `request_rebake`, `baked_chunks`, `regions_verified(list)`,
+  `chunk_ready(c)`, signal `chunk_regions_changed`; stats `freed_count`,
+  `verify_frames`, `max_alive`, `apply_usec`. No coroutines.
+- `NavBaker._match_map_cells()` sets the navigation map's cell size /
+  height to the region's (world.tscn: 0.1 / 0.1, agent radius 0.2).
+- Hooks: `ZombieSpawner.spawn_points` / `groups` / `groups_spawned`
+  (saved), `WorldConfig.worldgen_params`, `loot_food_multiplier`,
+  static `rng_seed_for(node, tag)`; `WorldSnapshot.capture` writes
+  `world.worldgen = {version, layout_hash}`; `SaveManager.check_worldgen(data)`
+  (phase 1 of a load); `SaveSchema` checks both; `DayNightLighting` calls
+  group `light_budget`; `MainMenu` seed field; input `toggle_map` (M).
+- Tools / scripts: `scripts/worldgen_sweep.sh`, `tests/tools/world_*.gd`,
+  `tests/integration/slow_frames.gd` (artificial load helper).
 
 ### `Building` / `Room` / `BuildingPlan` / `HouseBlockout` (buildings/)
 - `Room` (Node3D): axis-aligned box (`position` = floor centre, `size`);
@@ -873,6 +941,11 @@ zombie mask 455 include 9; the zombie obstacle ray is 7 + 9). Window planks (≥
 Vehicles (R8.5): body 1 + 6 (navmesh-baked, fades), trunk / glovebox
 containers 4 only.
 
+Generated world (R11): ground + world bounds 1; per-chunk `Solids` body 1
+(fences, props, lamp poles, tree trunks, pond walls — baked into that
+chunk's navmesh); gas pumps 1 + 4; the gas-station canopy roof 6 only
+(an occluder, never solid); crops and canopies have no collision.
+
 Beds / sofas / sinks (R7): 1 + 4 (+6 when tall). World items (`WorldItem`): layer 4, mask 0. Loot containers /
 furniture (R5): 1+4 (+6 when tall); plain furniture 1 (+6); corpses 4. Melee target query: layer 3;
 melee LOS: 1+7+8. Walls: 1+6. Windows: sill + header body 1+4+6, glass child body 8 while
@@ -893,6 +966,8 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `navigation_mesh_source_group` (the map root; parsed by NavBaker),
 `barricade`, `splinters`, `interaction_extension` (R9); planks and blocking
 furniture join `breakable` while they block. `saveable`, `pause_menu` (R10).
+`world_builder`, `world_chunk`, `world_solids`, `street_lamp`, `gas_pump`,
+`world_map_overlay` (R11; street lamps are also `interior_light`).
 
 ## Testing
 

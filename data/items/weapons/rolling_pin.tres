@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://items/weapon_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"rolling_pin"
+display_name = "Rolling Pin"
+description = "Better than bare hands. Barely."
+category = 3
+weight = 0.6
+max_stack = 1
+max_condition = 12
+color = Color(0.72, 0.58, 0.4, 1)
+world_size = Vector3(0.45, 0.06, 0.06)
+damage_min = 5
+damage_max = 8
+crit_chance = 0.08
+crit_multiplier = 2.0
+head_hit_chance = 0.25
+reach = 0.85
+arc_degrees = 65
+max_targets = 1
+swing_time = 0.5
+stamina_cost = 4
+knockback = 0.25
+knockdown_chance = 0.06
+condition_loss_chance = 0.15
+noise_radius = 5
+tags = Array[StringName]([&"blunt", &"kitchen"])

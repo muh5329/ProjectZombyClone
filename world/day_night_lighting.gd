@@ -85,6 +85,8 @@ func apply(hour_f: float, force: bool = false) -> void:
 		lights_on = on
 		for n in get_tree().get_nodes_in_group(&"interior_light"):
 			(n as Node3D).visible = on
+		# Round 11: a light budget (the generated world) trims that set.
+		get_tree().call_group(&"light_budget", &"update_lights")
 		for w in get_tree().get_nodes_in_group(&"window"):
 			if w.has_method(&"set_night_glow"):
 				w.call(&"set_night_glow", on)

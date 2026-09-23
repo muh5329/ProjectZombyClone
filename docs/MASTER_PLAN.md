@@ -58,3 +58,10 @@ population sim → 7 Long-term survival (farming, fishing, generators, seasons)
   virtual display and writes evidence to `tests/output/`.
 - Docs: `MASTER_PLAN.md` (this), `PROGRESS.md` (per-round log),
   `ARCHITECTURE.md`, `SYSTEMS.md`, `KNOWN_ISSUES.md`.
+
+## Post-slice rounds
+
+| # | Round | Status |
+|---|-------|--------|
+| 11 | Procedurally generated starting world | **DONE** (2026-09-23, 452 tests) |
+| 12 | World streaming + zombie population simulation + delta saves | next |

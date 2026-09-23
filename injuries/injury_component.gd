@@ -61,7 +61,7 @@ var restoring: bool = false
 func _ready() -> void:
 	if profile == null:
 		profile = load("res://data/injuries/human_injuries.tres")
-	rng.randomize()
+	rng.seed = WorldConfig.rng_seed_for(self, "injuries")
 
 
 ## Called by Character._ready (after its stats exist).

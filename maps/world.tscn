@@ -1,0 +1,98 @@
+[gd_scene load_steps=17 format=3 uid="uid://c0worldgen00001"]
+
+[ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
+[ext_resource type="Script" path="res://camera/isometric_camera.gd" id="2_cam"]
+[ext_resource type="PackedScene" path="res://ui/hud/hud.tscn" id="3_hud"]
+[ext_resource type="Script" path="res://worldgen/world_builder.gd" id="4_builder"]
+[ext_resource type="Resource" path="res://data/worldgen/default_world.tres" id="5_params"]
+[ext_resource type="Script" path="res://camera/occlusion_manager.gd" id="8_occl"]
+[ext_resource type="Script" path="res://worldgen/world_nav.gd" id="9_nav"]
+[ext_resource type="Script" path="res://zombies/zombie_spawner.gd" id="10_spawner"]
+[ext_resource type="Script" path="res://effects/blood_decals.gd" id="14_blood"]
+[ext_resource type="Script" path="res://world/world_config.gd" id="15_world"]
+[ext_resource type="PackedScene" path="res://ui/inventory/loot_window.tscn" id="18_lootwin"]
+[ext_resource type="Script" path="res://world/day_night_lighting.gd" id="20_daynight"]
+[ext_resource type="Script" path="res://effects/noise_rings.gd" id="21_rings"]
+[ext_resource type="Script" path="res://effects/sound_debug_overlay.gd" id="22_sdebug"]
+[ext_resource type="Script" path="res://ui/menus/pause_menu.gd" id="30_pause"]
+[ext_resource type="Script" path="res://ui/hud/world_map_overlay.gd" id="31_map"]
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 1
+background_color = Color(0.45, 0.52, 0.6, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.75, 0.78, 0.85, 1)
+ambient_light_energy = 0.35
+tonemap_mode = 2
+tonemap_exposure = 0.85
+
+[node name="World" type="Node3D"]
+
+[node name="World" type="Node" parent="."]
+script = ExtResource("15_world")
+world_seed = 1337
+world_age_days = 0.0
+worldgen_params = "res://data/worldgen/default_world.tres"
+loot_food_multiplier = 0.5
+
+[node name="PlayerStart" type="Marker3D" parent="."]
+position = Vector3(384, 0.1, 384)
+
+[node name="PauseMenu" type="CanvasLayer" parent="."]
+script = ExtResource("30_pause")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+position = Vector3(0, 12, 0)
+rotation_degrees = Vector3(-55, 35, 0)
+light_energy = 0.85
+shadow_enabled = true
+directional_shadow_max_distance = 90.0
+
+[node name="Generated" type="Node3D" parent="."]
+script = ExtResource("4_builder")
+params = ExtResource("5_params")
+
+[node name="BloodDecals" type="Node3D" parent="."]
+script = ExtResource("14_blood")
+
+[node name="NoiseRings" type="Node3D" parent="."]
+script = ExtResource("21_rings")
+
+[node name="SoundDebug" type="Node3D" parent="."]
+script = ExtResource("22_sdebug")
+
+[node name="NavRegion" type="NavigationRegion3D" parent="."]
+script = ExtResource("9_nav")
+agent_radius = 0.2
+cell_size = 0.1
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+position = Vector3(384, 0.1, 384)
+
+[node name="Zombies" type="Node3D" parent="."]
+script = ExtResource("10_spawner")
+count = 0
+seed = 1337
+min_player_distance = 10.0
+
+[node name="IsometricCamera" type="Node3D" parent="."]
+script = ExtResource("2_cam")
+target_path = NodePath("../Player")
+zoom_levels = Array[float]([10.0, 14.0, 20.0, 28.0, 44.0])
+
+[node name="OcclusionManager" type="Node" parent="."]
+script = ExtResource("8_occl")
+camera_path = NodePath("../IsometricCamera")
+
+[node name="DayNight" type="Node" parent="."]
+script = ExtResource("20_daynight")
+
+[node name="HUD" parent="." instance=ExtResource("3_hud")]
+
+[node name="LootWindow" parent="." instance=ExtResource("18_lootwin")]
+
+[node name="MapOverlay" type="CanvasLayer" parent="."]
+script = ExtResource("31_map")

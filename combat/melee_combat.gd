@@ -75,7 +75,7 @@ var _aim_accum: float = 0.0
 
 func _ready() -> void:
 	actor = get_parent() as Character
-	rng.randomize()
+	rng.seed = WorldConfig.rng_seed_for(self, "melee")
 	var eq := _equipment()
 	if eq != null:
 		eq.equipped_changed.connect(_on_equipment_changed)

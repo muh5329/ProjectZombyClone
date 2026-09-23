@@ -43,6 +43,18 @@ extends Resource
 @export var interior_wall_color: Color = Color(0.7, 0.68, 0.62)
 @export var floor_color: Color = Color(0.45, 0.36, 0.28)
 @export var roof_color: Color = Color(0.36, 0.3, 0.3)
+## Round 11 look (HouseBlockout; defaults = the Round-2 flat box):
+## roof_style flat | gable | hip | gambrel; roof_pitch = rise / half span;
+## storeys 2 adds a decorative upper storey (with windows) under the roof
+## (the interior stays one floor); porch {"at": x along the front wall
+## (local +Z side), "width", "depth"}; sign_text on a board above the
+## front door; awning_color (alpha 0 = none) over the front door.
+@export var roof_style: StringName = &"flat"
+@export var roof_pitch: float = 0.5
+@export var storeys: int = 1
+@export var porch: Dictionary = {}
+@export var sign_text: String = ""
+@export var awning_color: Color = Color(0, 0, 0, 0)
 @export var rooms: Array[Dictionary] = []
 @export var walls: Array[Dictionary] = []
 @export var furniture: Array[Dictionary] = []

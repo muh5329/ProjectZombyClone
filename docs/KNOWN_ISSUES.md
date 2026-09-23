@@ -5,12 +5,60 @@ that fixed them.
 
 ## Open
 
+- **Round-11 generated world gaps** (ordered):
+   - **No chunk-node streaming yet**: the whole county is built at load
+     (144 chunk nodes, ~27 k nodes, ~1 s). Navigation streams (5 × 5
+     around the player, baked ahead while walking, freed beyond 4 chunks);
+     zombies are the 40-zombie start population + one rural group per
+     hamlet / farm spawned when its chunk's navmesh is live — no
+     despawning and no simulation of `chunk_density` yet.
+     Round 12: stream chunk nodes in and out, population sim.
+   - **Save size grows with the world**: every instantiated static
+     (~2 000 containers / doors / windows / vehicle containers) is saved
+     even when untouched (228 KB, 30 ms). Per-chunk records of changed
+     statics only belong with streaming.
+   - **Furniture re-bake is per chunk**: `WorldNav.request_rebake()`
+     re-parses the chunk under the player only; furniture moved within the
+     2.4 m bake border of a neighbouring chunk leaves that tile stale until
+     it is re-baked.
+   - **Godot 4.6 navigation quirk**: assigning a mesh to a
+     NavigationRegion3D that is already registered with an empty mesh
+     leaves the map's closest-point / path queries resolving to one region
+     only. WorldNav therefore creates each region after its bake (a
+     re-bake swaps in a fresh region). Keep this in mind for streaming.
+   - **Buildings**: pitched roofs, upper-storey looks and porches are
+     visual only (one walkable floor); still rectangular footprints and
+     one interior template per commercial kind.
+   - **Roads**: flat quads; kerbs and crosswalks are painted strips (no
+     raised kerb geometry, no stop signs, no bridges — routes go round
+     ponds).
+   - **Nature**: ponds are walled off (no wading / swimming / fishing);
+     only trunks collide — canopies and crops do not block zombie vision
+     and crops do not slow movement; no terrain height.
+   - **Lights**: the night budget keeps only lights within 2 chunks /
+     60 m on and 10 shadowed room lights; frame time on a real GPU is still
+     unmeasured (xvfb / llvmpipe renders 2-6 fps day or night).
+   - **Gas pumps** only offer a disabled "Siphon fuel" (no fuel items or
+     power yet).
+   - **Navigation cell size differs per map**: world.tscn bakes 0.1 m cells
+     with a 0.2 m agent radius (0.15 / 0.3 left 0.9 m door gaps of rotated
+     buildings closed); NavBaker sets the navigation map's cell size on
+     `_ready`, so two maps with different cells must not be live at once.
+     Nav bake of the 25 start chunks is ~3.5-4 s (was ~1.1 s).
+   - **Jolt warning**: building the world occasionally prints "Jolt
+     Physics job system exceeded the maximum number of jobs" (harmless,
+     a warning; many static shape owners created in one frame).
+   - **Loot thinning is a world knob**: `loot_food_multiplier` (0.5 in
+     world.tscn) thins rolled food per unit; loot tables themselves are
+     unchanged (the test ground keeps its Round-10 amounts).
+
 - (R10, integrator) Hotbar ghost entries survive save/load but their icons render as empty slots after load (tests/output/36_after_load.png slots 1 and 3).
 
 000000000. **Round-10 save / load gaps** (ordered):
-   - **The unstaged acceptance playthroughs are stochastic**: the bot
-     (acceptance_bot.gd) plays real combat (wound rolls use randomized
-     rngs); with the tactics it uses (hold behind the smashed window,
+   - **The unstaged acceptance playthroughs** (R11: component rngs are
+     now seeded from the world seed, and the bot cuts itself on the window
+     frame deterministically when 12 climbs never cut it — no shard-order
+     weighting any more): the bot plays real combat; with the tactics it uses (hold behind the smashed window,
      shout to lure, shove-and-hit, aim-walk backwards, garage doorway)
      seeds 1337 / 7 / 99 passed every run after the fixes, but a very
      unlucky fight can still kill the survivor. Each takes 150–220 s.

@@ -1,11 +1,16 @@
 class_name MainMenu
 extends Control
-## Title screen (Round 10, the project's main scene): New game (a fresh
-## test_ground), Continue (the newest save), Load (slot list), Quit.
+## Title screen (Round 10, the project's main scene): New game, Continue
+## (the newest save), Load (slot list), Quit. Round 11: New game generates
+## a fresh county (maps/world.tscn) from a random seed, or from the number
+## typed in the seed field; the seed is shown (and on the M map).
 
-const NEW_GAME_SCENE := "res://maps/test_ground.tscn"
+const NEW_GAME_SCENE := "res://maps/world.tscn"
 
 var main_box: VBoxContainer
+var seed_edit: LineEdit
+## Seed of the last New game (the typed one, else a random one).
+var last_seed: int = -1
 var browser: SlotBrowser
 var status: Label
 var continue_button: Button
@@ -32,6 +37,17 @@ func _ready() -> void:
 	main_box.add_theme_constant_override(&"separation", 8)
 	col.add_child(main_box)
 	main_box.add_child(MenuStyle.button("New game", new_game))
+	var seed_row := HBoxContainer.new()
+	seed_row.add_theme_constant_override(&"separation", 8)
+	seed_row.add_child(MenuStyle.label("World seed", 14))
+	seed_edit = LineEdit.new()
+	seed_edit.name = "SeedEdit"
+	seed_edit.placeholder_text = "random"
+	seed_edit.max_length = 9
+	seed_edit.custom_minimum_size = Vector2(160, 0)
+	seed_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	seed_row.add_child(seed_edit)
+	main_box.add_child(seed_row)
 	continue_button = MenuStyle.button("Continue", continue_game)
 	main_box.add_child(continue_button)
 	main_box.add_child(MenuStyle.button("Load", show_slots))
@@ -50,8 +66,18 @@ func _ready() -> void:
 		status.text = "Last save: " + MenuStyle.slot_text(slots[0])
 
 
+## The seed for a new game: the typed number, else a random one.
+func chosen_seed() -> int:
+	var t := seed_edit.text.strip_edges() if seed_edit != null else ""
+	if t.is_valid_int() and int(t) >= 0:
+		return int(t)
+	return randi() % 1000000
+
+
 func new_game() -> void:
-	SaveManager.new_game(NEW_GAME_SCENE)
+	last_seed = chosen_seed()
+	status.text = "Generating world (seed %d)…" % last_seed
+	SaveManager.new_game(NEW_GAME_SCENE, last_seed)
 
 
 func continue_game() -> void:

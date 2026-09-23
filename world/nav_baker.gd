@@ -40,6 +40,7 @@ var _bake_started_at: int = 0
 
 func _ready() -> void:
 	add_to_group(&"nav_baker")
+	_match_map_cells()
 	if navigation_mesh == null:
 		navigation_mesh = NavigationMesh.new()
 	var nm := navigation_mesh
@@ -62,6 +63,16 @@ func _ready() -> void:
 	bake_finished.connect(_on_bake_finished)
 	if bake_on_ready:
 		_bake_later()
+
+
+## The navigation map's cell size / height must equal the baked meshes'
+## (maps differ: 0.15 on the test ground, 0.1 in the generated world).
+func _match_map_cells() -> void:
+	if not is_inside_tree():
+		return
+	var map := get_world_3d().navigation_map
+	NavigationServer3D.map_set_cell_size(map, cell_size)
+	NavigationServer3D.map_set_cell_height(map, cell_height)
 
 
 func _bake_later() -> void:

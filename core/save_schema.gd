@@ -116,6 +116,25 @@ func _world(data: Variant) -> void:
 	if not (_int(w.get("seed", 0), "world/seed", -9.0e15, 9.0e15) and _num(w.get("age_days", 0.0), "world/age_days", 0.0, 1.0e6)
 			and _int(w.get("water_shutoff_day", -1), "world/water_shutoff_day", -1.0, 1.0e6)):
 		return
+	if w.has("worldgen_params"):
+		var gp: Variant = w.worldgen_params
+		if not _str(gp, "world/worldgen_params"):
+			return
+		if not (String(gp).begins_with("res://data/worldgen/") and String(gp).ends_with(".tres") and not String(gp).contains("..")):
+			_fail("world/worldgen_params", "not a worldgen params resource")
+			return
+	if w.has("worldgen"):
+		if not _dict(w.worldgen, "world/worldgen"):
+			return
+		var wg: Dictionary = w.worldgen
+		if not _int(wg.get("version"), "world/worldgen/version", 0, 1.0e6):
+			return
+		var lh: Variant = wg.get("layout_hash")
+		if not _str(lh, "world/worldgen/layout_hash"):
+			return
+		if (lh as String).length() != 64 or not (lh as String).is_valid_hex_number():
+			_fail("world/worldgen/layout_hash", "not a sha256 hex string")
+			return
 	if not _dict(d.get("time"), "time") or not _num((d.time as Dictionary).get("minutes"), "time/minutes", 0.0, 1.0e9):
 		return
 	if not _dict(d.get("statics"), "statics"):
@@ -141,6 +160,12 @@ func _world(data: Variant) -> void:
 			if not st is String or not (st as String).is_valid_int():
 				_fail(p + "/rng_state", "not an integer string")
 				return
+			var gsp: Variant = (sp as Dictionary).get("groups_spawned", [])
+			if not _arr(gsp, p + "/groups_spawned"):
+				return
+			for g in (gsp as Array):
+				if not _str(g, p + "/groups_spawned"):
+					return
 	for key in [WorldSnapshot.KEY_ZOMBIES, WorldSnapshot.KEY_CORPSES, WorldSnapshot.KEY_ITEMS]:
 		if not _arr(d.get(key, []), key):
 			return
