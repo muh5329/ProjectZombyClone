@@ -51,8 +51,8 @@ entries = Array[Dictionary]([{
 }, {
 "item_id": &"nails",
 "weight": 18.0,
-"min_count": 5,
-"max_count": 20,
+"min_count": 3,
+"max_count": 12,
 "chance": 0.80,
 "rarity": &"common"
 }, {
@@ -60,8 +60,15 @@ entries = Array[Dictionary]([{
 "weight": 4.0,
 "min_count": 1,
 "max_count": 1,
-"chance": 0.50,
+"chance": 0.10,
 "rarity": &"uncommon"
+}, {
+"item_id": &"plank",
+"weight": 10.0,
+"min_count": 1,
+"max_count": 2,
+"chance": 0.6,
+"rarity": &"common"
 }, {
 "item_id": &"duct_tape",
 "weight": 10.0,

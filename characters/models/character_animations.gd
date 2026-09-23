@@ -12,7 +12,8 @@ extends RefCounted
 ##
 ## Human: idle, walk, jog, sprint, sneak, sneak_idle, windup_* / strike_*
 ## (2h, 1h, punch, shove), climb, eat, search, bandage, sit, sleep, death,
-## hit. Zombie: z_idle, z_walk, z_chase, z_attack, z_bang, z_knockdown,
+## hit, hammer (Round 9: nailing planks, arm swinging at chest height),
+## push (leaning into furniture). Zombie: z_idle, z_walk, z_chase, z_attack, z_bang, z_knockdown,
 ## z_getup, z_death, z_hit.
 
 ## Speed (m/s) at which a locomotion clip's feet do not slide.
@@ -21,7 +22,7 @@ const DESIGN_SPEED := {
 	&"z_walk": 0.9, &"z_chase": 1.6,
 }
 const LOOPING: Array[StringName] = [&"idle", &"walk", &"jog", &"sprint", &"sneak", &"sneak_idle", &"eat",
-	&"search", &"bandage", &"sit", &"sleep", &"z_idle", &"z_walk", &"z_chase", &"z_bang"]
+	&"search", &"bandage", &"sit", &"sleep", &"hammer", &"push", &"z_idle", &"z_walk", &"z_chase", &"z_bang"]
 const ROOT := &"root"
 const KEYS_PER_CYCLE := 8
 
@@ -47,6 +48,8 @@ static func build_library() -> AnimationLibrary:
 		&"eat": _cycle(1.6, _eat),
 		&"search": _cycle(1.2, _search),
 		&"bandage": _cycle(1.0, _bandage),
+		&"hammer": _cycle(0.5, _hammer),
+		&"push": _cycle(1.0, _push),
 		&"sit": _cycle(3.0, _sit),
 		&"sleep": _cycle(4.0, _sleep),
 		&"death": _keys(1.2, [[0.0, {}], [0.35, _buckle(8.0)], [0.8, _falling_back()], [1.2, _lying_back(true)]]),
@@ -305,6 +308,33 @@ static func _search(p: float) -> Dictionary:
 		&"foot_l": Vector3(15, 0, 0), &"foot_r": Vector3(15, 0, 0),
 		ROOT: Vector3(0, -0.07, 0.04),
 	}
+
+
+## Nailing: left hand holds the plank up, right arm hammers (raise →
+## strike twice per second), body leaning in a little.
+static func _hammer(p: float) -> Dictionary:
+	var s := sin(TAU * p)
+	var strike := maxf(0.0, s)
+	return {
+		&"spine": Vector3(-6, 0, 0), &"chest": Vector3(-4, -8 + 4 * s, 0), &"head": Vector3(-8, 0, 0),
+		&"upperarm_l": Vector3(75, 0, 20), &"forearm_l": Vector3(55, 0, 0), &"hand_l": Vector3(0, 0, 0),
+		&"upperarm_r": Vector3(55 + 45 * strike, 0, -12), &"forearm_r": Vector3(95 - 60 * strike, 0, 0),
+		&"hand_r": Vector3(-20 + 40 * strike, 0, 0),
+		&"thigh_l": Vector3(6, 0, 0), &"thigh_r": Vector3(-6, 0, 0),
+		ROOT: Vector3(0, -0.01 * strike, 0),
+	}
+
+
+## Pushing furniture: leaning forward, both arms out, short steps.
+static func _push(p: float) -> Dictionary:
+	var pose := _walk(p, 0.5)
+	pose[&"spine"] = Vector3(-22, 0, 0)
+	pose[&"head"] = Vector3(12, 0, 0)
+	pose[&"upperarm_l"] = Vector3(80, 0, 8)
+	pose[&"upperarm_r"] = Vector3(80, 0, -8)
+	pose[&"forearm_l"] = Vector3(15, 0, 0)
+	pose[&"forearm_r"] = Vector3(15, 0, 0)
+	return pose
 
 
 static func _bandage(p: float) -> Dictionary:

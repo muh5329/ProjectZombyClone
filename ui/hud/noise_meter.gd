@@ -59,9 +59,15 @@ func _on_sound_emitted(_position: Vector3, radius: float, _intensity: float, cat
 	last_radius = radius
 	last_category = category
 	# A quiet footstep right after a loud smash does not hide the smash.
+	# Held for the category's duration at least: hammering repeats every
+	# 1.5 s while working, so the meter keeps reading 18 m (not a decay).
 	if radius >= shown:
 		shown = radius
-		_hold = hold_seconds
+		var hold := hold_seconds
+		var cat: Variant = SoundManager.category(category)
+		if cat != null:
+			hold = maxf(hold, float(cat.duration) + 0.1)
+		_hold = hold
 	_refresh()
 
 

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SoundCategoryTable" load_steps=27 format=3 uid="uid://c0soundcats001"]
+[gd_resource type="Resource" script_class="SoundCategoryTable" load_steps=32 format=3 uid="uid://c0soundcats001"]
 
 [ext_resource type="Script" path="res://audio/sound_category_table.gd" id="1_table"]
 [ext_resource type="Script" path="res://audio/sound_category.gd" id="2_cat"]
@@ -195,7 +195,47 @@ intensity = 0.2
 duration = 1.0
 note = "Picking broken glass out of a window frame"
 
+[sub_resource type="Resource" id="c24"]
+script = ExtResource("2_cat")
+id = &"hammering"
+radius = 18.0
+intensity = 0.8
+duration = 1.5
+note = "Nailing / prying planks, taking furniture apart with a hammer (PZ: very loud)"
+
+[sub_resource type="Resource" id="c25"]
+script = ExtResource("2_cat")
+id = &"wood_break"
+radius = 10.0
+intensity = 0.6
+duration = 1.0
+note = "A barricade plank or a piece of furniture breaks"
+
+[sub_resource type="Resource" id="c26"]
+script = ExtResource("2_cat")
+id = &"barricade_bang"
+radius = 12.0
+intensity = 0.7
+duration = 1.0
+note = "A zombie hits the planks on a window / door (recruits)"
+
+[sub_resource type="Resource" id="c27"]
+script = ExtResource("2_cat")
+id = &"furniture_scrape"
+radius = 6.0
+intensity = 0.3
+duration = 1.2
+note = "Dragging furniture across the floor"
+
+[sub_resource type="Resource" id="c28"]
+script = ExtResource("2_cat")
+id = &"sawing"
+radius = 10.0
+intensity = 0.5
+duration = 1.5
+note = "Sawing furniture into planks"
+
 [resource]
 script = ExtResource("1_table")
 player_loud_radius = 10.0
-categories = Array[ExtResource("2_cat")]([SubResource("c0"), SubResource("c1"), SubResource("c2"), SubResource("c3"), SubResource("c4"), SubResource("c5"), SubResource("c6"), SubResource("c7"), SubResource("c8"), SubResource("c9"), SubResource("c10"), SubResource("c11"), SubResource("c12"), SubResource("c13"), SubResource("c14"), SubResource("c15"), SubResource("c16"), SubResource("c17"), SubResource("c18"), SubResource("c19"), SubResource("c20"), SubResource("c21"), SubResource("c22"), SubResource("c23")])
+categories = Array[ExtResource("2_cat")]([SubResource("c0"), SubResource("c1"), SubResource("c2"), SubResource("c3"), SubResource("c4"), SubResource("c5"), SubResource("c6"), SubResource("c7"), SubResource("c8"), SubResource("c9"), SubResource("c10"), SubResource("c11"), SubResource("c12"), SubResource("c13"), SubResource("c14"), SubResource("c15"), SubResource("c16"), SubResource("c17"), SubResource("c18"), SubResource("c19"), SubResource("c20"), SubResource("c21"), SubResource("c22"), SubResource("c23"), SubResource("c24"), SubResource("c25"), SubResource("c26"), SubResource("c27"), SubResource("c28")])

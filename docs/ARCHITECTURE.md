@@ -43,23 +43,29 @@ player/       player.gd, player.tscn, player_controller.gd, player_interaction.g
               player_combat_input.gd (R4)
 camera/       isometric_camera.gd, occlusion_manager.gd
 interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2), loot_container.gd, container_visual.gd (R5),
-              rest_furniture.gd (RestFurniture), sink.gd (Sink) (R7), glass_shards.gd (GlassShards) (R8)
+              rest_furniture.gd (RestFurniture), sink.gd (Sink) (R7), glass_shards.gd (GlassShards) (R8),
+              barricade_component.gd (BarricadeComponent), furniture_work.gd (FurnitureWork),
+              timed_work.gd (TimedWork) (R9)
+skills/       skill_component.gd (SkillComponent) (R9)
 survival/     needs_component.gd (NeedsComponent), needs_math.gd (NeedsMath), consume_action.gd
               (ConsumeAction), rest_component.gd (RestComponent), danger.gd (Danger) (R7)
-buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2), furniture_catalog.gd (R5)
+buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2), furniture_catalog.gd (R5),
+              barricade_data.gd (BarricadeData) (R9)
 ai/           state_machine/state_machine.gd, state.gd  (generic FSM, R3)
 items/        item_data.gd, weapon_data.gd, item_instance.gd, world_item.gd (R4),
               food_data.gd, medical_data.gd, container_item_data.gd, item_db.gd (autoload ItemDB) (R5)
 inventory/    item_container.gd (ItemContainer), container_access.gd (ContainerAccess) (R5),
-              equipment.gd (Equipment), hotbar.gd (Hotbar), encumbrance.gd (Encumbrance), item_actions.gd (ItemActions) (R6)
+              equipment.gd (Equipment), hotbar.gd (Hotbar), encumbrance.gd (Encumbrance), item_actions.gd (ItemActions) (R6),
+              carried_items.gd (CarriedItems) (R9)
 loot/         loot_table.gd, loot_table_db.gd (autoload LootTableDB), loot_resolver.gd (R5)
 combat/       melee_combat.gd, swing_state_machine.gd, hit_resolver.gd, melee_visuals.gd (R4)
 injuries/     injury.gd, injury_type_spec.gd, injury_component.gd (R4)
 effects/      blood_decals.gd (R4), noise_rings.gd (NoiseRings) + noise_ring.gdshader,
-              sound_debug_overlay.gd (SoundDebugOverlay) (R8)
+              sound_debug_overlay.gd (SoundDebugOverlay) (R8), splinters.gd (Splinters) (R9)
 zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
-              zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3)
+              zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3; climb_window R9)
 world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5),
+              entry_planner.gd (EntryPlanner) (R9),
               day_night_lighting.gd (DayNightLighting) (R7)
 ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader, hotbar.gd (HotbarWidget, R6),
               clock_widget.gd (ClockWidget), moodle_list.gd (MoodleList) (R7),
@@ -72,7 +78,8 @@ data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tr
               combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4),
               world/time_config.gd + .tres, survival/needs_profile.gd + .tres (R7),
               audio/sound_categories.tres (R8), characters/outfits/*.tres (14 outfits),
-              vehicles/*.tres (6 vehicle types), loot/vehicle_trunk + vehicle_glovebox (R8.5)
+              vehicles/*.tres (6 vehicle types), loot/vehicle_trunk + vehicle_glovebox (R8.5),
+              barricades/wood_planks.tres (R9)
 assets/       materials/grid_ground.gdshader
 tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd,
               tools/ (dev previews: model_preview.gd, street_preview.gd — not tests)
@@ -192,6 +199,73 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
 - `Character.begin_busy(context) -> Tween` / `end_busy()` / `busy_tween`:
   while busy intent is ignored, `move_and_slide()` is skipped and stats
   tick with the busy context (`stamina_rate_climb = -12/s`).
+
+### Barricades / carpentry (R9)
+- `BarricadeData` (Resource, data/barricades): plank health / max planks
+  per kind / tools / materials / seconds / noises / removal specs /
+  attacker slots / sound factor / vision threshold / nav cost; pure
+  `missing_reason`, `remove_yield`, `build_seconds_for`,
+  `plank_health_for`, `sound_factor`, `vision_blocked`, `color_for`,
+  `validate`.
+- `BarricadeComponent` (Node3D child "Barricade" of a Door /
+  HouseWindow; `of`, `ensure`, `planks_on`): `planks [{health, max,
+  tilt}]` (last = outermost), `side`, `add_plank(health, side)`,
+  `remove_plank()`, breakable `take_damage` / `blocks_path` /
+  `interaction_prompt_position`, attacker slots `claim_attacker` /
+  `release_attacker` / `attacker_count`, statics `actions_for(fixture,
+  actor)` / `perform(fixture, id, actor)` (the fixture appends / routes
+  them), `start_nailing` / `start_prying` (TimedWork), board meshes under
+  the fixture's Visual, inner `PlanksBody` (pane layer, ≥ 2 planks),
+  `entry_score` (pure), `to_dict/from_dict`. Fixture hooks (WallFixture
+  base + Door / HouseWindow): `barricade_kind`, `barricade_opening`,
+  `barricade_block_reason`, `on_barricade_changed`, `barricade_planks`,
+  `is_barricaded`, `sound_barricade_factor`, `breakable_target`.
+- `HouseWindow` R9: breakable (group, `take_damage` → planks or pane →
+  smash, `blocks_path`), `nav_link: NavigationLink3D` (exterior only) with
+  `nav_cost()`, `approach_point(p)`. `Door` R9: `blocker` (furniture),
+  `furniture_blocker()`, `wall_thickness`, open refused "Barricaded" /
+  "Blocked by furniture", `take_damage` routes to planks.
+- `TimedWork` (RefCounted, owned by whoever starts it; ConsumeAction too):
+  one busy action with completion / cancel callbacks — the single cancel
+  implementation (damage, move intent, `cancel_for(actor)` from the
+  player's Esc / E / action keys, `busy_cancelled`), repeated noise,
+  `action_id` for `timed_action_started/finished`; statics `is_busy`,
+  `running_for`, `cancel_for`.
+- `EntryPlanner` (world/, static + per-building opening cache): `score`,
+  `window_link_cost`, `openings(building)`, `entry_score_of`,
+  `better_entry`, `building_of`. Used by `HouseWindow.nav_cost()` and
+  `ZombieAI.consider_detour()`.
+- `NavBaker` R9: `request_rebake()` / static `request_rebake_in(tree)`
+  (coalesced async re-bake, `rebaked` signal, `rebake_count`; `baked`
+  stays true), group `nav_baker`.
+- `FurnitureWork` (Node3D child of a container / RestFurniture / Sink,
+  group `interaction_extension`): "Block door" / "Move back" /
+  "Disassemble"; breakable while blocking (layer 9); pure `yield_for`.
+  Built by `HouseBlockout._add_furniture_work` from catalog keys.
+- `Interactable` R9: extensions — children of the provider in group
+  `interaction_extension` add actions (`_sources()`); actions may be
+  `explicit` (never the E default: `is_default_candidate`).
+- `ItemActions` R9: `OPEN_BOX`, `is_box`, `open_box` (ItemData
+  `unpack_item` / `unpack_count`). `PlayerInteraction` R9:
+  `is_cancel_event`, `cancel_work`.
+- `CarriedItems` (static): `containers`, `find_tool(actor, tags)`,
+  `count`, `consume` (all-or-nothing), `give` (drops the overflow).
+- `SkillComponent` (Node "Skills" on the Player): `xp`, `add_xp`,
+  `level`, `set_level`, carpentry multipliers, statics `level_for_xp`,
+  `xp_for_level`, `carpentry_time_multiplier`,
+  `carpentry_health_multiplier`; `to_dict/from_dict`.
+- `ZombieAI` R9: `resolve_breakable(collider)` (breakable_target / group
+  / breakable child), `window_link_ahead()` (path link owned by a window,
+  goal across it), `window_transition()`, `obstacle_transition()`,
+  `consider_detour()` / `goal_or_detour()` / `detour_active()`,
+  `reset_path()`, `in_crowd()`, `obstacle_ahead()` (3 m when stuck);
+  attack_door queues slotless zombies; `Zombie.start_climb / stop_climb / is_climbing /
+  climb_progress`; state `ZombieStateClimbWindow`; attack_door claims
+  obstacle slots. Obstacle ray mask 7 + 9.
+- `OcclusionManager.forget_meshes(n)` (planks added under a cached
+  fixture). `SoundManager.obstacle_attenuation(from, to, skip_fixture)`
+  multiplies each hit fixture's barricade factor once;
+  `barricade_fixture_of(collider)`; openings carry `factor`.
 
 ### `Building` / `Room` / `BuildingPlan` / `HouseBlockout` (buildings/)
 - `Room` (Node3D): axis-aligned box (`position` = floor centre, `size`);
@@ -723,10 +797,16 @@ container)`, `container_closed(actor, container)`, `item_transferred(from,
 to, item)`, `timed_action_started(actor, action, label, seconds)`,
 `timed_action_finished(actor, action, completed)`,
 `wound_reopened(character, region)`.
+Round 9: `barricade_changed(fixture, planks)`, `barricade_plank_broken(fixture,
+source)`, `furniture_moved(furniture, door)` (door null = moved back),
+`furniture_destroyed(furniture, source)`, `skill_xp_gained(character, skill,
+xp)`, `skill_leveled(character, skill, level)`.
 
 ## Physics layers
 1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders ·
-7 doors · 8 window_panes
+7 doors · 8 window_panes · 9 barricades (R9: furniture blocking a door —
+taken off layer 1 so the re-baked navmesh ignores it; player mask 453 and
+zombie mask 455 include 9; the zombie obstacle ray is 7 + 9). Window planks (≥ 2) add a body on 8.
 
 Vehicles (R8.5): body 1 + 6 (navmesh-baked, fades), trunk / glovebox
 containers 4 only.
@@ -748,7 +828,9 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `world_item` (R4; dropped items and bags on the ground too, R6), `blood_decals` (R4), `container`, `persistent`,
 `furniture`, `world_config` (R5), `interior_light` (R7, room OmniLights),
 `glass_shards`, `noise_rings`, `sound_debug` (R8), `vehicle`, `day_night` (R8.5),
-`navigation_mesh_source_group` (the map root; parsed by NavBaker).
+`navigation_mesh_source_group` (the map root; parsed by NavBaker),
+`barricade`, `splinters`, `interaction_extension` (R9); planks and blocking
+furniture join `breakable` while they block.
 
 ## Testing
 

@@ -35,11 +35,14 @@ var current: Dictionary = {}
 var last_open: Dictionary = {}
 
 
+## The running busy action (TimedWork owns the cancel rules: damage,
+## walking off, the cancel key, being overridden, death).
+var work: TimedWork = null
+
+
 func _ready() -> void:
 	character = get_parent() as Character
 	rng.randomize()
-	if character:
-		character.busy_cancelled.connect(_on_busy_cancelled)
 
 
 func is_consuming() -> bool:
@@ -171,58 +174,41 @@ func start(item: ItemInstance, portion: float = 1.0) -> Dictionary:
 
 
 func _begin(seconds: float, label: String) -> void:
-	if not EventBus.character_damaged.is_connected(_on_damaged):
-		EventBus.character_damaged.connect(_on_damaged)
-	var tw := character.begin_busy(CONTEXT)
-	tw.tween_interval(seconds)
-	tw.tween_callback(_finish)
-	EventBus.timed_action_started.emit(character, StringName(current.action), label, seconds)
-	SoundManager.emit_sound(&"bottle_fill" if current.action == ACTION_FILL else &"eat", character.global_position, character)
-
-
-func _physics_process(_delta: float) -> void:
-	# Walking off stops eating (intent is still set while busy).
-	if not current.is_empty() and is_consuming() and character.has_move_intent():
-		interrupt("Stopped")
-
-
-func _on_damaged(c: Node, _amount: float, _source: Node, _info: Dictionary) -> void:
-	if c == character and is_consuming():
-		interrupt("Interrupted")
+	work = TimedWork.new()
+	work.action_id = StringName(current.action)
+	var r := work.start(character, CONTEXT, label, seconds, func(_a: Node) -> void: _finish(),
+		func(_a: Node) -> void: _restore_current())
+	if bool(r.get("ok", false)):
+		SoundManager.emit_sound(&"bottle_fill" if current.get("action", &"") == ACTION_FILL else &"eat",
+			character.global_position, character)
 
 
 ## Stop the running action: nothing is consumed, the item goes back.
 func interrupt(reason: String = "Interrupted") -> void:
 	if current.is_empty():
 		return
-	if not character.cancel_busy(CONTEXT):
-		_on_busy_cancelled(CONTEXT)  # not busy any more: restore anyway
+	if work != null and work.running:
+		work.cancel(reason)
+		return
+	_restore_current()  # not busy any more: restore anyway
 	EventBus.interaction_refused.emit(character, null, reason)
 
 
-## The eat / drink / fill action was cut (interrupt, overridden, death):
-## the item goes back where it came from, nothing is consumed.
-func _on_busy_cancelled(context: StringName) -> void:
-	if context != CONTEXT or current.is_empty():
+## The eat / drink / fill action was cut (TimedWork cancel path): the item
+## goes back where it came from, nothing is consumed.
+func _restore_current() -> void:
+	if current.is_empty():
 		return
 	var cur := current
 	current = {}
-	_stop_listening()
 	var it: ItemInstance = cur.get("item")
 	if it != null:
 		_return_item(it, (cur.from as WeakRef).get_ref() as ItemContainer)
-	EventBus.timed_action_finished.emit(character, StringName(cur.action), false)
-
-
-func _stop_listening() -> void:
-	if EventBus.character_damaged.is_connected(_on_damaged):
-		EventBus.character_damaged.disconnect(_on_damaged)
 
 
 func _finish() -> void:
 	var cur := current
 	current = {}
-	_stop_listening()
 	if cur.is_empty() or character == null or character.is_dead():
 		return
 	match StringName(cur.action):
@@ -234,7 +220,6 @@ func _finish() -> void:
 				"hunger": 0.0, "thirst": float(cur.water), "sickness": 0.0, "spoil_state": &"fresh"})
 		_:
 			_finish_food(cur)
-	EventBus.timed_action_finished.emit(character, StringName(cur.action), true)
 
 
 func _finish_food(cur: Dictionary) -> void:

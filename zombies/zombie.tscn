@@ -14,7 +14,7 @@ height = 1.7
 
 [node name="Zombie" type="CharacterBody3D" groups=["zombie"]]
 collision_layer = 4
-collision_mask = 199
+collision_mask = 455
 floor_snap_length = 0.3
 script = ExtResource("1_zombie")
 profile = ExtResource("6_profile")

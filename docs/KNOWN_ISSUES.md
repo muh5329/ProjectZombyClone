@@ -5,6 +5,39 @@ that fixed them.
 
 ## Open
 
+00000000. **Round-9 barricade / carpentry gaps** (ordered):
+   - **Doors have no navigation cost**: doorways are baked walkable, so
+     a zombie's path always prefers a door, barricaded or not; only when it
+     reaches a barricade does it compare entries (`EntryPlanner`: distance
+     + 8 m per plank, +6 m when the 3 slots are taken, same building,
+     14 m) and walk to a weaker one; queued zombies re-ask every 3-5 s. Windows do have costs (NavigationLink3D enter_cost: open 1 m,
+     closed 10 m, +8 m per plank). A per-door link / region cost would make
+     the choice global.
+   - **Furniture re-bakes the whole navmesh** (async, ~140 ms on a thread,
+     coalesced) after every push / move back / destruction; fine for a
+     few houses, a streamed town will need per-tile bakes. "Block door"
+     snaps behind the nearest reachable closed door within 3.5 m (brief:
+     2 m — nothing in House A is that close); no free drag.
+   - **Planks are all-or-nothing blocks for sight**: < 2 planks see-
+     through, ≥ 2 opaque (a body on the pane layer); no partial vision.
+     Door planks add nothing to sight (the leaf already blocks it). One
+     plank does not stop a zombie grabbing through an open window.
+   - **Zombies climb only exterior windows** (links are added to windows
+     with an outward normal); climbing is a 1.6 s scripted move, no
+     collision, not interruptible; a zombie killed mid-climb leaves its
+     corpse in the wall plane. Zombies ignore glass shards.
+   - **Removal yields are random per plank** (component RNG,
+     deterministic per fixture); no condition loss on the hammer /
+     crowbar; nails boxes (`nails_box`) cannot be unpacked into nails yet.
+   - **Only wooden planks**: `BarricadeData.material` has metal_sheet /
+     furniture ids but no data, welding or sheet items yet. Carpentry is
+     the only real skill (SkillComponent); no skill UI panel beyond the
+     level-up notice.
+   - **Save**: `BarricadeComponent.to_dict/from_dict`,
+     `SkillComponent.to_dict/from_dict` exist but nothing registers them
+     with `WorldState` yet (Round 10); moved / destroyed furniture is not
+     persisted either.
+
 0000000. **Round-8.5 models / animation / vehicles gaps** (ordered):
    - **Rigid skinning** (one bone per vertex, no weights): elbows,
      knees and the waist show small seams / interpenetration at strong
@@ -240,6 +273,14 @@ that fixed them.
    here).
 
 ## Fixed
+
+- R9 critic: materials / XP spent when the plank could not go on; no walk-
+  off / cancel key for hammering (now TimedWork's single cancel path, also
+  used by eating); slotless zombies stalling at barricades (queue + detour);
+  duplicate entry scoring (EntryPlanner); furniture snapping through walls;
+  planks nailed onto a climber; unsearched containers destroyed with their
+  loot; from_dict before _ready; nail box not openable; noise meter decaying
+  to 14 m between hammer blows; moved furniture leaving navmesh holes.
 
 - (R8.5) Capsule people / blue-box car replaced: procedural animated
   survivors and zombies (14 outfits, 31 clips) and six parked vehicle

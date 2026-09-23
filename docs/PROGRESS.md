@@ -6,6 +6,60 @@ that did not write the code).
 
 ---
 
+## Round 9 — Barricading, furniture blocking, carpentry (2026-09-23)
+
+### Goal
+Let the player fortify a safehouse PZ-style: nail planks over doors and
+windows at the cost of loud hammering and scarce planks, block doors with
+furniture, and have zombies physically break through.
+
+### What changed
+- `BarricadeData` (data/barricades/wood_planks.tres) + `BarricadeComponent`
+  on doors/windows: up to 4 planks, 60 hp each (outermost first), needs
+  hammer + plank + 2 nails, 3 s per plank, 18 m hammering noise; blocks
+  opening/climbing, ≥2 planks block vision, ×0.8 sound per plank; planks
+  darken/crack, break with splinters and noise. Remove with crowbar (2 s)
+  or hammer (4 s), partial material return.
+- `TimedWork`: single cancel path for all timed jobs (hit, walking off,
+  Esc, pressing the action again); eating uses it.
+- Furniture: "Block door" (same room, LOS, clear spot; layer 9 so
+  doorways stay walkable while zombies smash it, 160-260 hp) and
+  "Take apart" for planks/nails (unsearched loot drops). Navmesh
+  re-bakes when furniture moves.
+- Zombies: breakable contract for barricades, ≤3 attackers per opening,
+  queues 1.6 m back, seeded detours; `EntryPlanner` prices windows (nav
+  links, `climb_window` state) and doors with a per-building cache.
+- `SkillComponent`: carpentry XP/levels (−5 % build time, +5 % plank hp
+  per level). Nails box opens into 50 nails; nails scarcer.
+- HUD notices ("Hammering is loud!", "A plank gave way! (N left)",
+  "Carpentry 1 ↑"), noise meter holds for the sound's duration.
+
+### Tests performed
+Unit **165**, integration-a **93**, integration-b **124**, 0 failed.
+Screenshots OK (31_barricaded_window, 32_zombies_breaking_in,
+33_hammering). Perf: calm 4.0/6.6, hostile 7.6/12.2, noisy 3.9/6.4,
+horde 1.4/3.9 ms. Breach of a fully boarded House A: 1 zombie ≈ 139 s,
+10 zombies ≈ half that (critic measurement before crowd fix: 70 s).
+
+### Bugs discovered (critic) → all fixed
+Materials + XP lost when the plank was refused at the end of hammering;
+jobs couldn't be cancelled by walking away; crowds stalled at a
+barricaded door (max 2 attackers of 10); furniture snapped through walls;
+planks nailed over a mid-climb zombie; disassembly destroyed loot;
+from_dict before _ready crashed; dead nails-box loot; misleading noise
+meter; moved furniture ignored by navigation.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8.5 (7) · System Integration 8.5 (8) · Survival Depth 8 (7) ·
+Architecture 8.5 (8) · Performance 8 (8) · UX/Feedback 7.5 (6.5) ·
+Bug Resistance 8 (6).
+
+### Highest-priority remaining issue
+Nothing persists: Round 10 (save/restore of the entire micro-world) is the
+last round of the vertical slice.
+
+---
+
 ## Round 8.5 — Character and vehicle models (owner request) (2026-09-23)
 
 ### Goal

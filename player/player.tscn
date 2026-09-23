@@ -1,4 +1,4 @@
-[gd_scene load_steps=24 format=3 uid="uid://c0player000001"]
+[gd_scene load_steps=25 format=3 uid="uid://c0player000001"]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://characters/movement_component.gd" id="2_move"]
@@ -23,6 +23,7 @@
 [ext_resource type="Script" path="res://characters/models/character_model.gd" id="20_model"]
 [ext_resource type="Resource" path="res://data/characters/outfits/player_survivor.tres" id="21_outfit"]
 [ext_resource type="Script" path="res://characters/models/character_animator.gd" id="22_animator"]
+[ext_resource type="Script" path="res://skills/skill_component.gd" id="23_skills"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
@@ -30,7 +31,7 @@ height = 1.7
 
 [node name="Player" type="CharacterBody3D" groups=["player"]]
 collision_layer = 2
-collision_mask = 197
+collision_mask = 453
 floor_snap_length = 0.3
 script = ExtResource("1_player")
 profile = ExtResource("5_profile")
@@ -99,3 +100,6 @@ script = ExtResource("12_cvis")
 
 [node name="Animator" type="Node" parent="."]
 script = ExtResource("22_animator")
+
+[node name="Skills" type="Node" parent="."]
+script = ExtResource("23_skills")

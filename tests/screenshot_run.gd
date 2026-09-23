@@ -27,6 +27,13 @@ func _run() -> void:
 	await _frames(20)
 	var player: Node3D = inst.get_node("Player")
 	var cam: Node3D = inst.get_node("IsometricCamera")
+	if OS.get_environment("SCREENSHOT_ONLY") == "r9":
+		# Dev shortcut: only the Round-9 section (not used by screenshots.sh).
+		var sp: Node = inst.get_node("Zombies")
+		sp.auto_spawn = false
+		await _round9(inst, player, cam, sp, inst.get_node("HUD"))
+		_finish()
+		return
 
 	await _shot("01_spawn")
 
@@ -206,7 +213,11 @@ func _run() -> void:
 	await _round7(inst, player, cam, spawner, hud)
 	await _round8(inst, player, cam, spawner, hud)
 	await _round85(inst, player, cam, spawner, hud)
+	await _round9(inst, player, cam, spawner, hud)
+	_finish()
 
+
+func _finish() -> void:
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
 		quit(0)
@@ -824,6 +835,138 @@ func _round85(inst: Node, player: Node3D, cam: Node3D, spawner: Node, _hud: Node
 	await _shot("30_night_street")
 	tm.set_time_of_day(13, 0)
 	await _frames(5)
+
+
+# --- Round 9: barricades ---------------------------------------------------------
+func _round9(inst: Node, player: Node3D, _cam: Node3D, spawner: Node, hud: Node) -> void:
+	var tm: Node = root.get_node("TimeManager")
+	tm.set_time_of_day(13, 0)
+	for z in root.get_tree().get_nodes_in_group(&"zombie"):
+		z.queue_free()
+	await _frames(5)
+	var house: Node = inst.get_node("Buildings/HouseA")
+	# Loaded at run time: -s scripts must not reference gameplay classes
+	# statically (they compile before the autoloads exist).
+	var bc: Script = load("res://interaction/barricade_component.gd")
+	var interaction: Node = player.get_node("Interaction")
+	player.get_node("Health").invulnerable = true
+	player.get_node("Health").heal(100.0)
+	player.stats.set_value(&"stamina", 100.0)
+	var win: Node3D = null
+	for w in house.windows:
+		if (w.global_position - Vector3(-7, 0, -2)).length() < 0.3:
+			win = w
+	var door: Node3D = null
+	for d in house.doors:
+		if (d.global_position - Vector3(-11.45, 0, -2)).length() < 0.2:
+			door = d
+	if win == null or door == null:
+		_problems.append("round 9: front window / door not found")
+		return
+	# Tools and materials (the pack is emptied first: planks weigh 3 kg).
+	var inv = player.inventory
+	inv.clear()
+	inv.add_id(&"hammer", 1)
+	inv.add_id(&"plank", 3)
+	inv.add_id(&"nails", 10)
+	# Outside the living-room window (smashed in round 8), facing it.
+	player.global_position = Vector3(-7, 0.1, -1.1)
+	player.velocity = Vector3.ZERO
+	player.movement.facing = 0.0
+	await _tap(&"camera_zoom_in")
+	await _frames(10)
+	var idx := -1
+	for i in interaction.current_actions.size():
+		if interaction.current_actions[i].id == &"barricade":
+			idx = i
+	if idx < 0 or idx > 3 or not interaction.current_actions[idx].enabled:
+		_problems.append("round 9: no enabled Barricade action (%s)" % str(interaction.current_actions))
+		return
+	# Real input: the barricade entry's number key (4-7 = action_1..4).
+	await _tap(StringName("action_%d" % (idx + 1)))
+	await _frames(80)
+	if not player.is_busy or player.busy_context != &"barricade":
+		_problems.append("round 9: not hammering after the key press (%s)" % player.busy_context)
+	if player.get_node("Visual/Model").current != &"hammer":
+		_problems.append("round 9: no hammering animation (%s)" % player.get_node("Visual/Model").current)
+	if hud.action_progress() <= 0.0:
+		_problems.append("round 9: no busy bar")
+	await _shot("33_hammering")
+	for i in 3:
+		for f in 240:
+			if not player.is_busy:
+				break
+			await _frames(1)
+		await _frames(4)
+		if i < 2:
+			await _tap(&"interact")  # barricaded: E nails the next plank
+			await _frames(4)
+	if win.barricade_planks() != 3:
+		_problems.append("round 9: expected 3 planks on the window (%d)" % win.barricade_planks())
+	# Board the rest of the street-facing openings like ref 2 (the front
+	# door was left open by earlier sections: shut it first).
+	if door.state != &"closed":
+		for f in 60:
+			if door.close_door(null).ok or door.state == &"closed":
+				break
+			await _frames(1)
+		await _frames(30)
+	var b_door = bc.ensure(door)
+	for i in 3:
+		b_door.add_plank(60.0, 1.0)
+	if door.barricade_planks() != 3:
+		_problems.append("round 9: front door not boarded (%d, state %s)" % [door.barricade_planks(), door.state])
+	var n := 2
+	for w in house.windows:
+		if w == win or (w.outward.z < 0.5 and w.outward.x < 0.5):
+			continue
+		var b = bc.ensure(w)
+		var side: float = w.side_of(w.global_position + w.outward)
+		for i in n:
+			b.add_plank(60.0, side)
+		n = 4 if n == 2 else 2
+	await _tap(&"camera_zoom_out")
+	# Between the house and the Wall prop: the prop fades (eye → player).
+	player.global_position = Vector3(-4.2, 0.1, 0.9)
+	player.velocity = Vector3.ZERO
+	player.movement.facing = PI * 0.25
+	await _frames(40)
+	await _shot("31_barricaded_window")
+	# Zombies breaking in: three on the window planks, three on the door,
+	# two more waiting their turn.
+	var slots := [[win, Vector3(-0.5, 0, 0)], [win, Vector3(0.0, 0, 0.1)], [win, Vector3(0.5, 0, 0)],
+		[win, Vector3(0.1, 0, 0.8)], [door, Vector3(-0.4, 0, 0)], [door, Vector3(0.1, 0, 0.1)],
+		[door, Vector3(0.55, 0, 0)], [door, Vector3(0.0, 0, 0.8)]]
+	var zs: Array = []
+	for sl in slots:
+		var f: Node3D = sl[0]
+		var base: Vector3 = f.call(&"sound_opening_center") + Vector3(0, 0, 0.75)
+		var z: Node3D = spawner.spawn_at(base + sl[1])
+		z.face_toward(f.call(&"sound_opening_center"))
+		z.snap_facing(z.movement.facing)
+		zs.append([z, f])
+	await _frames(3)
+	for pair in zs:
+		var z: Node = pair[0]
+		z.ai.blocking_obstacle = bc.of(pair[1])
+		z.ai.change_to(&"attack_door")
+	await _frames(280)
+	var banging := 0
+	for pair in zs:
+		if pair[0].visual.clip() == &"z_bang":
+			banging += 1
+	if banging < 4:
+		_problems.append("round 9: zombies not banging on the barricades (%d)" % banging)
+	var bw = bc.of(win)
+	if bw.attacker_count() > 3:
+		_problems.append("round 9: more than 3 attackers on one window")
+	if bw.total_health() >= 180.0:
+		_problems.append("round 9: window planks undamaged")
+	await _shot("32_zombies_breaking_in")
+	for pair in zs:
+		if is_instance_valid(pair[0]):
+			pair[0].queue_free()
+	await _frames(3)
 
 
 func _right_click(p: Vector2) -> void:

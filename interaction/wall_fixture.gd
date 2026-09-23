@@ -99,6 +99,42 @@ func sound_obstacle_kind() -> StringName:
 	return SoundMath.WALL
 
 
+# --- Barricades (Round 9, BarricadeComponent) ------------------------------------
+
+## Planks nailed across this opening (0 when none).
+func barricade_planks() -> int:
+	return BarricadeComponent.planks_on(self)
+
+
+func is_barricaded() -> bool:
+	return barricade_planks() > 0
+
+
+## Extra sound multiplier through this opening: ×0.8 per plank.
+func sound_barricade_factor() -> float:
+	var b := BarricadeComponent.of(self)
+	return b.data.sound_factor(b.plank_count()) if b != null and b.data != null else 1.0
+
+
+## The breakable a zombie must beat to get through: the barricade while it
+## has planks, else the fixture itself.
+func breakable_target() -> Node:
+	var b := BarricadeComponent.of(self)
+	if b != null and b.blocks_path():
+		return b
+	return self
+
+
+## "" when planks may be nailed here now (subclasses: door must be closed…).
+func barricade_block_reason(_actor: Node) -> String:
+	return ""
+
+
+## Called by BarricadeComponent after the plank count changed.
+func on_barricade_changed(_planks: int) -> void:
+	pass
+
+
 func on_cooldown() -> bool:
 	return _now() - _last_toggle_time < toggle_cooldown
 

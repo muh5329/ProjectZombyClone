@@ -17,7 +17,7 @@ func enter(_from: StringName) -> void:
 	holding = false
 	if ai.target_valid():
 		ai.last_known_position = zombie.target.global_position
-		ai.set_destination(ai.last_known_position)
+		ai.set_destination(ai.goal_or_detour(ai.last_known_position))
 
 
 func update(delta: float) -> StringName:
@@ -53,12 +53,16 @@ func update(delta: float) -> StringName:
 		holding = false
 	else:
 		holding = false
+	var through := ai.window_transition()
+	if through != &"":
+		return through
 	if ai.repath_due():
-		ai.set_destination(ai.last_known_position)
-		var obstacle := ai.breakable_ahead()
+		ai.set_destination(ai.goal_or_detour(ai.last_known_position))
+		var obstacle := ai.obstacle_ahead()
 		if obstacle != null:
-			ai.blocking_obstacle = obstacle
-			return ZombieAI.S_ATTACK_DOOR
+			var nx := ai.obstacle_transition(obstacle)
+			if nx != &"":
+				return nx
 	if ai.move_along_path(MovementComponent.Mode.JOG):
 		# At the end of the path but not biting: unreachable, or a wall
 		# between us. Face the target and retry at the next re-path.

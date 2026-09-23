@@ -28,18 +28,20 @@ const S_ATTACK_DOOR := &"attack_door"
 const S_LOST := &"lost_target"
 const S_STUNNED := &"stunned"
 const S_KNOCKED_DOWN := &"knocked_down"
+const S_CLIMB_WINDOW := &"climb_window"
 const S_DEAD := &"dead"
 const GROUP_BREAKABLE := &"breakable"
 
 ## Tint per state for ZombieVisual.set_tint().
 const TINTS := {
-	S_INVESTIGATE: &"alert", S_SEARCH: &"alert", S_ATTACK_DOOR: &"alert",
+	S_INVESTIGATE: &"alert", S_SEARCH: &"alert", S_ATTACK_DOOR: &"alert", S_CLIMB_WINDOW: &"alert",
 	S_CHASE: &"hostile", S_ATTACK: &"hostile", S_LOST: &"hostile",
 	S_KNOCKED_DOWN: &"hostile", S_STUNNED: &"hostile",
 	S_DEAD: &"dead",
 }
-## Layers for the "breakable ahead" ray: 7 doors.
-const BREAKABLE_MASK := 1 << 6
+## Layers for the "breakable ahead" ray: 7 doors + 9 barricades
+## (furniture pushed in front of a door, Round 9).
+const BREAKABLE_MASK := (1 << 6) | (1 << 8)
 ## Layers that block an attack: 1 world + 7 doors + 8 window panes.
 const ATTACK_LOS_MASK := (1 << 0) | (1 << 6) | (1 << 7)
 ## Height of the chest-to-chest attack ray.
@@ -75,6 +77,15 @@ var last_moan_time: float = -INF
 var memory_left: float = 0.0
 ## Breakable obstacle found in the path (attack_door). Duck-typed.
 var blocking_obstacle: Node3D = null
+## Round 9: the window this zombie is about to climb (climb_window).
+var climb_window: Node3D = null
+## Round 9: a better entry point than the barricade in front of us (a
+## point to walk to first) and until when (AI time) to keep going there.
+var detour_point: Vector3 = Vector3.INF
+var detour_until: float = -INF
+## The door / window the detour leads to.
+var detour_fixture: Node3D = null
+var _last_link_check: float = -INF
 ## Seconds the zombie has wanted to move but did not (stuck detection).
 var stuck_time: float = 0.0
 ## True while this zombie holds an attack slot on zombie.target.
@@ -123,6 +134,7 @@ func setup(z: Zombie) -> void:
 	machine.add_state(ZombieStateLostTarget.new(S_LOST, self))
 	machine.add_state(ZombieStateStunned.new(S_STUNNED, self))
 	machine.add_state(ZombieStateKnockedDown.new(S_KNOCKED_DOWN, self))
+	machine.add_state(ZombieStateClimbWindow.new(S_CLIMB_WINDOW, self))
 	machine.add_state(ZombieStateDead.new(S_DEAD, self))
 	machine.state_changed.connect(_on_state_changed)
 	zombie.senses.target_seen.connect(_on_target_seen)
@@ -168,7 +180,8 @@ func tick(delta: float) -> void:
 ## as near.
 func _update_movement_mode() -> void:
 	var s := machine.current_id()
-	var hostile := s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_KNOCKED_DOWN
+	var hostile := s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_KNOCKED_DOWN \
+		or s == S_CLIMB_WINDOW
 	var far := zombie.senses.last_target_distance != INF and zombie.senses.last_target_distance > profile().cheap_distance
 	zombie.cheap_movement = not hostile and far
 	if zombie.hostile != hostile:
@@ -189,7 +202,8 @@ func _on_target_seen(t: Node3D) -> void:
 	memory_left = profile().memory_seconds
 	zombie.target = t
 	var s := state_id()
-	if s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_KNOCKED_DOWN or s == S_DEAD:
+	if s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_KNOCKED_DOWN or s == S_DEAD \
+			or s == S_CLIMB_WINDOW:
 		return
 	EventBus.zombie_spotted_target.emit(zombie, t)
 	machine.change_to(S_CHASE)
@@ -271,7 +285,7 @@ func investigate_quietly(p: Vector3) -> void:
 ## target; anything else makes a target-less zombie turn and investigate.
 ## A zombie lying on the ground stays down.
 func on_damaged(source: Node, dmg: float, info: Dictionary = {}) -> void:
-	if zombie.dead or is_in(S_KNOCKED_DOWN):
+	if zombie.dead or is_in(S_KNOCKED_DOWN) or is_in(S_CLIMB_WINDOW):
 		return
 	var attacker := _creature(source)
 	if attacker != null:
@@ -302,7 +316,7 @@ func on_damaged(source: Node, dmg: float, info: Dictionary = {}) -> void:
 ## Shoved by [source]: the attack windup is lost; knocked down or
 ## staggered for profile.shove_stun_seconds.
 func on_shoved(source: Node, knockdown: bool) -> void:
-	if zombie.dead or is_in(S_KNOCKED_DOWN):
+	if zombie.dead or is_in(S_KNOCKED_DOWN) or is_in(S_CLIMB_WINDOW):
 		return
 	var attacker := _creature(source)
 	if attacker != null:
@@ -537,7 +551,7 @@ func random_range(a: float, b: float) -> float:
 ## A breakable obstacle (group "breakable", blocks_path() true) within
 ## profile.door_check_distance ahead (toward the next path point, or the
 ## facing when no path). Null otherwise.
-func breakable_ahead() -> Node3D:
+func breakable_ahead(check_distance: float = -1.0) -> Node3D:
 	if not zombie.is_inside_tree():
 		return null
 	var space := zombie.get_world_3d().direct_space_state
@@ -551,13 +565,32 @@ func breakable_ahead() -> Node3D:
 			dir = d.normalized()
 	var from := zombie.global_position + Vector3.UP * CHEST_HEIGHT
 	_obstacle_ray.from = from
-	_obstacle_ray.to = from + dir * profile().door_check_distance
+	_obstacle_ray.to = from + dir * (check_distance if check_distance > 0.0 else profile().door_check_distance)
 	var hit := space.intersect_ray(_obstacle_ray)
 	if hit.is_empty():
 		return null
 	var col: Node = hit.get("collider")
-	if is_breakable(col) and col.blocks_path():
+	var b := resolve_breakable(col)
+	if b != null and b.blocks_path():
+		return b
+	return null
+
+
+## The breakable behind a collider: what it says it is
+## (breakable_target(): a door with planks → its BarricadeComponent), a
+## breakable child (furniture → its FurnitureWork), or itself.
+static func resolve_breakable(col: Node) -> Node3D:
+	if col == null:
+		return null
+	if col.has_method(&"breakable_target"):
+		var t: Variant = col.call(&"breakable_target")
+		if t is Node3D and is_breakable(t):
+			return t
+	if is_breakable(col):
 		return col
+	for c in col.get_children():
+		if is_breakable(c):
+			return c
 	return null
 
 
@@ -571,3 +604,160 @@ func after_obstacle_state() -> StringName:
 	if target_valid() and memory_left > 0.0:
 		return S_CHASE
 	return S_INVESTIGATE
+
+
+# --- Windows and barricades (Round 9) -------------------------------------------
+
+## Window this zombie's path crosses right here: a NavigationLink3D owned
+## by a window (HouseWindow adds one per exterior window) whose end on our
+## side is within profile.window_link_distance, while the path's goal is
+## on the other side. Checked at re-path ticks and when stuck (walking
+## into the sill).
+func window_link_ahead(max_distance: float = -1.0) -> Node3D:
+	var reach := max_distance if max_distance > 0.0 else profile().window_link_distance
+	if _nav_target == Vector3.INF or nav == null:
+		return null
+	var res := nav.get_current_navigation_result()
+	if res == null:
+		return null
+	var path := res.path
+	var types := res.path_types
+	var owners := res.path_owner_ids
+	if path.is_empty() or types.size() != path.size() or owners.size() != path.size():
+		return null
+	var i0 := maxi(nav.get_current_navigation_path_index() - 1, 0)
+	var i1 := mini(i0 + 4, path.size())
+	for i in range(i0, i1):
+		if types[i] != NavigationPathQueryResult3D.PATH_SEGMENT_TYPE_LINK:
+			continue
+		var link := instance_from_id(owners[i]) as NavigationLink3D
+		if link == null:
+			continue
+		var w := link.get_parent() as Node3D
+		if w == null or not w.has_method(&"approach_point") or not w.has_method(&"side_of"):
+			continue
+		var here := zombie.global_position
+		if distance_to(w.call(&"approach_point", here)) > reach:
+			continue
+		var goal: Vector3 = path[path.size() - 1]
+		if float(w.call(&"side_of", goal)) == float(w.call(&"side_of", here)):
+			continue
+		return w
+	return null
+
+
+## Handle a window on the path: breakable (planks / closed pane) → bang
+## on it (attack_door), else climb through. Returns the next state id or
+## &"" when there is no window here.
+func window_transition() -> StringName:
+	var w := _detour_window_reached()
+	if w == null:
+		# At re-path ticks, or when walking into something (a sill) — the
+		# latter at most 4× a second (crowds are "stuck" a lot).
+		var stuck := stuck_time > 0.15 and _time - _last_link_check >= 0.25
+		if not (repath_due_peek() or stuck):
+			return &""
+		_last_link_check = _time
+		w = window_link_ahead(profile().crowd_check_distance if in_crowd() else -1.0)
+	if w == null:
+		return &""
+	if w.has_method(&"blocks_path") and w.blocks_path():
+		var b := resolve_breakable(w)
+		if b != null and consider_detour(b):
+			return &""
+		blocking_obstacle = b
+		return S_ATTACK_DOOR if b != null else &""
+	if distance_to(w.call(&"approach_point", zombie.global_position)) > profile().window_link_distance + 0.3:
+		return &""  # open window, crowd in front: keep pushing
+	climb_window = w
+	return S_CLIMB_WINDOW
+
+
+## Stuck long enough to be in a crowd in front of something.
+func in_crowd() -> bool:
+	return stuck_time >= profile().crowd_stuck_seconds
+
+
+## The breakable ahead (farther when stuck in a crowd: join its queue).
+func obstacle_ahead() -> Node3D:
+	return breakable_ahead(profile().crowd_check_distance if in_crowd() else -1.0)
+
+
+## A breakable found ahead: a barricade may send us to a better entry
+## (detour, stay in the moving state: &""); otherwise bang on it.
+func obstacle_transition(obstacle: Node3D) -> StringName:
+	if obstacle is BarricadeComponent and consider_detour(obstacle):
+		return &""
+	blocking_obstacle = obstacle
+	return S_ATTACK_DOOR
+
+
+## Peek (without consuming) whether a re-path tick is due.
+func repath_due_peek() -> bool:
+	return _repath_accum >= _repath_period
+
+
+## Facing barricade [b] (planks on a door / window): is another entry of
+## the same building clearly better (fewer planks for the walk)? Then go
+## there first (detour_point) and return true.
+func consider_detour(b: Node3D) -> bool:
+	if detour_active():
+		return false
+	var fixture: Node3D = b.get("fixture") if "fixture" in b else null
+	if fixture == null or not fixture.has_method(&"barricade_planks"):
+		return false
+	var per_plank := 8.0
+	var bd: Variant = b.get(&"data")
+	if bd is BarricadeData:
+		per_plank = (bd as BarricadeData).nav_cost_per_plank
+	var best := EntryPlanner.better_entry(fixture, zombie.global_position, per_plank,
+		profile().detour_search_radius, profile().detour_margin)
+	if best.is_empty():
+		return false
+	detour_point = best.point
+	detour_fixture = best.fixture
+	detour_until = _time + profile().detour_seconds
+	_nav_target = Vector3.INF
+	set_destination(detour_point)
+	return true
+
+
+func detour_active() -> bool:
+	if detour_point == Vector3.INF:
+		return false
+	if _time > detour_until or distance_to(detour_point) <= profile().window_link_distance:
+		detour_point = Vector3.INF
+		return false
+	return true
+
+
+func clear_detour() -> void:
+	detour_point = Vector3.INF
+	detour_fixture = null
+
+
+## A detour that led to a window ends at it: take that window now (the
+## navmesh alone would walk back to the free-to-path doorway).
+func _detour_window_reached() -> Node3D:
+	var w := detour_fixture
+	if w == null or not is_instance_valid(w) or not w.has_method(&"approach_point"):
+		return null
+	if _time > detour_until:
+		detour_fixture = null
+		return null
+	if distance_to(w.call(&"approach_point", zombie.global_position)) > profile().window_link_distance + 0.3:
+		return null
+	detour_fixture = null
+	detour_point = Vector3.INF
+	return w
+
+
+## Where a moving state should head: the detour first while it lasts.
+func goal_or_detour(goal: Vector3) -> Vector3:
+	return detour_point if detour_active() else goal
+
+
+## Forget the current path (after a climb: re-path from the new side).
+func reset_path() -> void:
+	_nav_target = Vector3.INF
+	_repath_accum = _repath_period

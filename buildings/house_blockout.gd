@@ -199,6 +199,7 @@ func _build_wall(wall: Dictionary) -> void:
 				door.width = a1 - a0
 				door.height = minf(plan.door_height, plan.wall_height)
 				door.wall_height = plan.wall_height
+				door.wall_thickness = plan.wall_thickness
 				door.outward = outward
 				var mount := Node3D.new()
 				mount.name = "DoorMount"
@@ -348,8 +349,30 @@ func _build_furniture() -> void:
 		body.rotation.y = place.yaw
 		body.add_to_group(&"furniture")
 		body.set_meta(&"furniture_type", type)
+		_add_furniture_work(body, spec)
 		holder.add_child(body, true)
 		furniture.append(body)
+
+
+## Round 9: movable / disassemblable pieces (catalog keys movable,
+## block_health, disassemble) get a FurnitureWork child: "Block door",
+## "Disassemble". Only interactive bodies (containers, beds, sofas) — the
+## actions ride on their Interactable.
+func _add_furniture_work(body: StaticBody3D, spec: Dictionary) -> void:
+	var movable := bool(spec.get("movable", false))
+	var dis: Dictionary = spec.get("disassemble", {})
+	if not movable and dis.is_empty():
+		return
+	if not (body is LootContainer or body is RestFurniture or body is Sink):
+		return
+	var fw := FurnitureWork.new()
+	fw.name = FurnitureWork.NODE_NAME
+	fw.display_name = String(spec.name) if String(spec.name) != "" else "Furniture"
+	fw.size = spec.size
+	fw.movable = movable
+	fw.block_health = float(spec.get("block_health", 200.0))
+	fw.disassemble_yield = dis.duplicate(true)
+	body.add_child(fw)
 
 
 ## Round 7: a bed / sofa (RestFurniture) or a sink (Sink) when the catalog

@@ -220,7 +220,9 @@ func test_house_loot_budget_and_corpse_bandages() -> void:
 	for id in LootTableDB.all_ids():
 		for e in LootTableDB.get_table(id).entries:
 			if e.item_id == &"nails":
-				check(int(e.min_count) >= 5 and int(e.max_count) <= 20, "%s: nails 5-20" % id)
+				check(int(e.min_count) == 3 and int(e.max_count) == 12, "%s: nails 3-12 (R9: scarcer)" % id)
+			if e.item_id == &"nails_box":
+				check(is_equal_approx(float(e.chance), 0.1), "%s: nail box 10 %%" % id)
 	var corpse := LootTableDB.get_table("zombie_corpse")
 	var rng := _rng(77)
 	var with_bandage := 0

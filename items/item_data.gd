@@ -38,6 +38,10 @@ const CATEGORY_IDS: Array[StringName] = [
 ## Item this becomes when filled with water at a sink (empty bottle →
 ## &"water_bottle"); &"" = cannot be filled (Round 7).
 @export var fill_item_id: StringName = &""
+## Round 9: a box that opens into [unpack_count] × [unpack_item] ("Open
+## box": a box of nails → 50 nails). &"" = not a box.
+@export var unpack_item: StringName = &""
+@export var unpack_count: int = 0
 
 
 func has_condition() -> bool:

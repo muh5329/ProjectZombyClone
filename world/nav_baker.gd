@@ -10,6 +10,8 @@ extends NavigationRegion3D
 ## Listeners await [signal navigation_ready] / check [baked].
 
 signal navigation_ready
+## Round 9: a runtime re-bake (moved furniture) is live.
+signal rebaked
 
 ## Physics frames to wait before baking (buildings generate in _ready).
 @export var wait_frames: int = 2
@@ -27,11 +29,17 @@ signal navigation_ready
 @export var bake_on_ready: bool = true
 
 var baked: bool = false
+## Round 9 re-bakes (furniture moved / destroyed): count, and whether one
+## is running / queued. The old mesh stays live until the new one is in.
+var rebake_count: int = 0
+var _rebaking: bool = false
+var _rebake_queued: bool = false
 var bake_ms: float = 0.0
 var _bake_started_at: int = 0
 
 
 func _ready() -> void:
+	add_to_group(&"nav_baker")
 	if navigation_mesh == null:
 		navigation_mesh = NavigationMesh.new()
 	var nm := navigation_mesh
@@ -73,8 +81,44 @@ func bake_now() -> void:
 	bake_navigation_mesh(true)
 
 
+## Re-bake after the static world changed (furniture pushed in front of a
+## door, taken apart…). Coalesced: at most one running + one queued; the
+## current mesh stays in use meanwhile (baked stays true). Static helper:
+## NavBaker.request_rebake_in(tree).
+func request_rebake() -> void:
+	if not baked or is_baking() or _rebaking:
+		_rebake_queued = true
+		return
+	_rebaking = true
+	_rebake_queued = false
+	_bake_started_at = Time.get_ticks_msec()
+	bake_navigation_mesh(true)
+
+
+static func request_rebake_in(tree: SceneTree) -> void:
+	if tree == null:
+		return
+	var b := tree.get_first_node_in_group(&"nav_baker") as NavBaker
+	if b != null:
+		b.request_rebake.call_deferred()
+
+
 func _on_bake_finished() -> void:
 	bake_ms = float(Time.get_ticks_msec() - _bake_started_at)
+	if _rebaking:
+		var rmap := get_navigation_map()
+		var rit := NavigationServer3D.map_get_iteration_id(rmap)
+		for i in 30:
+			await get_tree().physics_frame
+			if NavigationServer3D.map_get_iteration_id(rmap) != rit:
+				break
+		await get_tree().physics_frame
+		_rebaking = false
+		rebake_count += 1
+		rebaked.emit()
+		if _rebake_queued:
+			request_rebake()
+		return
 	# The NavigationServer syncs the new mesh into the map on a later
 	# physics step; queries before that return nothing. Wait for the map
 	# iteration to advance (bounded).

@@ -94,6 +94,28 @@ extends Resource
 @export var door_max_distance: float = 1.8
 ## Length of the ray that looks for a breakable ahead on the path (m).
 @export var door_check_distance: float = 1.2
+## Round 9 — windows / barricades: seconds to climb through a window.
+@export var window_climb_seconds: float = 1.6
+## A window on the path is "reached" within this distance of its link end.
+@export var window_link_distance: float = 0.9
+## Facing a barricaded opening, a zombie goes to another entry of the
+## same building when that one scores at least this much better (m of
+## path + BarricadeData.nav_cost_per_plank per plank)…
+@export var detour_margin: float = 4.0
+## …within this radius, and gives the detour up after this long.
+@export var detour_search_radius: float = 14.0
+@export var detour_seconds: float = 20.0
+## A zombie waiting for a slot at a barricade queues this far from it,
+## leaves the queue beyond queue_max_distance, and reconsiders its entry
+## every queue_detour_min..max seconds (seeded).
+@export var queue_distance: float = 1.6
+@export var queue_max_distance: float = 3.5
+@export var queue_detour_min: float = 3.0
+@export var queue_detour_max: float = 5.0
+## Stuck in a crowd this long (s), a zombie looks this far ahead for the
+## barricade the crowd is at (and queues there).
+@export var crowd_stuck_seconds: float = 0.4
+@export var crowd_check_distance: float = 3.0
 
 @export_group("Health")
 @export var health: float = 60.0

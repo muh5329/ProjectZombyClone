@@ -13,6 +13,9 @@ extends Node3D
 ## The player never switches on object types: it only talks to this API.
 ## Signals for other systems go through the EventBus.
 
+## Children of the provider in this group add their own actions.
+const GROUP_EXTENSION := &"interaction_extension"
+
 ## Node that implements the interaction callbacks (defaults to the parent).
 @export var provider: Node
 
@@ -49,22 +52,40 @@ static func of(node: Node) -> Interactable:
 
 func get_actions(actor: Node) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	if provider != null and provider.has_method(&"interaction_actions"):
-		var raw: Variant = provider.call(&"interaction_actions", actor)
+	for src in _sources():
+		var raw: Variant = src.call(&"interaction_actions", actor)
 		for a in raw:
 			out.append(normalise_action(a))
 	return out
 
 
+## The provider, then its extensions: children of the provider in group
+## [GROUP_EXTENSION] that implement the same two callbacks (Round 9: a
+## FurnitureWork adds "Move in front of door" / "Disassemble" to a
+## container or a sofa without the container knowing).
+func _sources() -> Array[Node]:
+	var out: Array[Node] = []
+	if provider != null and provider.has_method(&"interaction_actions"):
+		out.append(provider)
+	if provider != null:
+		for c in provider.get_children():
+			if c.is_in_group(GROUP_EXTENSION) and c.has_method(&"interaction_actions") and c.has_method(&"interaction_perform"):
+				out.append(c)
+	return out
+
+
 ## Perform [action_id]; returns a result Dictionary ({ok: bool, ...}).
 func perform(action_id: StringName, actor: Node) -> Dictionary:
-	for a in get_actions(actor):
-		if a.id == action_id:
+	for src in _sources():
+		for raw in src.call(&"interaction_actions", actor):
+			var a := normalise_action(raw)
+			if a.id != action_id:
+				continue
 			if not a.enabled:
 				var reason := String(a.reason) if a.reason != "" else "Unavailable"
 				EventBus.interaction_refused.emit(actor, self, reason)
 				return {"ok": false, "reason": reason}
-			var result: Variant = provider.call(&"interaction_perform", action_id, actor)
+			var result: Variant = src.call(&"interaction_perform", action_id, actor)
 			var d: Dictionary = result if result is Dictionary else {}
 			if not d.has("ok"):
 				d["ok"] = true
@@ -90,14 +111,27 @@ func display_name() -> String:
 
 
 ## Helper for providers: build a well-formed action dictionary.
-static func action(id: StringName, label: String, enabled: bool = true, reason: String = "") -> Dictionary:
-	return {"id": id, "label": label, "enabled": enabled, "reason": reason}
+## [explicit] actions are never the E (default) action: they need their
+## number key (Round 9: "Remove barricade" must not happen by accident).
+static func action(id: StringName, label: String, enabled: bool = true, reason: String = "", explicit: bool = false) -> Dictionary:
+	var a := {"id": id, "label": label, "enabled": enabled, "reason": reason}
+	if explicit:
+		a["explicit"] = true
+	return a
 
 
 static func normalise_action(a: Dictionary) -> Dictionary:
-	return {
+	var out := {
 		"id": StringName(a.get("id", &"")),
 		"label": String(a.get("label", String(a.get("id", "")))),
 		"enabled": bool(a.get("enabled", true)),
 		"reason": String(a.get("reason", "")),
 	}
+	if bool(a.get("explicit", false)):
+		out["explicit"] = true
+	return out
+
+
+## True when [a] may be the default (E) action.
+static func is_default_candidate(a: Dictionary) -> bool:
+	return bool(a.get("enabled", true)) and not bool(a.get("explicit", false))

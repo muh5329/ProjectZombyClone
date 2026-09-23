@@ -2,7 +2,7 @@
 
 Isometric 3D survival sandbox in **Godot 4.6 / GDScript**, inspired by the
 systemic gameplay of Project Zomboid. Blockout visuals (primitives), systems
-first. Built through a "gauntlet" of verified rounds; **Rounds 1–8 (+8.5 models) of 10 are
+first. Built through a "gauntlet" of verified rounds; **Rounds 1–9 (+8.5 models) of 10 are
 done and committed.**
 
 ## Status at handoff (2026-09-22)
@@ -18,9 +18,10 @@ done and committed.**
 | 7 | World time, day/night, hunger/thirst/fatigue, food + water, spoilage, sleep | ✅ done |
 | 8 | Sound propagation, attenuation, hearing, moans, noise UI, glass | ✅ done |
 | 8.5 | Procedural people, zombies (48 looks, 31 animations) and 6 vehicle types | ✅ done |
-| 9–10 | Barricades, save/load | ⬜ planned |
+| 9 | Barricades, furniture blocking, disassembly, carpentry, zombies breaking in | ✅ done |
+| 10 | Save/load of the whole micro-world | ⬜ next |
 
-- **351 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, `integration-a` ~270 s, `integration-b` ~280 s).
+- **382 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, `integration-a` ~335 s, `integration-b` ~320 s).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,

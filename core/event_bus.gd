@@ -165,6 +165,19 @@ signal zombie_died(zombie: Node, killer: Node)
 signal zombie_knocked_down(zombie: Node, source: Node)
 signal zombie_got_up(zombie: Node)
 
+# --- Barricades / carpentry (Round 9) -----------------------------------------
+## The plank count on a door / window changed (nailed, pried off, broken).
+signal barricade_changed(fixture: Node, planks: int)
+## A zombie (or anything) broke a plank off [fixture].
+signal barricade_plank_broken(fixture: Node, source: Node)
+## Furniture was pushed in front of / away from a door (door null = back).
+signal furniture_moved(furniture: Node, door: Node)
+## A piece of furniture was destroyed (zombies) or taken apart (player).
+signal furniture_destroyed(furniture: Node, source: Node)
+## Skills (SkillComponent): XP gained / a new level reached.
+signal skill_xp_gained(character: Node, skill: StringName, xp: float)
+signal skill_leveled(character: Node, skill: StringName, level: int)
+
 # --- Buildings / location ---------------------------------------------------
 ## The player entered a Room (or left all rooms: room == null).
 signal player_room_changed(room: Node, building: Node)

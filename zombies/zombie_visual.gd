@@ -138,6 +138,8 @@ func _divider() -> int:
 static func clip_for(state: StringName, speed: float) -> Array:
 	if state == &"attack_door":
 		return [&"z_bang", 1.0]
+	if state == &"climb_window":
+		return [&"climb", 0.6]
 	if speed > 0.15:
 		var clip := &"z_chase" if speed > CHASE_ANIM_SPEED else &"z_walk"
 		return [clip, clampf(speed / float(CharacterAnimations.DESIGN_SPEED[clip]), 0.5, 1.6)]

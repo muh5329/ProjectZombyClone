@@ -36,6 +36,7 @@ var _shape: SphereShape3D
 var _query: PhysicsShapeQueryParameters3D
 var _los_query: PhysicsRayQueryParameters3D
 var _character: Character
+var _inventory_open: bool = false
 
 
 func _ready() -> void:
@@ -50,6 +51,7 @@ func _ready() -> void:
 	_los_query = PhysicsRayQueryParameters3D.new()
 	_los_query.collision_mask = los_mask
 	_los_query.collide_with_areas = false
+	EventBus.inventory_screen_toggled.connect(_on_inventory_toggled)
 	if _character:
 		_query.exclude = [_character.get_rid()]
 		_los_query.exclude = [_character.get_rid()]
@@ -60,7 +62,11 @@ func _physics_process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if scripted or _character == null or _character.is_busy:
+	if scripted or _character == null:
+		return
+	if _character.is_busy:
+		if is_cancel_event(event) and cancel_work():
+			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"interact"):
 		interact()
@@ -71,10 +77,30 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 
 
+## While busy: Esc (ui_cancel, when no inventory screen is open) or
+## pressing E / an action key again stops the timed work (TimedWork).
+func is_cancel_event(event: InputEvent) -> bool:
+	if event.is_action_pressed(&"interact"):
+		return true
+	for i in 4:
+		if event.is_action_pressed(StringName("action_%d" % (i + 1))):
+			return true
+	return event.is_action_pressed(&"ui_cancel") and not _inventory_open
+
+
+## Stop the character's timed work (nailing, eating…). True when it did.
+func cancel_work() -> bool:
+	return TimedWork.cancel_for(_character, "Stopped")
+
+
+func _on_inventory_toggled(v: bool) -> void:
+	_inventory_open = v
+
+
 ## Perform the first enabled action on the current target.
 func interact() -> Dictionary:
 	for a in current_actions:
-		if a.enabled:
+		if Interactable.is_default_candidate(a):
 			return perform_action(a.id)
 	if current_target != null and not current_actions.is_empty():
 		# Everything disabled: surface the primary reason.

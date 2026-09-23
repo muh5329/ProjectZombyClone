@@ -385,12 +385,18 @@ func _opening_slack(ev: SoundEvent, ear: Vector3, key: Vector3i, sens: float, sb
 ## Radius multiplier for the obstacles between [from] and [to] (world
 ## points at the heights to trace): one ray re-cast past each hit body
 ## (at most MAX_HITS obstacles); every obstacle multiplies.
-func obstacle_attenuation(from: Vector3, to: Vector3) -> float:
+func obstacle_attenuation(from: Vector3, to: Vector3, skip_fixture: Node = null) -> float:
 	var space := _space()
 	if space == null:
 		return 1.0
 	var kinds: Array = []
 	var exclude: Array[RID] = []
+	# Round 9: planks on a fixture multiply once per fixture (a ray may hit
+	# both the pane and the planks body of one window).
+	var planks := 1.0
+	var seen: Array[Node] = []
+	if skip_fixture != null:
+		seen.append(skip_fixture)  # its planks are counted by the caller
 	_ray.from = from
 	_ray.to = to
 	for i in MAX_HITS:
@@ -399,10 +405,33 @@ func obstacle_attenuation(from: Vector3, to: Vector3) -> float:
 		stats.rays += 1
 		if hit.is_empty():
 			break
-		kinds.append(classify(hit.get("collider")))
+		var col: Object = hit.get("collider")
+		kinds.append(classify(col))
+		var f := barricade_fixture_of(col)
+		if f != null and not seen.has(f):
+			seen.append(f)
+			planks *= float(f.call(&"sound_barricade_factor"))
 		exclude.append(hit.get("rid"))
 	_ray.exclude = []
-	return SoundMath.attenuation(kinds)
+	if planks >= 1.0:
+		return SoundMath.attenuation(kinds)
+	return maxf(SoundMath.attenuation(kinds) * planks, SoundMath.MIN_ATTENUATION)
+
+
+## The fixture whose barricade factor applies to [collider] (a Door /
+## HouseWindow, a window pane, or a planks body), or null.
+static func barricade_fixture_of(collider: Object) -> Node:
+	var n := collider as Node
+	if n == null:
+		return null
+	if n.has_method(&"barricade_fixture"):
+		return n.call(&"barricade_fixture")
+	if n.has_method(&"sound_barricade_factor"):
+		return n
+	var p := n.get_parent()
+	if p != null and p.has_method(&"sound_barricade_factor"):
+		return p
+	return null
 
 
 ## Obstacle kind of a collider (SoundMath.WALL / DOOR_CLOSED / …). Fixtures
@@ -455,8 +484,9 @@ func _openings(b: Node, ctx: Dictionary) -> Array:
 			var outward: Vector3 = f.get(&"outward")
 			if outward.length_squared() < 0.5:
 				continue  # interior opening
+			var factor: float = f.call(&"sound_barricade_factor") if f.has_method(&"sound_barricade_factor") else 1.0
 			out.append({"center": f.call(&"sound_opening_center"), "outward": outward, "node": f,
-				"id": f.get_instance_id()})
+				"id": f.get_instance_id(), "factor": factor})
 	return out
 
 
@@ -466,8 +496,9 @@ func _att_sound_to(ev: SoundEvent, o: Dictionary, ctx: Dictionary) -> float:
 	ctx["att_so"] = cache
 	if not cache.has(o.id):
 		var c: Vector3 = o.center
+		# Planks across the opening muffle what passes through it (×0.8 each).
 		cache[o.id] = obstacle_attenuation(ev.position + Vector3.UP * SOUND_HEIGHT,
-			Vector3(c.x, c.y + SOUND_HEIGHT, c.z))
+			Vector3(c.x, c.y + SOUND_HEIGHT, c.z), o.node) * float(o.get("factor", 1.0))
 	return cache[o.id]
 
 
@@ -478,7 +509,7 @@ func _att_opening_to_ear(o: Dictionary, ear: Vector3, key: Vector3i, ctx: Dictio
 	var k := [o.id, key]
 	if not cache.has(k):
 		var c: Vector3 = o.center
-		cache[k] = obstacle_attenuation(Vector3(c.x, c.y + SOUND_HEIGHT, c.z), ear)
+		cache[k] = obstacle_attenuation(Vector3(c.x, c.y + SOUND_HEIGHT, c.z), ear, o.node) * float(o.get("factor", 1.0))
 	return cache[k]
 
 

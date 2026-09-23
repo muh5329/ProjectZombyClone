@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="BarricadeData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://buildings/barricade_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"wood_planks"
+display_name = "Wooden planks"
+material = &"wood_plank"
+plank_health = 60.0
+max_planks_window = 4
+max_planks_door = 4
+plank_color = Color(0.56, 0.39, 0.22, 1)
+damaged_color = Color(0.27, 0.2, 0.14, 1)
+build_tool_tags = Array[StringName]([&"hammer"])
+material_item = &"plank"
+material_per_plank = 1
+nails_item = &"nails"
+nails_per_plank = 2
+build_seconds = 3.0
+build_noise = &"hammering"
+xp_per_plank = 10.0
+remove_tools = {
+&"crowbar": {"nails_chance": 0.5, "plank_chance": 0.7, "seconds": 2.0},
+&"hammer": {"nails_chance": 0.3, "plank_chance": 0.5, "seconds": 4.0}
+}
+remove_noise = &"hammering"
+max_attackers = 3
+bang_noise = &"barricade_bang"
+break_noise = &"wood_break"
+sound_factor_per_plank = 0.8
+vision_block_planks = 2
+nav_cost_per_plank = 8.0

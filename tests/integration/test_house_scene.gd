@@ -288,7 +288,7 @@ func test_number_key_selects_alternative_action() -> void:
 	var r := interaction.perform_index(1)
 	check(r.ok, "index 1 performed")
 	check_eq(win.state, &"smashed", "smashed via alternative action")
-	check_eq(interaction.current_actions.size(), 2, "smashed: climb + remove glass (open / close hidden)")
+	check_eq(interaction.current_actions.size(), 3, "smashed: climb + remove glass + barricade (open / close hidden)")
 	r = interaction.perform_index(4)
 	check(not r.ok, "out-of-range index refused")
 	var disabled := interaction.perform_action(&"open")

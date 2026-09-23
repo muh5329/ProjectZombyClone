@@ -46,6 +46,12 @@ const BLOCK_MASK := (1 << 1) | (1 << 2)
 ## Hit points before the door breaks. With a zombie's 8 damage every 2 s a
 ## single zombie needs ~75 s; a group of four ~20 s (axes later).
 @export var health_max: float = 300.0
+## Thickness of the wall the door sits in (planks go on its face).
+@export var wall_thickness: float = 0.2
+
+## Round 9: furniture pushed in front of this door (FurnitureWork) — the
+## door cannot be opened while it is there.
+var blocker: Node3D = null
 
 var state: StringName = STATE_CLOSED
 var health: float = 300.0
@@ -101,9 +107,39 @@ func is_broken() -> bool:
 	return state == STATE_BROKEN
 
 
-## Breakable contract: a closed door is in the way.
+## Breakable contract: a closed door is in the way (planks make a
+## closed door block too; zombies hit breakable_target() = the planks).
 func blocks_path() -> bool:
 	return state == STATE_CLOSED
+
+
+## Furniture blocking this door (valid and still in place), else null.
+func furniture_blocker() -> Node3D:
+	if blocker != null and is_instance_valid(blocker) and blocker.is_inside_tree() \
+			and (not blocker.has_method(&"blocks_door") or blocker.call(&"blocks_door", self)):
+		return blocker
+	blocker = null
+	return null
+
+
+# --- Barricade hooks (BarricadeComponent) ---------------------------------------
+
+func barricade_kind() -> StringName:
+	return &"door"
+
+
+## The doorway in this node's local space (the leaf spans x 0..width).
+func barricade_opening() -> Dictionary:
+	return {"center_x": width * 0.5, "width": width, "bottom": 0.0, "top": height,
+		"face": wall_thickness * 0.5}
+
+
+func barricade_block_reason(_actor: Node) -> String:
+	if state == STATE_BROKEN:
+		return "Door is broken"
+	if state != STATE_CLOSED:
+		return "Close the door first"
+	return ""
 
 
 # --- Interactable provider API --------------------------------------------
@@ -122,7 +158,11 @@ func interaction_actions(actor: Node) -> Array[Dictionary]:
 	if state == STATE_BROKEN:
 		out.append(Interactable.action(ACTION_CLOSE, "Close door", false, "Door is broken"))
 	elif state == STATE_CLOSED:
-		if locked:
+		if is_barricaded():
+			out.append(Interactable.action(ACTION_OPEN, "Open door", false, "Barricaded"))
+		elif furniture_blocker() != null:
+			out.append(Interactable.action(ACTION_OPEN, "Open door", false, "Blocked by furniture"))
+		elif locked:
 			out.append(Interactable.action(ACTION_OPEN, "Open door", false, "Locked"))
 		elif busy:
 			out.append(Interactable.action(ACTION_OPEN, "Open door", false, "Busy"))
@@ -137,6 +177,8 @@ func interaction_actions(actor: Node) -> Array[Dictionary]:
 			out.append(Interactable.action(ACTION_CLOSE, "Close door", false, "Blocked"))
 		else:
 			out.append(Interactable.action(ACTION_CLOSE, "Close door"))
+	if state == STATE_CLOSED:
+		out.append_array(BarricadeComponent.actions_for(self, actor))
 	return out
 
 
@@ -146,6 +188,8 @@ func interaction_perform(action_id: StringName, actor: Node) -> Dictionary:
 			return open_door(actor)
 		ACTION_CLOSE:
 			return close_door(actor)
+		BarricadeComponent.ACTION_ADD, BarricadeComponent.ACTION_REMOVE:
+			return BarricadeComponent.perform(self, action_id, actor)
 	return {"ok": false, "reason": "Unknown action"}
 
 
@@ -182,6 +226,10 @@ func open_door(actor: Node = null) -> Dictionary:
 		return {"ok": false, "reason": "Door is broken"}
 	if state == STATE_OPEN:
 		return {"ok": false, "reason": "Already open"}
+	if is_barricaded():
+		return {"ok": false, "reason": "Barricaded"}
+	if furniture_blocker() != null:
+		return {"ok": false, "reason": "Blocked by furniture"}
 	if locked:
 		return {"ok": false, "reason": "Locked"}
 	if on_cooldown():
@@ -229,6 +277,10 @@ func take_damage(amount: float, source: Node = null, _info: Dictionary = {}) -> 
 		return {"ok": false, "broken": true, "health": 0.0}
 	if amount <= 0.0:
 		return {"ok": false, "broken": false, "health": health}
+	var planks := BarricadeComponent.of(self)
+	if planks != null and planks.blocks_path():
+		# The planks nailed across the door take the hits first.
+		return planks.take_damage(amount, source, _info)
 	health = maxf(0.0, health - amount)
 	EventBus.door_banged.emit(self, source)
 	if health <= 0.0:

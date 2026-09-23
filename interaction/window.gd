@@ -48,6 +48,13 @@ const SOUND_SMASH := &"window_smash"
 @export var climb_clearance: float = 0.9
 ## Seconds of "Remove broken glass".
 @export var clear_glass_seconds: float = 3.0
+## Round 9: hit points of the closed pane against zombies (breakable
+## contract): two bangs smash it.
+@export var pane_health: float = 16.0
+## Navigation link cost: EntryPlanner.window_link_cost (open 1 m,
+## closed 10 m, + BarricadeData.nav_cost_per_plank per plank).
+## Distance of the link ends from the wall centre (m).
+@export var nav_link_offset: float = 0.75
 
 var state: StringName = STATE_CLOSED
 ## Set by the last climb: true when the climber went through broken glass.
@@ -58,6 +65,10 @@ var _pane_body: StaticBody3D
 ## Floor hazard left by a smash (null when none / cleared).
 var glass: GlassShards = null
 var _clearing_actor: Node = null
+var _pane_hp: float = 16.0
+## Zombie entry (Round 9): a NavigationLink3D through exterior windows so
+## zombies path through them (cost by state and planks); null inside.
+var nav_link: NavigationLink3D = null
 
 
 ## True while the pane glows (night).
@@ -66,6 +77,20 @@ var night_glow: bool = false
 
 func _init() -> void:
 	fixture_group = &"window"
+
+
+func _ready() -> void:
+	super._ready()
+	_pane_hp = pane_health
+	add_to_group(&"breakable")
+	if outward.length_squared() > 0.5:
+		nav_link = NavigationLink3D.new()
+		nav_link.name = "NavLink"
+		nav_link.bidirectional = true
+		nav_link.start_position = Vector3(0, 0, nav_link_offset)
+		nav_link.end_position = Vector3(0, 0, -nav_link_offset)
+		add_child(nav_link)
+		_update_nav_cost()
 
 
 func _build_visual() -> void:
@@ -122,7 +147,80 @@ func set_night_glow(on: bool) -> void:
 
 
 func can_climb() -> bool:
-	return state != STATE_CLOSED
+	return state != STATE_CLOSED and not is_barricaded()
+
+
+# --- Barricade hooks / zombie entry (Round 9) ------------------------------------------
+
+func barricade_kind() -> StringName:
+	return &"window"
+
+
+## The opening in this node's local space.
+func barricade_opening() -> Dictionary:
+	return {"center_x": 0.0, "width": width, "bottom": sill_height, "top": top_height,
+		"face": wall_thickness * 0.5}
+
+
+## Characters (player 2, zombies 3) in the opening block nailing.
+const CLIMBER_MASK := (1 << 1) | (1 << 2)
+
+
+func barricade_block_reason(_actor: Node) -> String:
+	if someone_in_opening():
+		return "Someone is in the window"
+	return ""
+
+
+## True while a body (a climbing player or zombie) is inside the opening.
+func someone_in_opening() -> bool:
+	var h := top_height - sill_height
+	return _box_blocked(Vector3(width, h, 0.5), Vector3(0, sill_height + h * 0.5, 0), Basis(), CLIMBER_MASK)
+
+
+func on_barricade_changed(_planks: int) -> void:
+	_update_nav_cost()
+	EventBus.window_state_changed.emit(self, state)
+
+
+## Breakable contract: zombies must get past planks, then a closed pane.
+func blocks_path() -> bool:
+	return state == STATE_CLOSED or is_barricaded()
+
+
+## Zombie hits: the planks first; a closed pane smashes after
+## [pane_health] damage (a 20 m window_smash, [source]'s noise).
+func take_damage(amount: float, source: Node = null, info: Dictionary = {}) -> Dictionary:
+	var planks := BarricadeComponent.of(self)
+	if planks != null and planks.blocks_path():
+		return planks.take_damage(amount, source, info)
+	if amount <= 0.0 or state != STATE_CLOSED:
+		return {"ok": false, "broken": state == STATE_SMASHED}
+	_pane_hp -= amount
+	if _pane_hp <= 0.0:
+		smash(source)
+		return {"ok": true, "broken": true}
+	SoundManager.emit_sound(&"barricade_bang", sound_position(source), source, {"radius": 8.0})
+	return {"ok": true, "broken": false}
+
+
+## The flat point 0.75 m off the wall on [p]'s side (a zombie's link end).
+func approach_point(p: Vector3) -> Vector3:
+	var a := global_position + normal() * side_of(p) * nav_link_offset
+	a.y = global_position.y
+	return a
+
+
+## Zombies crossing: extra path cost of the nav link.
+func nav_cost() -> float:
+	var b := BarricadeComponent.of(self)
+	var per_plank := b.data.nav_cost_per_plank if b != null and b.data != null else 8.0
+	return EntryPlanner.window_link_cost(state == STATE_CLOSED, barricade_planks(), per_plank)
+
+
+func _update_nav_cost() -> void:
+	if nav_link != null:
+		nav_link.enter_cost = nav_cost()
 
 
 ## World-space normal of the window (local +Z).
@@ -153,23 +251,37 @@ func interaction_prompt_position() -> Vector3:
 	return global_position + global_basis.y * (sill_height + 0.6)
 
 
-func interaction_actions(_actor: Node) -> Array[Dictionary]:
+func interaction_actions(actor: Node) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var busy := on_cooldown()
+	var barricaded := is_barricaded()
 	match state:
 		STATE_CLOSED:
 			out.append(Interactable.action(ACTION_OPEN, "Open window", not busy, "Busy" if busy else ""))
-			out.append(Interactable.action(ACTION_SMASH, "Smash window"))
-			out.append(Interactable.action(ACTION_CLIMB, "Climb through", false, "Window is closed"))
+			if not barricaded:  # (≤ 4 entries: the number keys 4-7)
+				out.append(Interactable.action(ACTION_SMASH, "Smash window"))
+			out.append(Interactable.action(ACTION_CLIMB, "Climb through", false, "Barricaded" if barricaded else "Window is closed"))
 		STATE_OPEN:
-			out.append(Interactable.action(ACTION_CLIMB, "Climb through"))
+			out.append(Interactable.action(ACTION_CLIMB, "Climb through", not barricaded, "Barricaded" if barricaded else ""))
 			out.append(Interactable.action(ACTION_CLOSE, "Close window", not busy, "Busy" if busy else ""))
-			out.append(Interactable.action(ACTION_SMASH, "Smash window"))
+			if not barricaded:
+				out.append(Interactable.action(ACTION_SMASH, "Smash window"))
 		STATE_SMASHED:
 			# Open / close are gone for good: not listed (no clutter).
-			out.append(Interactable.action(ACTION_CLIMB, "Climb through (glass)" if has_glass() else "Climb through"))
+			out.append(Interactable.action(ACTION_CLIMB, "Climb through (glass)" if has_glass() else "Climb through",
+				not barricaded, "Barricaded" if barricaded else ""))
 			if has_glass():
 				out.append(Interactable.action(ACTION_CLEAR_GLASS, "Remove broken glass"))
+	# Barricaded: "Barricade (N/4)" first so E nails the next plank;
+	# "Remove barricade" is explicit (its number key only) and last.
+	var planks := BarricadeComponent.actions_for(self, actor)
+	if barricaded:
+		var add: Array[Dictionary] = [planks[0]]
+		out = add + out
+		for i in range(1, planks.size()):
+			out.append(planks[i])
+	else:
+		out.append_array(planks)
 	return out
 
 
@@ -185,6 +297,8 @@ func interaction_perform(action_id: StringName, actor: Node) -> Dictionary:
 			return climb(actor)
 		ACTION_CLEAR_GLASS:
 			return clear_glass(actor)
+		BarricadeComponent.ACTION_ADD, BarricadeComponent.ACTION_REMOVE:
+			return BarricadeComponent.perform(self, action_id, actor)
 	return {"ok": false, "reason": "Unknown action"}
 
 
@@ -219,6 +333,7 @@ func smash(actor: Node = null) -> Dictionary:
 
 func _set_state(s: StringName, actor: Node = null) -> void:
 	state = s
+	_update_nav_cost()
 	_mark_toggled()
 	_refresh_visual()
 	if _pane_body:
@@ -355,6 +470,8 @@ func _slide_pane(y: float) -> void:
 ## Node3D; if it supports begin_busy() (Character) the tween is owned by the
 ## actor and its busy lock is released by the actor itself.
 func climb(actor: Node) -> Dictionary:
+	if is_barricaded():
+		return {"ok": false, "reason": "Barricaded", "hazard": false}
 	if not can_climb():
 		return {"ok": false, "reason": "Window is closed", "hazard": false}
 	var body := actor as Node3D

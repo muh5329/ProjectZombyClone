@@ -226,6 +226,7 @@ toggle_sound_debug={
 3d_physics/layer_6="occluders"
 3d_physics/layer_7="doors"
 3d_physics/layer_8="window_panes"
+3d_physics/layer_9="barricades"
 
 [navigation]
 

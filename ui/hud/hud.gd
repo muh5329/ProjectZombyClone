@@ -73,7 +73,11 @@ var _sleep_tween: Tween
 ## "Eating" / "Bandaging" / "Sleeping"… while busy ("" otherwise).
 var _busy_label: String = ""
 const BUSY_LABELS := {&"eat": "Eating", &"bandage": "Bandaging", &"sleep": "Sleeping",
-	&"search": "Searching", &"rest": "Resting", &"climb": "Climbing", &"clear_glass": "Clearing glass"}
+	&"search": "Searching", &"rest": "Resting", &"climb": "Climbing", &"clear_glass": "Clearing glass",
+	&"barricade": "Hammering", &"unbarricade": "Removing planks", &"disassemble": "Disassembling",
+	&"move_furniture": "Pushing"}
+## Round 9: sound categories that get a one-time "…is loud!" warning.
+const LOUD_WORK_NOTICES := {&"hammering": "Hammering is loud!", &"sawing": "Sawing is noisy!"}
 
 
 func _ready() -> void:
@@ -116,6 +120,9 @@ func _ready() -> void:
 	EventBus.time_speed_changed.connect(_on_time_speed_changed)
 	EventBus.shouted.connect(_on_shouted)
 	EventBus.hazard_hurt.connect(_on_hazard_hurt)
+	EventBus.skill_leveled.connect(_on_skill_leveled)
+	EventBus.sound_emitted.connect(_on_sound_for_notice)
+	EventBus.barricade_plank_broken.connect(_on_plank_broken)
 	_build_survival()
 	_build_action_bar()
 	_build_weight_label()
@@ -233,7 +240,7 @@ static func format_prompt(target_name: String, actions: Array) -> String:
 		var enabled := bool(a.get("enabled", true))
 		var reason := String(a.get("reason", ""))
 		var key := ""
-		if enabled and not primary_done:
+		if enabled and not primary_done and not bool(a.get("explicit", false)):
 			key = "E"
 			primary_done = true
 		elif i < 4:
@@ -768,6 +775,43 @@ func restart() -> void:
 	var t := get_tree()
 	if t.current_scene != null and t.current_scene.is_ancestor_of(self):
 		t.reload_current_scene()
+
+
+# --- Carpentry (Round 9) ------------------------------------------------------------
+
+## Loud-work warnings already shown this session.
+var _loud_warned: Dictionary = {}
+## Last skill level-up notice (tests).
+var last_skill_notice: String = ""
+
+
+static func format_skill_level(skill: StringName, level: int) -> String:
+	return "%s %d ↑" % [String(skill).capitalize(), level]
+
+
+func _on_skill_leveled(c: Node, skill: StringName, level: int) -> void:
+	if not _is_player(c):
+		return
+	last_skill_notice = format_skill_level(skill, level)
+	_notice(last_skill_notice, 2.5)
+
+
+## First hammering / sawing by the player → "Hammering is loud!" (shown
+## after the timed-action label so it is not overwritten).
+func _on_sound_for_notice(_pos: Vector3, _radius: float, _intensity: float, category: StringName, source: Node) -> void:
+	if not LOUD_WORK_NOTICES.has(category) or _loud_warned.has(category) or not _is_player(source):
+		return
+	_loud_warned[category] = true
+	_notice.call_deferred(String(LOUD_WORK_NOTICES[category]), 2.5)
+
+
+func _on_plank_broken(fixture: Node, _source: Node) -> void:
+	var p := GameManager.player as Node3D
+	if p == null or fixture == null or not fixture is Node3D:
+		return
+	if p.global_position.distance_to((fixture as Node3D).global_position) <= 12.0:
+		var left := BarricadeComponent.planks_on(fixture)
+		_notice("A plank gave way! (%d left)" % left if left > 0 else "The barricade is down!", 2.0)
 
 
 func _notice(text: String, seconds: float) -> void:

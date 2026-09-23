@@ -17,7 +17,9 @@ const LOCOMOTION := {
 }
 const BUSY := {
 	&"climb": &"climb", &"eat": &"eat", &"drink": &"eat", &"sleep": &"sleep", &"rest": &"sit",
-	&"search": &"search", &"bandage": &"bandage",
+	&"search": &"search", &"bandage": &"bandage", &"clear_glass": &"search",
+	&"barricade": &"hammer", &"unbarricade": &"hammer", &"disassemble": &"hammer",
+	&"move_furniture": &"push",
 }
 ## Seconds the busy climb takes (HouseWindow tween); the clip is scaled to it.
 const CLIMB_SECONDS := 0.8

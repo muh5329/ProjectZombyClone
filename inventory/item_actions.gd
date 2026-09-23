@@ -18,6 +18,8 @@ const SPLIT := &"split"
 const CONSUME := &"consume"
 const CONSUME_HALF := &"consume_half"
 const HOTBAR_PREFIX := "hotbar_"
+## Round 9: boxes (ItemData.unpack_item): "Open box".
+const OPEN_BOX := &"open_box"
 
 
 ## Why [d] has no Use verb ("" when it has one / is not special).
@@ -35,6 +37,25 @@ static func has_use(d: ItemData) -> bool:
 
 static func _a(id: StringName, label: String, enabled: bool = true, reason: String = "") -> Dictionary:
 	return {"id": id, "label": label, "enabled": enabled, "reason": reason}
+
+
+static func is_box(d: ItemData) -> bool:
+	return d != null and d.unpack_item != &"" and d.unpack_count > 0 and ItemDB.has_item(d.unpack_item)
+
+
+## Open one box of [item]: it is used up and its contents go to the actor
+## (overflow dropped at the feet). Returns {ok, reason?, added, dropped}.
+static func open_box(actor: Node, item: ItemInstance) -> Dictionary:
+	if actor == null or item == null or not is_box(item.data):
+		return {"ok": false, "reason": "Not a box"}
+	var from := item.owner_container()
+	if from == null or (actor.has_method(&"carries") and not bool(actor.call(&"carries", item))):
+		return {"ok": false, "reason": "Not here"}
+	if from.remove(item, 1) == null:
+		return {"ok": false, "reason": "Nothing there"}
+	var r := CarriedItems.give(actor, item.data.unpack_item, item.data.unpack_count)
+	EventBus.inventory_changed.emit(actor)
+	return {"ok": true, "added": r.added, "dropped": r.dropped}
 
 
 ## Actions for [item] carried by [actor] (a Player-like node with an
@@ -56,6 +77,9 @@ static func for_item(actor: Node, item: ItemInstance) -> Array[Dictionary]:
 				out.append(_a(EQUIP_SECONDARY, "Equip in secondary hand"))
 	if has_use(item.data):
 		out.append(_a(USE, "Bandage"))
+	if is_box(item.data):
+		out.append(_a(OPEN_BOX, "Open box (%d %s)" % [item.data.unpack_count,
+			ItemDB.get_item(item.data.unpack_item).display_name.to_lower()]))
 	var consume: Variant = actor.get("consume")
 	if item.data is FoodData and consume is ConsumeAction:
 		for o in (consume as ConsumeAction).options_for(item):
@@ -96,6 +120,8 @@ static func perform(actor: Node, item: ItemInstance, id: StringName) -> Dictiona
 			return actor.call(&"drop_item", item, 1)
 		SPLIT:
 			return actor.call(&"split_item", item)
+		OPEN_BOX:
+			return open_box(actor, item)
 	var s := String(id)
 	if s.begins_with(HOTBAR_PREFIX):
 		var eq: Equipment = actor.get("equipment") as Equipment

@@ -16,8 +16,8 @@ entries = Array[Dictionary]([{
 }, {
 "item_id": &"nails",
 "weight": 15.0,
-"min_count": 5,
-"max_count": 20,
+"min_count": 3,
+"max_count": 12,
 "chance": 0.80,
 "rarity": &"common"
 }, {

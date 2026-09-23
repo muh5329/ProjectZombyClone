@@ -12,7 +12,7 @@ func enter(_from: StringName) -> void:
 	if ai.investigate_pause:
 		ai.stop()
 		zombie.face_toward(ai.investigate_position)
-	ai.set_destination(ai.investigate_position)
+	ai.set_destination(ai.goal_or_detour(ai.investigate_position))
 
 
 func _mode() -> MovementComponent.Mode:
@@ -29,12 +29,18 @@ func update(_delta: float) -> StringName:
 	if ai.distance_to(ai.investigate_position) <= profile().investigate_arrive_distance:
 		return ZombieAI.S_SEARCH
 	var arrived := ai.move_along_path(_mode())
+	var through := ai.window_transition()
+	if through != &"":
+		return through
 	if ai.repath_due():
-		ai.set_destination(ai.investigate_position)
-		var obstacle := ai.breakable_ahead()
+		ai.set_destination(ai.goal_or_detour(ai.investigate_position))
+		var obstacle := ai.obstacle_ahead()
 		if obstacle != null:
-			ai.blocking_obstacle = obstacle
-			return ZombieAI.S_ATTACK_DOOR
+			var nx := ai.obstacle_transition(obstacle)
+			if nx != &"":
+				return nx
+	if ai.detour_active() and ai.stuck_time < profile().investigate_stuck_seconds:
+		return &""
 	if arrived or time_in_state >= profile().investigate_timeout or ai.stuck_time >= profile().investigate_stuck_seconds:
 		return ZombieAI.S_SEARCH
 	return &""

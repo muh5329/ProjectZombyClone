@@ -248,6 +248,18 @@ func _visual_of(n: Node) -> Node3D:
 	return n as Node3D
 
 
+## Round 9: [n]'s meshes changed (planks nailed / broken): drop the cache
+## and re-apply its current state so new meshes fade / stub like the rest.
+func forget_meshes(n: Node) -> void:
+	if not _meshes.has(n):
+		return
+	_meshes.erase(n)
+	if states.has(n) and states[n] != STATE_FULL:
+		var s: StringName = states[n]
+		states[n] = STATE_FULL
+		_transition(n, s)
+
+
 ## All MeshInstance3D under [n] (cached per node; instances, not materials).
 func _meshes_of(n: Node) -> Array:
 	if _meshes.has(n):

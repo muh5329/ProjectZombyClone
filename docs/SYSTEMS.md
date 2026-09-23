@@ -43,7 +43,7 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
 - Planned consumers: containers/loot (R5-6), barricading (R8), vehicles,
   crafting stations. Zombies will use the same door API (R3).
 
-## Doors & windows ✅ (Round 2)
+## Doors & windows ✅ (Round 2; barricades Round 9 — see below)
 
 | Object | States | Actions | Notes |
 |--------|--------|---------|-------|
@@ -131,6 +131,11 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
   ("Resting on the sofa… (move to get up)", "Woken by noise!", "You
   wake up rested"). Sleep fades the screen to near-black with
   "Sleeping…  02:13". Hint strip: "F5-F8 time speed".
+- Round 9: prompt entries "Barricade (N/4)" with their requirement
+  ("(Need a hammer)"), explicit actions never get the E key; busy
+  labels Hammering / Removing planks / Disassembling / Pushing; notices
+  "Hammering is loud!" (first time), "A plank gave way! (n left)",
+  "Carpentry N ↑".
 - Round 5: generic timed-action bar + label (`timed_action_started /
   finished`: "Rummaging in kitchen cabinet…"), "Wound on … reopened!",
   "No bandages", hint "Tab inventory". The loot window is its own
@@ -160,7 +165,8 @@ constants in code).
 | search | 4–6 s: turn to random headings, short shuffles | → wander |
 | chase | 1.6 m/s to the last known position, re-path 2 Hz (seed-staggered); sight refreshes memory; at most `max_attackers` (4) bite one target, the rest **hold** at 1.4 m or once stuck in the crowd (ring, not blob) | in range + clear chest line + free slot → attack; memory 0 → lost_target; breakable ahead → attack_door |
 | attack | windup 0.5 s (visual lunges 0.25 m) → hit if still in range, faced and with a clear line (`target.take_damage(12, zombie, {region: random})`, head flashes white) → cooldown 1.5 s | out of range → chase; target gone → lost_target |
-| attack_door | same rhythm against `ai.blocking_obstacle` (`take_damage(8)` on any breakable) | it no longer blocks → chase or investigate |
+| attack_door | same rhythm against `ai.blocking_obstacle` (`take_damage(8)` on any breakable: door, planks, blocking furniture, closed pane); R9: obstacles with slots (planks: 3 per opening) are claimed, surplus zombies wait facing it | it no longer blocks → chase or investigate |
+| climb_window | R9: over the sill of an open / smashed, unplanked window (1.6 s scripted move, no collision); shut / boarded before halfway → drop back and bang | landed → chase or investigate (fresh path) |
 | lost_target | transient: `zombie_lost_target`, forget | → search (near) / investigate (far) |
 | stunned | 0.8 s freeze after a hit ≥ 10 damage (0.6 s after a shove) | → chase / idle |
 | knocked_down | on the ground 2.5 s (weapon knockdown roll or shove); no attacks; damage ×1.5; visual lies on its back | → chase / idle |
@@ -249,6 +255,11 @@ event also fires `EventBus.sound_emitted` (HUD, sleep, debug).
 | eat / bottle_fill | 1.5 / 4 | 0.1 / 0.2 | ConsumeAction |
 | shout | 20 | 0.9 | player H (ShoutComponent: 6 stamina, 3 s cooldown) |
 | glass_clear | 3 | 0.2 | "Remove broken glass" |
+| hammering | 18 | 0.8 | nailing / prying planks, disassembling with a hammer (R9; repeated every 1.5 s while working) |
+| sawing | 10 | 0.5 | disassembling furniture with a saw (R9) |
+| wood_break | 10 | 0.6 | a plank / a blocking piece of furniture breaks (R9) |
+| barricade_bang | 12 | 0.7 | a zombie hits planks / blocking furniture / a closed pane (8 m) (R9) |
+| furniture_scrape | 6 | 0.3 | pushing furniture in front of a door (R9) |
 | zombie_moan | 6 | 0.25 | investigating zombies, 10 s cooldown |
 | alarm / gunshot / generator / vehicle | 60 / 60 / 25 / 30 | — | future |
 
@@ -963,10 +974,97 @@ same townspeople gone grey, bloodied and hunched.
   (police car at the old spot, sedan ×2, pickup, wagon, van, fire pickup)
   along the road (x ±7.6, z 17–34), plus a yellow centre line.
 
+## Barricades & carpentry ✅ (Round 9)
+
+Data: `BarricadeData` (`buildings/barricade_data.gd`,
+`data/barricades/wood_planks.tres`): material wood_plank, plank health 60,
+4 planks per window / door, hammer, 1 plank + 2 nails per plank, 3 s,
+`hammering` 18 m, +10 carpentry XP; removal crowbar 2 s (plank back 70 %,
+nails 50 %) / hammer 4 s (50 % / 30 %); 3 attackers per opening; sound
+×0.8 per plank; sight blocked from 2 planks; window nav cost +8 m per
+plank.
+
+- **Nailing** (`BarricadeComponent`, child "Barricade" of a Door /
+  HouseWindow, created by the first plank): the fixture lists
+  "Barricade (N/4)" — enabled with a hammer carried (hands or bags) + 1
+  plank + 2 nails, else disabled with "Need a hammer" / "Need planks" /
+  "Need 2 nails" / "Fully barricaded" / "Close the door first" /
+  "Barricaded on the other side". Busy `barricade` for 3 s × carpentry
+  (`TimedWork`: the hammer is put in the hands, hammering animation, HUD
+  bar "Barricading… (n/4)", 18 m noise every 1.5 s — the noise meter holds
+  18 m for the category's duration —, first time "Hammering is loud!").
+  TimedWork is the one cancel path (also for eating / drinking): a hit
+  ("Interrupted"), walking off, Esc (no inventory open) or pressing E /
+  an action key again ("Stopped"), the door / window changing state
+  underneath. Nothing is consumed unless the plank actually goes on
+  (re-checked at the end; no XP either). No plank while a body is in the
+  opening ("Someone is in the window"). Planks go on
+  the actor's side; the other side can neither add nor remove.
+- **Removing**: "Remove barricade" (crowbar preferred, else hammer) pries
+  the outermost plank; returns plank / nails by chance (seeded per
+  fixture). It is an *explicit* action: never the E default, only its
+  number key.
+- **What planks do**: doors refuse "Open door" from both sides
+  ("Barricaded"); windows refuse climbing ("Barricaded"), hide Smash (≤ 4
+  actions); ≥ 2 planks on a window add a body on the pane layer (8) —
+  zombie / player sight and bites through it are blocked; every plank
+  multiplies sound through the opening ×0.8 (direct rays that hit the
+  fixture or its planks, and the via-opening paths).
+- **Zombies**: planks are a breakable (`take_damage` / `blocks_path`,
+  group `breakable` while planked; the fixture's `breakable_target()`
+  points at them). The outermost plank takes each 8-damage hit (no
+  overflow), darkens toward `damaged_color`, shows a crack below half,
+  shudders; each hit is a 12 m `barricade_bang` (recruits), a broken plank
+  a 10 m `wood_break` + a splinter burst (`Splinters`, ≤ 24 bursts) and
+  "A plank gave way! (n left)" when the player is within 12 m. At most 3
+  zombies bang on one opening (claim / release slots), so 3 break it ~3×
+  faster than 1 (tests: < 0.6×; 10 zombies vs one weak window: 3 at once,
+  half the time). Zombies without a slot queue 1.6 m back (up to 3.5 m),
+  take the first free slot (walking in), and every 3-5 s (seeded) ask the
+  `EntryPlanner` for a better opening; a zombie stuck in a crowd looks
+  3 m ahead for the barricade the crowd is at and joins its queue. Empty → the opening is what it was
+  (window closed → 2 hits smash the pane, `pane_health` 16; door closed →
+  its 300 hp).
+- **Windows are entries**: every exterior window owns a NavigationLink3D
+  (±0.75 m through the wall, cost open/smashed 1 m, closed 10 m, +8 m per
+  plank). A chasing / investigating zombie whose path crosses one (at
+  re-path ticks, or when stuck on the sill) bangs on it while it blocks,
+  then climbs through (`climb_window`). Facing a barricaded opening it
+  first compares the other exterior entries of that building within 14 m
+  through `EntryPlanner` (distance + 8 m per plank, +2 closed window,
+  +10 closed door, +6 when the slots are full; openings cached per
+  building) and detours to one ≥ 4 m better. The same planner prices the
+  window links.
+- **Furniture** (`FurnitureWork`, catalog keys `movable`, `block_health`,
+  `disassemble`): dresser / shelf / wardrobe / fridge / sofa offer "Block
+  door with <piece>" — 2 s push (`move_furniture`, 6 m scrape), then the
+  piece snaps flush behind the nearest closed door within 3.5 m on the
+  inside — only a door whose block spot is in the piece's room with a
+  clear line to it, and the spot must be free of walls, furniture and
+  characters; the door refuses "Blocked by furniture"; the piece moves
+  from the world layer to layer 9 (barricades: characters collide, the
+  navmesh ignores it like a door leaf) + group breakable with its block
+  health (shelf 160, dresser
+  200, sofa 220, wardrobe 240, fridge 260): zombies that broke the door
+  must smash it (then contents spill, splinters, `furniture_destroyed`).
+  "Move <piece> back" returns it. "Disassemble" (shelf, dresser,
+  wardrobe; hammer or saw) is 10 s × carpentry of hammering / sawing
+  noise → shelf / dresser 2-3 planks (wardrobe 3-4) + 2-6 nails, +15 carpentry XP; contents
+  (rolled now if never searched) drop on the floor as items. Every
+  push / move back / destruction re-bakes the navmesh (NavBaker
+  `request_rebake`, async, coalesced).
+- **Carpentry** (`SkillComponent`, child "Skills" of the Player): XP
+  table 30 / 80 / 150 / 240 / 350 / 480 / 630 / 800 / 1000 / 1250 for
+  levels 1-10; −5 % carpentry time and +5 % plank health per level;
+  HUD "Carpentry 1 ↑" on level-up (`skill_leveled`).
+- **Loot**: planks + nails (3-12 loose) in the garage shelf, crate and
+  tool crate; a box of nails (10 %, "Open box" → 50 nails); hammers /
+  crowbars / saws in the tool crate.
+
 ## Planned (see MASTER_PLAN for order)
 
 Sound propagation ✅ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
 Loot tables ✅ · Needs ✅ (hunger / thirst / fatigue / sickness; temperature, wetness, stress ⬜) ·
-Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ✅ · Vehicles 🔶 (parked, R8.5) · Character models ✅ (R8.5) ·
+Barricades ✅ (R9: planks, furniture, carpentry) · Save/load ⬜ · Crafting ⬜ · World time ✅ · Vehicles 🔶 (parked, R8.5) · Character models ✅ (R8.5) ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·
 World streaming ⬜ · NPC survivors ⬜

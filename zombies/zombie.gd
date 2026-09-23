@@ -21,7 +21,8 @@ extends CharacterBody3D
 const HEALTH := &"health"
 const LAYER_ZOMBIES := 1 << 2
 ## world (1) + player (2) + zombies (3) + doors (7) + window panes (8)
-const MASK_ALIVE := (1 << 0) | (1 << 1) | (1 << 2) | (1 << 6) | (1 << 7)
+## + barricades (9: furniture pushed in front of a door, R9)
+const MASK_ALIVE := (1 << 0) | (1 << 1) | (1 << 2) | (1 << 6) | (1 << 7) | (1 << 8)
 const PHYSICS_HZ := 60.0
 ## Cheap movers step every other physics frame (double delta).
 const CHEAP_MOVE_DIVIDER := 2
@@ -78,6 +79,12 @@ var _move_accum: float = 0.0
 var _move_counter: int = 0
 ## Remaining knockback displacement (flat), applied at profile.knockback_speed.
 var _knock_left: Vector3 = Vector3.ZERO
+## Round 9 window climb: from → over (sill) → to in _climb_seconds.
+var _climb_t: float = -1.0
+var _climb_seconds: float = 1.6
+var _climb_from: Vector3
+var _climb_over: Vector3
+var _climb_to: Vector3
 
 
 ## Hand-placed zombies (seed 0) get a deterministic seed from their node
@@ -196,7 +203,9 @@ func _physics_process(delta: float) -> void:
 		_ai_counter = 0
 		ai.tick(_ai_accum)
 		_ai_accum = 0.0
-	if _knock_left != Vector3.ZERO:
+	if _climb_t >= 0.0:
+		_step_climb(delta)
+	elif _knock_left != Vector3.ZERO:
 		_step_knockback(delta)
 	elif not _settled or intent_direction.x != 0.0 or intent_direction.z != 0.0:
 		if cheap_movement:
@@ -236,6 +245,55 @@ func _step_movement(delta: float) -> void:
 	elif velocity.x * velocity.x + velocity.z * velocity.z < 0.0004 and (cheap_movement or is_on_floor()):
 		velocity = Vector3.ZERO
 		_settled = true
+
+
+# --- Window climbing (Round 9, ZombieStateClimbWindow) ------------------------
+
+## Move over a sill: [from] → [over] → [to] in [seconds], no collision.
+func start_climb(from: Vector3, over: Vector3, to: Vector3, seconds: float) -> void:
+	cheap_movement = false
+	_climb_from = from
+	_climb_over = over
+	_climb_to = to
+	_climb_seconds = maxf(seconds, 0.05)
+	_climb_t = 0.0
+	_knock_left = Vector3.ZERO
+	velocity = Vector3.ZERO
+	intent_direction = Vector3.ZERO
+	collision_mask = 0
+	_settled = false
+
+
+## Abort a climb; [back] = return to where it started.
+func stop_climb(back: bool) -> void:
+	if _climb_t < 0.0:
+		return
+	_climb_t = -1.0
+	if back:
+		global_position = _climb_from
+	collision_mask = MASK_ALIVE
+
+
+func is_climbing() -> bool:
+	return _climb_t >= 0.0
+
+
+## 0..1 while climbing (1 when not).
+func climb_progress() -> float:
+	return clampf(_climb_t / _climb_seconds, 0.0, 1.0) if _climb_t >= 0.0 else 1.0
+
+
+func _step_climb(delta: float) -> void:
+	_climb_t += delta
+	var f := clampf(_climb_t / _climb_seconds, 0.0, 1.0)
+	if f < 0.5:
+		global_position = _climb_from.lerp(_climb_over, smoothstep(0.0, 1.0, f * 2.0))
+	else:
+		global_position = _climb_over.lerp(_climb_to, smoothstep(0.0, 1.0, (f - 0.5) * 2.0))
+	if f >= 1.0:
+		_climb_t = -1.0
+		collision_mask = MASK_ALIVE
+		velocity = Vector3.ZERO
 
 
 # --- Damage / death ---------------------------------------------------------

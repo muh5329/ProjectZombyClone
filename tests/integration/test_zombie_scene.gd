@@ -90,7 +90,7 @@ func test_idle_then_wander_moves() -> void:
 	check_eq(z.state(), &"idle", "starts idle")
 	check(z.is_in_group(&"zombie"), "group")
 	check_eq(z.collision_layer, 4, "layer 3 (zombies)")
-	check_eq(z.collision_mask, 199, "mask world+player+zombies+doors+panes")
+	check_eq(z.collision_mask, 455, "mask world+player+zombies+doors+panes+barricades")
 	var p0 := z.global_position
 	var wandering := await _wait_state(z, &"wander", 60 * 9)
 	check(wandering, "wanders within idle_time_max (got %s)" % z.state())
