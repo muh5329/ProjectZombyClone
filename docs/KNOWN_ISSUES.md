@@ -5,6 +5,31 @@ that fixed them.
 
 ## Open
 
+000000. **Round-8 sound / hearing gaps** (ordered):
+   - **Obstacles are counted, not measured**: up to 5 per ray; a thick
+     wall and a thin one weigh the same. The per-event cache is keyed by
+     a 1.5 m ear cell, so two ears in one cell on either side of a wall
+     share a result.
+   - **Openings**: only exterior openings; interior doorways use the
+     direct ray only. Building → building assumes the leg between the two
+     openings is clear. One opening per building leg (no chains).
+   - **One hash refresh per 0.2 s**: listeners moving > 2 m between
+     refreshes could be missed at the query edge (zombies move ≤ 0.35 m).
+   - **Dispatch is synchronous**: a sound is evaluated once when emitted
+     (no duration-long "still audible" window); `duration` only drives
+     debug rings. Alarms / generators (future) will need re-emission.
+     Queued sounds (moans) are delayed ≤ a few frames.
+   - **Moan relays** can walk a crowd across the map in a dense
+     population (2 hops × 6 m + each zombie's own hearing); tuned only
+     against the 10-zombie map and the 200-zombie perf run.
+   - **No shoes exist yet**, so every survivor is "barefoot" on glass
+     (`Player.has_foot_protection()` looks for an equipped `shoes` tag).
+     Zombies and NPCs ignore glass; walking on glass makes no sound.
+   - **Rings are shown for every player sound**, footsteps included
+     (alpha by intensity); PZ only rings deliberate / loud noises.
+   - **Sleep wake** checks zombie line of sight from the zombie's eye
+     to the sleeper's eye only (one ray each, 4 Hz).
+
 00000. **Round-7 time / needs / food / sleep gaps** (ordered):
    - **Injury timers are physics seconds, not game minutes** (1:1 only at
      the default rate). 2× / 4× speed them up with the engine; during a
@@ -69,8 +94,8 @@ that fixed them.
    - **Loot window is laid out for 1280×720** (x 150–930, left of the
      body panel); not scaled for other resolutions; a very long list
      scrolls (max 264 px).
-   - **Rummage noise is a flat 3 m** `search` sound for every container;
-     corpses are silent.
+   - **Rummage noise is a flat 3 m** `rummage` sound for every container
+     (the container's `search_noise_radius`); corpses are silent.
    - **Containers do not respawn / refill**; world age only thins the
      first roll. No per-building "already looted" state for AI survivors.
    - **Furniture blocks windows only by placement** (the plan validator
@@ -125,8 +150,6 @@ that fixed them.
      *ahead on their path*** (1.2 m ray at 2 Hz); a door hit from the
      side or a zombie pushed against a door by the crowd just stands
      (stuck timer → idle / search). No window climbing, no vaulting.
-   - **Hearing occlusion is one ray**: a wall halves the radius, whatever
-     its thickness or count. Round 8.
    - **Player is the only prey**; `zombie.target` is duck-typed so NPCs
      can join through a group later.
    - **Attack tell is minimal**: lunge + white head flash; no swing
@@ -181,6 +204,17 @@ that fixed them.
 
 ## Fixed
 
+- (R8, critic) Two-ray attenuation undercounted walls and let furniture
+  hide walls → iterative ray; door / window sounds started inside the
+  leaf → 0.3 m actor-side offset + hit_from_inside; non-finite sounds
+  rejected; expiry scans the whole list; openings work inward and
+  building → building; moan re-targets never downgrade; dead players
+  get no shout notice / meter; one LOUD threshold in data; sleep wakes
+  through the sound system + zombie line of sight; occlusion loops no
+  longer crash on freed meshes.
+- (R8) Hearing occlusion was one ray halving the radius for any number
+  of walls → SoundManager propagation (per-obstacle factors, openings,
+  spatial hash).
 - (R5, critic) Equipped weapon could be stored mid-swing →
   `Player.can_release_item` checked by every outgoing transfer.
 - (R5, critic) `remove(item, 0)` removed one; `from_dict` accepted

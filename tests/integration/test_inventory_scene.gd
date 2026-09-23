@@ -239,7 +239,7 @@ func test_heavy_load_slows_real_movement() -> void:
 	# Footsteps are louder when heavy.
 	var radii := []
 	var cb := func(_p, r, _i, cat, src):
-		if cat == &"footstep" and src == player:
+		if cat == &"footstep_jog" and src == player:
 			radii.append(r)
 	EventBus.sound_emitted.connect(cb)
 	await _jog_distance(80)

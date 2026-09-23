@@ -168,8 +168,10 @@ func resolve(actor: Node3D, w: WeaponData, item: ItemInstance, direction: Vector
 		EventBus.melee_hit.emit(actor, t, dmg, info)
 	var broke := false
 	if not hits.is_empty():
-		EventBus.sound_emitted.emit(actor.global_position, w.noise_radius,
-			clampf(w.noise_radius / maxf(profile.noise_intensity_radius, 0.01), 0.0, 1.0), &"melee", actor)
+		# The weapon's own noise radius (data) overrides the category's.
+		SoundManager.emit_sound(&"shove" if w.is_shove else &"melee_hit", actor.global_position, actor, {
+			"radius": w.noise_radius,
+			"intensity": clampf(w.noise_radius / maxf(profile.noise_intensity_radius, 0.01), 0.0, 1.0)})
 		if not w.is_shove:
 			broke = wear(w, item)
 	return {"hits": hits, "broke": broke}

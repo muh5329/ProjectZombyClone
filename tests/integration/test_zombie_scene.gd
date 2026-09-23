@@ -157,7 +157,7 @@ func test_window_smash_sound_makes_zombie_investigate() -> void:
 	var investigating := await _wait_state(z, &"investigate", 10)
 	check(investigating, "investigates the smash (state %s)" % z.state())
 	check(z.visual.head_material().albedo_color.g > 0.6, "yellow head while investigating")
-	check_lt((z.ai.investigate_position - win.global_position).length(), 0.1, "goes to the window")
+	check_lt((z.ai.investigate_position - win.global_position).length(), 0.5, "goes to the window (sound 0.3 m outside it)")
 	var arrived := await wait_physics_until(func(): return _flat_dist(z.global_position, win.global_position) < 2.0, 60 * 20)
 	check(arrived, "reached near the window (dist %.1f, state %s)" % [_flat_dist(z.global_position, win.global_position), z.state()])
 	var searching := await _wait_state(z, &"search", 60 * 4)
@@ -233,10 +233,10 @@ func test_zombie_breaks_closed_door_and_enters_house() -> void:
 	var states := []
 	var cb := func(zb, _f, to): if zb == z: states.append(to)
 	EventBus.zombie_state_changed.connect(cb)
-	# A sprint footstep inside (14 m, halved by the wall to 7 m; the zombie
-	# is ~6 m away): heard, so the zombie investigates and finds the door
-	# in its path.
-	EventBus.sound_emitted.emit(player.global_position, 14.0, 1.0, &"footstep", player)
+	# A sprint footstep inside (14 m, ×0.5 through the south wall = 7 m;
+	# the zombie is ~6 m away): heard, so the zombie investigates and finds
+	# the door in its path.
+	SoundManager.emit_sound(&"footstep_sprint", player.global_position, player)
 	check(await _wait_state(z, &"investigate", 10), "heard the footstep")
 	var banging := await _wait_state(z, &"attack_door", 60 * 8)
 	check(banging, "attacks the door in its path (state %s, pos %s)" % [z.state(), z.global_position])

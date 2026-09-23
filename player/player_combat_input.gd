@@ -2,7 +2,8 @@ class_name PlayerCombatInput
 extends Node
 ## Player input for fighting and first aid (child of the Player):
 ## attack (LMB, hold to charge), aim (RMB: face the mouse on the ground,
-## walk speed), shove (Space), cycle_weapon (X), bandage (B), hotbar
+## walk speed), shove (Space), cycle_weapon (X), bandage (B), shout (H,
+## the sibling ShoutComponent), hotbar
 ## 1-3 (keys 1-3 with ANY modifier held — sprinting, sneaking, walking —
 ## equip / put away the assigned item; the interaction alternatives are on
 ## keys 4-7, see PlayerInteraction). Attacks are ignored while the
@@ -40,6 +41,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed(&"bandage"):
 		if character.injuries:
 			character.injuries.bandage_worst()
+	elif event.is_action_pressed(&"shout"):
+		var sh := character.get_node_or_null(^"Shout")
+		if sh:
+			sh.call(&"shout")
 	else:
 		for i in 3:
 			# Non-exact: Shift / Ctrl / Alt (sprint / sneak / walk) may be held.

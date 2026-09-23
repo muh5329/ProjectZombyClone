@@ -267,6 +267,8 @@ func _begin_swing(w: WeaponData, item: ItemInstance, charge: float) -> bool:
 	_update_facing()
 	swing_started.emit(w, swing.direction, charge)
 	EventBus.melee_swing.emit(actor, w.id, charge)
+	if not w.is_shove:
+		SoundManager.emit_sound(&"melee_swing", actor.global_position, actor)
 	return true
 
 

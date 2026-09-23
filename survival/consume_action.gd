@@ -177,6 +177,7 @@ func _begin(seconds: float, label: String) -> void:
 	tw.tween_interval(seconds)
 	tw.tween_callback(_finish)
 	EventBus.timed_action_started.emit(character, StringName(current.action), label, seconds)
+	SoundManager.emit_sound(&"bottle_fill" if current.action == ACTION_FILL else &"eat", character.global_position, character)
 
 
 func _physics_process(_delta: float) -> void:

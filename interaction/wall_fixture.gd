@@ -15,6 +15,9 @@ extends StaticBody3D
 @export var wall_height: float = 2.7
 ## Outward normal of the wall (ZERO for interior walls) for the cutaway.
 @export var outward: Vector3 = Vector3.ZERO
+## Sounds start this far from the opening, on the actor's side.
+const SOUND_SIDE_OFFSET := 0.3
+
 ## Seconds between two state changes (spam-safe, not arcade).
 @export var toggle_cooldown: float = 0.5
 
@@ -53,6 +56,47 @@ func _build_visual() -> void:
 ## Seconds of physics time since the scene started.
 static func _now() -> float:
 	return Time.get_ticks_msec() / 1000.0 if Engine.is_editor_hint() else Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
+
+
+# --- Sound propagation (Round 8, SoundManager) -----------------------------------
+
+## True when sound passes freely through this opening (open / broken).
+func sound_passes() -> bool:
+	return false
+
+
+## Centre of the opening at floor level (sound escaping through it).
+func sound_opening_center() -> Vector3:
+	return global_position
+
+
+## Horizontal normal of the wall this fixture sits in (either side).
+func wall_normal() -> Vector3:
+	var n := global_basis.z
+	n.y = 0.0
+	return n.normalized() if n.length_squared() > 0.0001 else Vector3.BACK
+
+
+## Where a sound made by / at this fixture starts: [SOUND_SIDE_OFFSET] m
+## off the opening centre, on [actor]'s side (outward when no actor), at
+## floor level — never inside the leaf / wall, so the fixture itself
+## muffles it for the other side.
+func sound_position(actor: Node = null) -> Vector3:
+	var c := sound_opening_center()
+	var n := wall_normal()
+	var side := 1.0
+	if actor is Node3D and is_instance_valid(actor):
+		side = 1.0 if ((actor as Node3D).global_position - c).dot(n) >= 0.0 else -1.0
+	elif outward.length_squared() > 0.5:
+		side = 1.0 if outward.dot(n) >= 0.0 else -1.0
+	var p := c + n * side * SOUND_SIDE_OFFSET
+	p.y = global_position.y
+	return p
+
+
+## How much this fixture muffles a sound ray that hits it (SoundMath kind).
+func sound_obstacle_kind() -> StringName:
+	return SoundMath.WALL
 
 
 func on_cooldown() -> bool:

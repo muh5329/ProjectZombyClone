@@ -30,6 +30,11 @@ extends Resource
 ## Resting on a bed / sofa multiplies idle stamina recovery (Round 7).
 @export var stamina_rest_multiplier: float = 3.0
 
+@export_group("Voice")
+## Shouting (H, SoundManager "shout", 20 m) to lure zombies on purpose.
+@export var shout_stamina_cost: float = 6.0
+@export var shout_cooldown: float = 3.0
+
 @export_group("Carrying")
 ## Carried weight (kg) the character handles without penalty; above it
 ## the load is "light" (Encumbrance). Strength-based later.
@@ -75,6 +80,8 @@ func stamina_rates() -> Dictionary:
 		&"eat": stamina_rate_idle,
 		&"sleep": stamina_rate_idle,
 		&"rest": stamina_rate_idle * stamina_rest_multiplier,
+		# Round 8: picking broken glass out of a window frame.
+		&"clear_glass": stamina_rate_walk,
 	}
 
 

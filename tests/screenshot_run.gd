@@ -201,6 +201,7 @@ func _run() -> void:
 	await _round5(inst, player, cam, spawner, hud)
 	await _round6(inst, player, cam, spawner, hud)
 	await _round7(inst, player, cam, spawner, hud)
+	await _round8(inst, player, cam, spawner, hud)
 
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
@@ -332,7 +333,10 @@ func _round4(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) 
 		if is_instance_valid(z):
 			z.queue_free()
 	await _frames(5)
-	# Climb through the smashed living-room window: glass laceration.
+	# Climb through the smashed living-room window: glass laceration
+	# (40 % in play; certain here so the evidence is deterministic).
+	injuries.profile = injuries.profile.duplicate()
+	injuries.profile.glass_laceration_chance = 1.0
 	player.get_node("Health").heal(100.0)
 	player.global_position = Vector3(-13.3, 0.1, -4)
 	player.movement.facing = PI * 0.5  # face -X (the window)
@@ -651,6 +655,94 @@ func _round7(inst: Node, player: Node3D, cam: Node3D, spawner: Node, hud: Node) 
 	if dn.sun_energy() >= day_energy * 0.5:
 		_problems.append("night not darker (%.2f vs %.2f)" % [dn.sun_energy(), day_energy])
 	await _shot("24_night")
+
+
+# --- Round 8: noise rings, window smash, shout, F4 sound debug ---------------
+func _round8(inst: Node, player: Node3D, _cam: Node3D, spawner: Node, hud: Node) -> void:
+	var tm: Node = root.get_node("TimeManager")
+	var sm: Node = root.get_node("SoundManager")
+	var rings: Node = inst.get_node("NoiseRings")
+	var house: Node = inst.get_node("Buildings/HouseA")
+	tm.set_time_of_day(13, 0)
+	for z in root.get_tree().get_nodes_in_group(&"zombie"):
+		z.queue_free()
+	await _frames(5)
+	player.get_node("Health").heal(100.0)
+	player.stats.set_value(&"stamina", 100.0)
+	# A loose group south of the house, facing away (+Z).
+	var spots := [Vector3(-12, 0, 7), Vector3(-8, 0, 9), Vector3(-3.5, 0, 6.5), Vector3(-15.5, 0, 10), Vector3(-6, 0, 13)]
+	var zs: Array = []
+	for p in spots:
+		var z: Node3D = spawner.spawn_at(p)
+		z.snap_facing(PI)
+		zs.append(z)
+	# Sprint east along the front of the house (real input: S + D at the
+	# 45° camera is +X), then smash the living-room window from outside.
+	var inj: Node = player.get_node("Injuries")
+	inj.injuries.clear()
+	inj.call(&"_changed")
+	player.global_position = Vector3(-14.5, 0.1, -0.6)
+	player.velocity = Vector3.ZERO
+	await _frames(10)
+	_press(&"sprint")
+	_press(&"move_back")
+	_press(&"move_right")
+	await _frames(75)
+	if rings.active_count() == 0 or not rings.active_radii().has(14.0):
+		_problems.append("no 14 m sprint rings (%s)" % str(rings.active_radii()))
+	_release(&"move_back")
+	_release(&"move_right")
+	_release(&"sprint")
+	await _frames(3)
+	player.global_position = Vector3(-7, 0.1, -1.0)
+	player.velocity = Vector3.ZERO
+	player.movement.facing = 0.0  # face -Z (the window)
+	await _frames(4)
+	var interaction: Node = player.get_node("Interaction")
+	var win: Node = null
+	for w in house.windows:
+		if (w.global_position - Vector3(-7, 0, -2)).length() < 0.3:
+			win = w
+	var tgt: Node = interaction.current_target
+	if tgt == null or (tgt != win and tgt.get_parent() != win):
+		_problems.append("living-room window not targeted for the smash (%s)" % str(interaction.current_target))
+	await _tap(&"action_2")  # [2] Smash window
+	await _frames(4)
+	# Slow motion for the shot: the ring (real-time animation at the
+	# renderer's ~7 fps under Xvfb) is caught mid-expansion.
+	Engine.time_scale = 0.05
+	await _frames(6)
+	if win == null or win.state != &"smashed":
+		_problems.append("window not smashed via key 5")
+	var radii: Array = rings.active_radii()
+	if not radii.has(20.0):
+		_problems.append("no 20 m ring for the smash (%s)" % str(radii))
+	var turned := 0
+	for z in zs:
+		if is_instance_valid(z) and z.state() == &"investigate":
+			turned += 1
+	if turned < 3:
+		_problems.append("only %d zombies reacted to the smash" % turned)
+	if not hud.noise_meter.is_loud():
+		_problems.append("HUD noise meter not LOUD after the smash")
+	await _shot("26_noise_rings")
+	Engine.time_scale = 1.0
+	# F4 debug overlay: every sound + hearing lines; shout (H) to call them.
+	await _frames(90)
+	await _tap(&"toggle_sound_debug")
+	await _frames(2)
+	if not root.get_node("GameManager").sound_debug:
+		_problems.append("F4 did not enable the sound debug overlay")
+	await _tap(&"shout")
+	await _frames(12)
+	var dbg: Node = inst.get_node("SoundDebug")
+	if dbg.drawn_circles == 0 or dbg.drawn_lines == 0:
+		_problems.append("debug overlay drew nothing (circles %d, lines %d)" % [dbg.drawn_circles, dbg.drawn_lines])
+	if sm.stats.events == 0:
+		_problems.append("SoundManager saw no events")
+	await _shot("27_debug_sound")
+	await _tap(&"toggle_sound_debug")
+	await _frames(2)
 
 
 func _right_click(p: Vector2) -> void:

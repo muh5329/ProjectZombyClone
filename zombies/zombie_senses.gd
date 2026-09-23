@@ -12,15 +12,17 @@ extends Node
 ## regardless of facing. While the target is in sight and the zombie is
 ## hostile, checks slow down to profile.chase_sense_interval.
 ##
-## Hearing: EventBus.sound_emitted within radius × hearing_sensitivity →
-## [signal sound_heard]; a wall / closed door between ear and sound halves
-## the radius (profile.hearing_wall_attenuation). Round 8 replaces this
-## with real propagation; the signal contract stays.
+## Hearing (Round 8): the senses node is a SoundManager listener (ear at
+## eye height, profile.hearing_sensitivity, 0 while disabled / dead).
+## SoundManager does the propagation (walls, doors, windows, openings)
+## and calls on_sound(); a heard sound → [signal sound_heard] with its
+## perceived strength. Registered in setup(), unregistered on death and
+## when leaving the tree (no stale listeners).
 ##
 ## The cone/range test is the pure static can_see() (unit-tested).
 
 signal target_seen(target: Node3D)
-signal sound_heard(position: Vector3, category: StringName)
+signal sound_heard(position: Vector3, category: StringName, strength: float, event: SoundEvent)
 
 ## Layers that block sight: 1 world + 7 doors + 8 window panes.
 @export_flags_3d_physics var los_mask: int = (1 << 0) | (1 << 6) | (1 << 7)
@@ -34,6 +36,8 @@ var last_seen_position: Vector3 = Vector3.ZERO
 var last_target_distance: float = INF
 ## Set by the last check: why the target was / was not seen (debug).
 var last_reason: StringName = &"none"
+## Last sound heard: {category, position, strength, path, time} (debug / tests).
+var last_heard: Dictionary = {}
 
 var _zombie: Zombie
 var _ray: PhysicsRayQueryParameters3D
@@ -49,7 +53,23 @@ func setup(z: Zombie) -> void:
 	_ray.collision_mask = los_mask
 	_ray.collide_with_areas = false
 	_ray.exclude = [_zombie.get_rid()]
-	EventBus.sound_emitted.connect(_on_sound_emitted)
+	if is_inside_tree():
+		SoundManager.register_listener(self)
+
+
+func _enter_tree() -> void:
+	if _zombie != null and not _zombie.dead:
+		SoundManager.register_listener(self)
+
+
+func _exit_tree() -> void:
+	SoundManager.unregister_listener(self)
+
+
+## Stop hearing for good (death).
+func stop_listening() -> void:
+	enabled = false
+	SoundManager.unregister_listener(self)
 
 
 ## Seconds until the next check (calm rate, or the slower chase rate while
@@ -172,21 +192,26 @@ func has_line_of_sight(from: Vector3, to: Vector3, target: Node = null) -> bool:
 	return col == null or col == target
 
 
-## [source] is untyped: the emitter may already be freed by the time a
-## queued signal arrives.
-func _on_sound_emitted(position: Vector3, radius: float, _intensity: float, category: StringName, source: Variant) -> void:
+# --- SoundManager listener contract ------------------------------------------------
+
+func sound_ear_position() -> Vector3:
+	return _zombie.eye_position() if _zombie != null and is_instance_valid(_zombie) else Vector3(1e6, 0.0, 1e6)
+
+
+func sound_sensitivity() -> float:
+	if not enabled or _zombie == null or _zombie.dead:
+		return 0.0
+	return _zombie.profile.hearing_sensitivity
+
+
+func sound_owner() -> Object:
+	return _zombie
+
+
+func on_sound(event: SoundEvent, info: Dictionary) -> void:
 	if not enabled or _zombie == null or _zombie.dead:
 		return
-	if source is Object and is_instance_valid(source) and source == _zombie:
-		return
-	var r := radius * _zombie.profile.hearing_sensitivity
-	var d := _zombie.global_position - position
-	d.y = 0.0
-	if d.length_squared() > r * r:
-		return
-	# A wall / closed door between the ear and the sound muffles it.
-	if not has_line_of_sight(_zombie.eye_position(), position + Vector3.UP * 1.0):
-		r *= _zombie.profile.hearing_wall_attenuation
-		if d.length_squared() > r * r:
-			return
-	sound_heard.emit(position, category)
+	last_heard = {"category": event.category, "position": event.position,
+		"strength": float(info.get("strength", 0.0)), "path": info.get("path", &"direct"),
+		"time": SoundManager.now()}
+	sound_heard.emit(event.position, event.category, float(info.get("strength", 0.0)), event)

@@ -288,10 +288,12 @@ func test_number_key_selects_alternative_action() -> void:
 	var r := interaction.perform_index(1)
 	check(r.ok, "index 1 performed")
 	check_eq(win.state, &"smashed", "smashed via alternative action")
-	r = interaction.perform_index(3)
+	check_eq(interaction.current_actions.size(), 2, "smashed: climb + remove glass (open / close hidden)")
+	r = interaction.perform_index(4)
 	check(not r.ok, "out-of-range index refused")
 	var disabled := interaction.perform_action(&"open")
-	check(not disabled.ok and disabled.reason == "Frame is smashed", "disabled action refused with reason")
+	check(not disabled.ok, "open on a smashed frame refused (%s)" % str(disabled))
+	check(not interaction.current_actions.any(func(a): return a.id == &"open"), "…and no longer listed")
 
 
 func test_hud_prompt_reflects_actions() -> void:

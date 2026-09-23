@@ -58,6 +58,19 @@ var rng := RandomNumberGenerator.new()
 var last_known_position: Vector3 = Vector3.ZERO
 ## Where a heard sound came from (investigate).
 var investigate_position: Vector3 = Vector3.ZERO
+## Round 8 hearing: strength (0..1) of the sound being investigated and
+## the AI time it was heard (priority), whether it was loud (investigate
+## at chase speed), whether the zombie first pauses to turn toward a faint
+## one, and how many moans relayed it (hordes).
+var sound_strength: float = 0.0
+var sound_time: float = -INF
+var investigate_loud: bool = false
+var investigate_pause: bool = false
+var sound_hops: int = 0
+## Category of the sound being investigated (&"shout" lures search longer).
+var investigate_category: StringName = &""
+## AI time of the last zombie_moan.
+var last_moan_time: float = -INF
 ## Seconds of target memory left once out of sight.
 var memory_left: float = 0.0
 ## Breakable obstacle found in the path (attack_door). Duck-typed.
@@ -182,16 +195,74 @@ func _on_target_seen(t: Node3D) -> void:
 	machine.change_to(S_CHASE)
 
 
-func _on_sound_heard(position: Vector3, _category: StringName) -> void:
+## A sound reached this zombie with [strength] (0..1, SoundMath.perceived).
+## Calm zombies investigate it; an investigating one switches only to a
+## sound at least as strong as its current one (which fades over time).
+## Loud (≥ profile.loud_sound_strength) → investigate at chase speed;
+## faint → turn toward it, pause, then shamble. A zombie_moan carries a
+## lure: the moaner's own investigate target (hordes follow the noise,
+## not each other). Chasing / attacking zombies ignore sounds.
+func _on_sound_heard(position: Vector3, _category: StringName, strength: float = 0.3, event: SoundEvent = null) -> void:
 	if zombie.dead:
 		return
 	var s := state_id()
-	if s == S_IDLE or s == S_WANDER or s == S_SEARCH or s == S_INVESTIGATE:
-		investigate_position = position
-		if s == S_INVESTIGATE:
-			set_destination(position)
-		else:
-			machine.change_to(S_INVESTIGATE)
+	if not (s == S_IDLE or s == S_WANDER or s == S_SEARCH or s == S_INVESTIGATE):
+		return
+	if s == S_INVESTIGATE and not SoundMath.should_retarget(sound_strength, _time - sound_time,
+			strength, profile().sound_priority_decay):
+		return
+	var goal := position
+	var hops := 0
+	if event != null and event.extras.has(&"lure"):
+		goal = event.extras[&"lure"]
+		hops = int(event.extras.get(&"hops", 1))
+	var loud := strength >= profile().loud_sound_strength
+	investigate_category = event.category if event != null else _category
+	if s == S_INVESTIGATE:
+		# Re-targeting never downgrades: a loud investigation stays loud
+		# and a moan relay never raises the hop count of a first-hand one.
+		var decayed := sound_strength - (_time - sound_time) * profile().sound_priority_decay
+		investigate_position = goal
+		sound_strength = maxf(strength, decayed)
+		sound_time = _time
+		sound_hops = mini(sound_hops, hops)
+		investigate_loud = investigate_loud or loud
+		set_destination(goal)
+		return
+	investigate_position = goal
+	sound_strength = strength
+	sound_time = _time
+	sound_hops = hops
+	investigate_loud = loud
+	investigate_pause = not investigate_loud
+	zombie.face_toward(position)
+	machine.change_to(S_INVESTIGATE)
+
+
+## Investigating zombies moan every profile.moan_cooldown seconds; the
+## moan (6 m) lures neighbours to the same spot. Relays stop after
+## profile.moan_max_hops. Called by the investigate state.
+## Moans go through SoundManager.queue_sound: a whole crowd starting to
+## investigate at once moans over several frames, not in one spike.
+func maybe_moan() -> bool:
+	if sound_hops >= profile().moan_max_hops or _time - last_moan_time < profile().moan_cooldown:
+		return false
+	last_moan_time = _time
+	SoundManager.queue_sound(&"zombie_moan", zombie.global_position, zombie,
+		{"lure": investigate_position, "hops": sound_hops + 1})
+	return true
+
+
+## Investigate [p] without a sound (hit by something, lost target): no
+## pause, shamble speed, lowest priority for the next sound.
+func investigate_quietly(p: Vector3) -> void:
+	investigate_position = p
+	sound_strength = 0.0
+	sound_time = _time
+	sound_hops = 0
+	investigate_loud = false
+	investigate_pause = false
+	investigate_category = &""
 
 
 ## Hit by [source] for [dmg] (after multipliers). info.knockdown floors
@@ -221,7 +292,7 @@ func on_damaged(source: Node, dmg: float, info: Dictionary = {}) -> void:
 		zombie.face_toward(p)
 		var s := state_id()
 		if s == S_IDLE or s == S_WANDER or s == S_SEARCH or s == S_INVESTIGATE:
-			investigate_position = p
+			investigate_quietly(p)
 			if s == S_INVESTIGATE:
 				set_destination(p)
 			else:

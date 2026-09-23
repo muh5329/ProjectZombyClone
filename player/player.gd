@@ -40,6 +40,17 @@ func _exit_tree() -> void:
 	GameManager.unregister_player(self)
 
 
+## Worn footwear (an equipped item tagged &"shoes") protects against
+## broken glass (GlassShards). No shoes exist yet: barefoot-ish survivor.
+func has_foot_protection() -> bool:
+	if equipment == null:
+		return false
+	for it in equipment.equipped_items():
+		if it != null and it.data != null and it.data.has_tag(&"shoes"):
+			return true
+	return false
+
+
 func _ready() -> void:
 	super._ready()
 	if profile:

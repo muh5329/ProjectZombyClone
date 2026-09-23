@@ -57,6 +57,8 @@ var _idle: bool = true
 var action_bar: ProgressBar
 ## Carried weight readout ("Carrying 12.4 / 8 kg — Heavy load"), state-coloured.
 var weight_label: Label
+## Round 8: radius of the player's last noise vs the "loud" line.
+var noise_meter: NoiseMeter
 ## Bottom-centre quick-equip bar (keys 1-3).
 var hotbar: HotbarWidget
 var _enc_state: StringName = &""
@@ -71,7 +73,7 @@ var _sleep_tween: Tween
 ## "Eating" / "Bandaging" / "Sleeping"… while busy ("" otherwise).
 var _busy_label: String = ""
 const BUSY_LABELS := {&"eat": "Eating", &"bandage": "Bandaging", &"sleep": "Sleeping",
-	&"search": "Searching", &"rest": "Resting", &"climb": "Climbing"}
+	&"search": "Searching", &"rest": "Resting", &"climb": "Climbing", &"clear_glass": "Clearing glass"}
 
 
 func _ready() -> void:
@@ -112,9 +114,12 @@ func _ready() -> void:
 	EventBus.rest_started.connect(_on_rest_started)
 	EventBus.rest_ended.connect(_on_rest_ended)
 	EventBus.time_speed_changed.connect(_on_time_speed_changed)
+	EventBus.shouted.connect(_on_shouted)
+	EventBus.hazard_hurt.connect(_on_hazard_hurt)
 	_build_survival()
 	_build_action_bar()
 	_build_weight_label()
+	_build_noise_meter()
 	_build_hotbar()
 	charge_bar.visible = false
 	bandage_bar.visible = false
@@ -123,7 +128,7 @@ func _ready() -> void:
 	health_bar.modulate = COL_HEALTH
 	health_label.add_theme_color_override(&"font_color", Color.WHITE)
 	_set_flash(0.0)
-	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 4-7 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · 1-3 hotbar · B bandage · Tab inventory · G drop · Q/R rotate · Wheel zoom · F5-F8 time speed · F3 debug"
+	hint_label.text = "WASD move · Shift sprint · Ctrl sneak · Alt walk · E interact · 4-7 actions · LMB attack (hold: charge) · RMB aim · Space shove · X weapon · 1-3 hotbar · B bandage · Tab inventory · G drop · Q/R rotate · Wheel zoom · F5-F8 time speed · H shout · F3 debug · F4 sound debug"
 	aim_label.text = ""
 	_on_weapon_changed(GameManager.player, {"name": "Fists", "max_condition": 0})
 	_refresh_body()
@@ -387,6 +392,22 @@ func _build_weight_label() -> void:
 		_enc_state = enc.state
 	else:
 		weight_label.text = ""
+
+
+func _build_noise_meter() -> void:
+	noise_meter = NoiseMeter.new()
+	stamina_bar.get_parent().add_child(noise_meter)
+
+
+func _on_shouted(c: Node, ok: bool, reason: String) -> void:
+	if not _is_player(c):
+		return
+	_notice("You shout!" if ok else reason, 1.2)
+
+
+func _on_hazard_hurt(c: Node, hazard: StringName, _region: StringName) -> void:
+	if _is_player(c) and hazard == &"glass":
+		_notice("Stepped on broken glass!", 1.8)
 
 
 func _build_hotbar() -> void:

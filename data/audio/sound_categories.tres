@@ -1,0 +1,201 @@
+[gd_resource type="Resource" script_class="SoundCategoryTable" load_steps=27 format=3 uid="uid://c0soundcats001"]
+
+[ext_resource type="Script" path="res://audio/sound_category_table.gd" id="1_table"]
+[ext_resource type="Script" path="res://audio/sound_category.gd" id="2_cat"]
+
+[sub_resource type="Resource" id="c0"]
+script = ExtResource("2_cat")
+id = &"footstep_sneak"
+radius = 2.0
+intensity = 0.1
+duration = 0.6
+note = "Sneaking footstep (1 Hz while moving)"
+
+[sub_resource type="Resource" id="c1"]
+script = ExtResource("2_cat")
+id = &"footstep_walk"
+radius = 4.0
+intensity = 0.2
+duration = 0.6
+note = "Walking footstep"
+
+[sub_resource type="Resource" id="c2"]
+script = ExtResource("2_cat")
+id = &"footstep_jog"
+radius = 8.0
+intensity = 0.35
+duration = 0.6
+note = "Jogging footstep"
+
+[sub_resource type="Resource" id="c3"]
+script = ExtResource("2_cat")
+id = &"footstep_sprint"
+radius = 14.0
+intensity = 0.6
+duration = 0.6
+note = "Sprinting footstep"
+
+[sub_resource type="Resource" id="c4"]
+script = ExtResource("2_cat")
+id = &"door_open"
+radius = 6.0
+intensity = 0.3
+duration = 0.8
+note = "Door swung open"
+
+[sub_resource type="Resource" id="c5"]
+script = ExtResource("2_cat")
+id = &"door_close"
+radius = 8.0
+intensity = 0.4
+duration = 0.8
+note = "Door shut"
+
+[sub_resource type="Resource" id="c6"]
+script = ExtResource("2_cat")
+id = &"door_bang"
+radius = 12.0
+intensity = 0.7
+duration = 1.0
+note = "Zombie banging on a door (recruits others)"
+
+[sub_resource type="Resource" id="c7"]
+script = ExtResource("2_cat")
+id = &"door_break"
+radius = 18.0
+intensity = 1.0
+duration = 1.5
+note = "Door broken down"
+
+[sub_resource type="Resource" id="c8"]
+script = ExtResource("2_cat")
+id = &"window_open"
+radius = 5.0
+intensity = 0.3
+duration = 0.8
+note = "Window slid open"
+
+[sub_resource type="Resource" id="c9"]
+script = ExtResource("2_cat")
+id = &"window_close"
+radius = 5.0
+intensity = 0.3
+duration = 0.8
+note = "Window slid shut"
+
+[sub_resource type="Resource" id="c10"]
+script = ExtResource("2_cat")
+id = &"window_smash"
+radius = 20.0
+intensity = 1.0
+duration = 1.5
+note = "Glass smashed — the loudest thing a survivor can do (so far)"
+
+[sub_resource type="Resource" id="c11"]
+script = ExtResource("2_cat")
+id = &"melee_swing"
+radius = 4.0
+intensity = 0.2
+duration = 0.5
+note = "Weapon swung (hit or miss)"
+
+[sub_resource type="Resource" id="c12"]
+script = ExtResource("2_cat")
+id = &"melee_hit"
+radius = 7.0
+intensity = 0.5
+duration = 0.8
+note = "Weapon connected (weapons override with their own noise radius)"
+
+[sub_resource type="Resource" id="c13"]
+script = ExtResource("2_cat")
+id = &"shove"
+radius = 5.0
+intensity = 0.3
+duration = 0.6
+note = "Shove connected"
+
+[sub_resource type="Resource" id="c14"]
+script = ExtResource("2_cat")
+id = &"rummage"
+radius = 3.0
+intensity = 0.2
+duration = 1.0
+note = "Rummaging in a container"
+
+[sub_resource type="Resource" id="c15"]
+script = ExtResource("2_cat")
+id = &"eat"
+radius = 1.5
+intensity = 0.1
+duration = 1.0
+note = "Eating / drinking"
+
+[sub_resource type="Resource" id="c16"]
+script = ExtResource("2_cat")
+id = &"bottle_fill"
+radius = 4.0
+intensity = 0.2
+duration = 1.0
+note = "Filling bottles at a tap"
+
+[sub_resource type="Resource" id="c17"]
+script = ExtResource("2_cat")
+id = &"shout"
+radius = 20.0
+intensity = 0.9
+duration = 1.2
+note = "Player shout (H): deliberately lure zombies"
+
+[sub_resource type="Resource" id="c18"]
+script = ExtResource("2_cat")
+id = &"zombie_moan"
+radius = 6.0
+intensity = 0.25
+duration = 1.0
+note = "An investigating zombie moans: recruits neighbours (hordes)"
+
+[sub_resource type="Resource" id="c19"]
+script = ExtResource("2_cat")
+id = &"alarm"
+radius = 60.0
+intensity = 1.0
+duration = 10.0
+note = "House / car alarm (future)"
+
+[sub_resource type="Resource" id="c20"]
+script = ExtResource("2_cat")
+id = &"gunshot"
+radius = 60.0
+intensity = 1.0
+duration = 1.5
+note = "Firearm (future)"
+
+[sub_resource type="Resource" id="c21"]
+script = ExtResource("2_cat")
+id = &"generator"
+radius = 25.0
+intensity = 0.5
+duration = 5.0
+note = "Running generator (future)"
+
+[sub_resource type="Resource" id="c22"]
+script = ExtResource("2_cat")
+id = &"vehicle"
+radius = 30.0
+intensity = 0.7
+duration = 2.0
+note = "Engine / horn (future)"
+
+[sub_resource type="Resource" id="c23"]
+script = ExtResource("2_cat")
+id = &"glass_clear"
+radius = 3.0
+intensity = 0.2
+duration = 1.0
+note = "Picking broken glass out of a window frame"
+
+[resource]
+script = ExtResource("1_table")
+player_loud_radius = 10.0
+categories = Array[ExtResource("2_cat")]([SubResource("c0"), SubResource("c1"), SubResource("c2"), SubResource("c3"), SubResource("c4"), SubResource("c5"), SubResource("c6"), SubResource("c7"), SubResource("c8"), SubResource("c9"), SubResource("c10"), SubResource("c11"), SubResource("c12"), SubResource("c13"), SubResource("c14"), SubResource("c15"), SubResource("c16"), SubResource("c17"), SubResource("c18"), SubResource("c19"), SubResource("c20"), SubResource("c21"), SubResource("c22"), SubResource("c23")])

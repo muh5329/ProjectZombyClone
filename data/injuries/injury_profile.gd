@@ -24,8 +24,9 @@ extends Resource
 	&"left_hand": 0.2, &"right_hand": 0.2, &"left_arm": 0.15, &"right_arm": 0.15,
 	&"left_leg": 0.15, &"right_leg": 0.15,
 }
-## Chance a smashed-window climb lacerates (1 until "clear glass" exists).
-@export_range(0.0, 1.0) var glass_laceration_chance: float = 1.0
+## Chance a climb through a smashed window that still has glass in it
+## lacerates (Round 8: "Remove broken glass" makes the climb safe).
+@export_range(0.0, 1.0) var glass_laceration_chance: float = 0.4
 ## Immediate damage of a glass cut.
 @export var glass_damage: float = 4.0
 

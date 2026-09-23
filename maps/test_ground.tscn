@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://c0testground0001"]
+[gd_scene load_steps=27 format=3 uid="uid://c0testground0001"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://camera/isometric_camera.gd" id="2_cam"]
@@ -20,6 +20,8 @@
 [ext_resource type="PackedScene" path="res://ui/inventory/loot_window.tscn" id="18_lootwin"]
 [ext_resource type="Resource" path="res://data/items/containers/backpack.tres" id="19_backpack"]
 [ext_resource type="Script" path="res://world/day_night_lighting.gd" id="20_daynight"]
+[ext_resource type="Script" path="res://effects/noise_rings.gd" id="21_rings"]
+[ext_resource type="Script" path="res://effects/sound_debug_overlay.gd" id="22_sdebug"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
 size = Vector3(200, 1, 200)
@@ -163,6 +165,12 @@ item_data = ExtResource("19_backpack")
 
 [node name="BloodDecals" type="Node3D" parent="."]
 script = ExtResource("14_blood")
+
+[node name="NoiseRings" type="Node3D" parent="."]
+script = ExtResource("21_rings")
+
+[node name="SoundDebug" type="Node3D" parent="."]
+script = ExtResource("22_sdebug")
 
 [node name="NavRegion" type="NavigationRegion3D" parent="."]
 script = ExtResource("9_nav")

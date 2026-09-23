@@ -286,10 +286,11 @@ func _transition(n: Node, target: StringName) -> void:
 			var holder := [n, meshes]
 			tw.finished.connect(func():
 				if state_of(holder[0]) == STATE_FULL:
-					for mi: MeshInstance3D in holder[1]:
-						if is_instance_valid(mi) and mi.has_meta(&"occl_base_alpha"):
-							mi.material_override = null
-							mi.remove_meta(&"occl_base_alpha"))
+					# Untyped: a cached mesh may have been freed meanwhile.
+					for mv: Variant in holder[1]:
+						if is_instance_valid(mv) and (mv as MeshInstance3D).has_meta(&"occl_base_alpha"):
+							(mv as MeshInstance3D).material_override = null
+							(mv as MeshInstance3D).remove_meta(&"occl_base_alpha"))
 		STATE_STUB:
 			if visual:
 				visual.visible = true
@@ -311,9 +312,10 @@ func _transition(n: Node, target: StringName) -> void:
 ## Tween each mesh instance's alpha towards base_alpha * [alpha_scale]
 ## through a per-instance material override.
 func _fade_to(meshes: Array, tw: Tween, alpha_scale: float) -> void:
-	for mi: MeshInstance3D in meshes:
-		if not is_instance_valid(mi):
+	for mv: Variant in meshes:
+		if not is_instance_valid(mv):
 			continue
+		var mi := mv as MeshInstance3D
 		var m := _fade_material(mi)
 		if m == null:
 			continue

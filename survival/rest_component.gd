@@ -9,8 +9,11 @@ extends Node
 ##   TimeManager.begin_sleep() (Engine.time_scale up so zombies keep
 ##   simulating, plus a game-time skip: 8 h ≈ 8 real s). Wakes up when
 ##   fatigue reaches 0 ("" reason), on damage ("Woken: under attack!"), a
-##   noise within [wake_noise_radius] m or a zombie within
-##   [wake_zombie_radius] (10) m ("Woken by noise!"), or after the real-time cap.
+##   sound whose propagated strength at the ear reaches the needs
+##   profile's wake_sound_strength (Round 8: the sleeper is a SoundManager
+##   listener, so walls and closed doors muffle) or a zombie within
+##   [wake_zombie_radius] (10) m with a clear line of sight ("Woken by
+##   noise!"), or after the real-time cap.
 ##   Refused while bleeding. Wounds get the skipped game time too (heal
 ##   over the night).
 ## - rest(furniture): sit / lie awake (&"rest": stamina regen ×3 via the
@@ -31,12 +34,11 @@ const WOKEN_ATTACK := "Woken: under attack!"
 
 ## No sleeping with a zombie this close (or while chased).
 @export var danger_radius: float = 15.0
-## A sound this close (from anything but the sleeper) wakes you.
-@export var wake_noise_radius: float = 8.0
-## A zombie this close wakes you (10 m: one shambling at the front door
-## of a small house wakes a sleeper in any room — an investigating zombie
-## stops ~1 m short of the point it heard).
+## A zombie this close AND in sight (eye to eye on layers 1+7+8) wakes you.
 @export var wake_zombie_radius: float = 10.0
+## Used when the character has no needs profile.
+const DEFAULT_WAKE_STRENGTH := 0.1
+const SIGHT_MASK := (1 << 0) | (1 << 6) | (1 << 7)
 
 var character: Character
 var sleeping: bool = false
@@ -45,6 +47,9 @@ var resting: bool = false
 var furniture: Node = null
 var last_wake_reason: String = ""
 var _check_accum: float = 0.0
+var _sight_ray: PhysicsRayQueryParameters3D
+## The last sound that reached the sleeper: {category, strength} (tests).
+var last_sound: Dictionary = {}
 
 
 func _ready() -> void:
@@ -189,8 +194,8 @@ func _end_rest(reason: String) -> void:
 func _connect() -> void:
 	if not EventBus.time_advanced.is_connected(_on_time_advanced):
 		EventBus.time_advanced.connect(_on_time_advanced)
-	if not EventBus.sound_emitted.is_connected(_on_sound):
-		EventBus.sound_emitted.connect(_on_sound)
+	if sleeping and not SoundManager.is_listening(self):
+		SoundManager.register_listener(self)
 	if not EventBus.character_damaged.is_connected(_on_damaged):
 		EventBus.character_damaged.connect(_on_damaged)
 	if not EventBus.health_drained.is_connected(_on_drained):
@@ -198,12 +203,12 @@ func _connect() -> void:
 
 
 func _disconnect() -> void:
+	if not sleeping:
+		SoundManager.unregister_listener(self)
 	if sleeping or resting:
 		return
 	if EventBus.time_advanced.is_connected(_on_time_advanced):
 		EventBus.time_advanced.disconnect(_on_time_advanced)
-	if EventBus.sound_emitted.is_connected(_on_sound):
-		EventBus.sound_emitted.disconnect(_on_sound)
 	if EventBus.character_damaged.is_connected(_on_damaged):
 		EventBus.character_damaged.disconnect(_on_damaged)
 	if EventBus.health_drained.is_connected(_on_drained):
@@ -224,17 +229,56 @@ func _on_time_advanced(from_minute: float, to_minute: float) -> void:
 	character.injuries.tick(equivalent * (1.0 - cfg.minutes_per_second / per_scaled_second))
 
 
-func _on_sound(position: Vector3, radius: float, _intensity: float, _category: StringName, source: Variant) -> void:
-	if not sleeping or character == null:
+# --- SoundManager listener (only while asleep) ---------------------------------
+
+func sound_ear_position() -> Vector3:
+	if character == null or not is_instance_valid(character):
+		return Vector3(1e6, 0.0, 1e6)
+	return character.global_position + Vector3.UP * character.eye_height()
+
+
+func sound_sensitivity() -> float:
+	return 1.0 if sleeping and character != null and not character.is_dead() else 0.0
+
+
+func sound_owner() -> Object:
+	return character
+
+
+func wake_strength() -> float:
+	var n := _needs()
+	return n.profile.wake_sound_strength if n != null and n.profile != null else DEFAULT_WAKE_STRENGTH
+
+
+func on_sound(event: SoundEvent, info: Dictionary) -> void:
+	if not sleeping:
 		return
-	if source is Object and is_instance_valid(source) and source == character:
-		return
-	var d := position - character.global_position
-	d.y = 0.0
-	# Anything audible that close wakes you (a sound whose own radius does
-	# not even reach the sleeper does not).
-	if d.length() <= minf(wake_noise_radius, maxf(radius, 0.0)):
+	var st := float(info.get("strength", 0.0))
+	last_sound = {"category": event.category, "strength": st}
+	if st >= wake_strength():
 		wake(WOKEN_NOISE)
+
+
+## A living zombie within [wake_zombie_radius] with a clear eye-to-eye line.
+func zombie_in_sight() -> bool:
+	if character == null or not character.is_inside_tree():
+		return false
+	var space := character.get_world_3d().direct_space_state
+	var eye := sound_ear_position()
+	if _sight_ray == null:
+		_sight_ray = PhysicsRayQueryParameters3D.new()
+		_sight_ray.collision_mask = SIGHT_MASK
+	for z in get_tree().get_nodes_in_group(&"zombie"):
+		if not z is Node3D or not is_instance_valid(z) or (z.has_method(&"is_dead") and z.is_dead()):
+			continue
+		var zp := (z as Node3D).global_position
+		if Vector2(zp.x - eye.x, zp.z - eye.z).length() > wake_zombie_radius:
+			continue
+		_sight_ray.from = zp + Vector3.UP * 1.5
+		_sight_ray.to = eye
+		if space == null or space.intersect_ray(_sight_ray).is_empty():
+			return true
+	return false
 
 
 ## Starving / dying of thirst / food poisoning hurts: you wake up
@@ -290,8 +334,7 @@ func _physics_process(delta: float) -> void:
 	if _check_accum < 0.25:
 		return
 	_check_accum = 0.0
-	if Danger.is_chased(get_tree(), character) \
-			or Danger.nearest_zombie_distance(get_tree(), character.global_position) <= wake_zombie_radius:
+	if Danger.is_chased(get_tree(), character) or zombie_in_sight():
 		wake(WOKEN_NOISE)
 
 

@@ -351,8 +351,8 @@ func test_sleep_interrupted_by_zombie_noise() -> void:
 	check(rest.sleep(null).ok, "asleep")
 	await physics_frames(30)
 	check(rest.sleeping, "still asleep")
-	# A zombie bangs on the front door 6 m away.
-	EventBus.sound_emitted.emit(player.global_position + Vector3(0, 0, 6), 10.0, 1.0, &"door", null)
+	# A loud bang in the bedroom, 2 m away.
+	SoundManager.emit_sound(&"door_bang", player.global_position + Vector3(-1.5, 0, 1.2), null, {"radius": 10.0})
 	await physics_frames(2)
 	check(not rest.sleeping, "woke")
 	check_eq(rest.last_wake_reason, "Woken by noise!", "reason")
@@ -360,7 +360,7 @@ func test_sleep_interrupted_by_zombie_noise() -> void:
 	check_near(Engine.time_scale, 1.0, 0.001, "engine normal")
 	# Far noise does not wake.
 	check(rest.sleep(null).ok, "asleep again")
-	EventBus.sound_emitted.emit(player.global_position + Vector3(30, 0, 0), 14.0, 1.0, &"footstep", null)
+	SoundManager.emit_sound(&"footstep_sprint", player.global_position + Vector3(30, 0, 0))
 	await physics_frames(2)
 	check(rest.sleeping, "far noise ignored")
 	# Getting hit wakes you.
@@ -631,18 +631,80 @@ func test_balance_house_a_food_lasts_days() -> void:
 	cfg.world_seed = 1337
 
 
-func test_zombie_reaches_the_house_while_you_sleep() -> void:
+func _idle_zombie(at: Vector3) -> Zombie:
+	var z := spawner.spawn_at(at)
+	z.profile = z.profile.duplicate()
+	z.profile.idle_time_min = 999.0
+	z.profile.idle_time_max = 999.0
+	z.ai.machine.change_to(&"idle", true)
+	await physics_frames(3)
+	return z
+
+
+func _bedroom_door() -> Door:
+	var house: HouseBlockout = scene.get_node("Buildings/HouseA")
+	for d in house.doors:
+		if (d.sound_opening_center() - Vector3(-12, 0, -6)).length() < 0.3:
+			return d
+	return null
+
+
+func test_zombie_banging_the_bedroom_door_wakes_the_sleeper() -> void:
 	needs.set_need(&"fatigue", 90.0)
+	await _at_bed()
+	var door := _bedroom_door()
+	check(door != null and door.state == &"closed", "bedroom door closed")
+	check(rest.sleep(null).ok, "asleep")
+	check(SoundManager.is_listening(rest), "the sleeper listens through SoundManager")
+	var z := await _idle_zombie(Vector3(-12, 0, -5.2))  # living room, at the door
+	await physics_frames(2)
+	check(rest.sleeping, "a zombie behind the closed door does not wake you by itself (no line of sight)")
+	door.take_damage(8.0, z)
+	await physics_frames(2)
+	check(not rest.sleeping, "the bang wakes you")
+	check_eq(rest.last_wake_reason, "Woken by noise!", "reason")
+	check_eq(rest.last_sound.get("category"), &"door_bang", "woken by the bang")
+	check_gt(float(rest.last_sound.get("strength", 0.0)), needs.profile.wake_sound_strength, "strength over the threshold")
+	check(not SoundManager.is_listening(rest), "stops listening when awake")
+
+
+func test_zombie_behind_walls_9m_away_does_not_wake() -> void:
+	needs.set_need(&"fatigue", 90.0)
+	await _at_bed()
+	check(rest.sleep(null).ok, "asleep")
+	var z := await _idle_zombie(Vector3(-20.5, 0, -11))  # outside, beyond the west wall
+	var d := Vector2(z.global_position.x - player.global_position.x, z.global_position.z - player.global_position.z).length()
+	check(d < 10.0, "within the old 10 m wake radius (%.1f m)" % d)
+	SoundManager.emit_sound(&"zombie_moan", z.global_position, z)
+	SoundManager.emit_sound(&"footstep_walk", z.global_position, z)
+	await physics_frames(60)
+	check(rest.sleeping, "walls: no line of sight, its sounds don't reach")
+	z.global_position = player.global_position + Vector3(2.0, 0, 0.6)  # in the bedroom, in view
+	await physics_frames(30)
+	check(not rest.sleeping, "a zombie in sight within 10 m wakes you")
+
+
+func test_zombie_reaches_the_house_while_you_sleep() -> void:
+	# Round 8: a zombie only wakes you once it can see you (or you hear it
+	# through the walls). Front and bedroom doors are open; it heard
+	# something by the bedroom door, walks in and sees the sleeper.
+	needs.set_need(&"fatigue", 90.0)
+	var house: HouseBlockout = scene.get_node("Buildings/HouseA")
+	for d in house.doors:
+		if (d.global_position - Vector3(-11.45, 0, -2)).length() < 0.2:
+			d.open_door(null)
+	_bedroom_door().open_door(null)
+	await physics_frames(30)
 	await _at_bed()
 	var z := spawner.spawn_at(Vector3(-11.0, 0, 22.0))
 	await physics_frames(3)
 	var start: Vector3 = z.global_position
 	check(rest.sleep(null).ok, "asleep (zombie %.0f m away)" % start.distance_to(player.global_position))
 	var t0 := TimeManager.now()
-	# It heard something at the front door the sleeper did not.
-	z.get_node("AI").call(&"_on_sound_heard", Vector3(-11.0, 0, -1.3), &"door")
+	z.get_node("AI").call(&"_on_sound_heard", Vector3(-12.0, 0, -5.0), &"door")
 	check(await wait_physics_until(func(): return not rest.sleeping, 1500), "woken")
 	check_eq(rest.last_wake_reason, "Woken by noise!", "woken by the zombie")
-	check_gt(start.distance_to(z.global_position), 12.0, "the zombie walked to the house during the sleep")
-	check_lt(Danger.nearest_zombie_distance(tree, player.global_position), 10.5, "it is at the door")
+	check_gt(start.distance_to(z.global_position), 12.0, "the zombie walked into the house during the sleep")
+	check_lt(Danger.nearest_zombie_distance(tree, player.global_position), 10.5, "it came within 10 m (in sight)")
 	check_lt(TimeManager.now() - t0, 180.0, "within the night")
+

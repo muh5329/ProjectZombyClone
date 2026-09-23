@@ -9,7 +9,7 @@ func enter(_from: StringName) -> void:
 	ai.release_attack_slot()
 	zombie.target = null
 	ai.memory_left = 0.0
-	ai.investigate_position = ai.last_known_position
+	ai.investigate_quietly(ai.last_known_position)
 
 
 func update(_delta: float) -> StringName:

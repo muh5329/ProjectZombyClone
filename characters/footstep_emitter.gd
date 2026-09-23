@@ -1,15 +1,19 @@
 class_name FootstepEmitter
 extends Node
-## Emits EventBus.sound_emitted footsteps for the parent Character at
-## [rate_hz] while it moves. Radius depends on the effective movement mode
-## (sneak 2 m, walk 4 m, jog 8 m, sprint 14 m). Round 8 turns these into
-## real sound propagation; zombies already hear them (ZombieSenses).
+## Footstep sounds (SoundManager) for the parent Character at [rate_hz]
+## while it moves. The category follows the effective movement mode —
+## footstep_sneak / _walk / _jog / _sprint (2 / 4 / 8 / 14 m in
+## data/audio/sound_categories.tres) — and the radius is scaled by
+## [radius_multipliers] (encumbrance: heavy loads clank).
 
 @export var rate_hz: float = 1.0
-@export var radius_sneak: float = 2.0
-@export var radius_walk: float = 4.0
-@export var radius_jog: float = 8.0
-@export var radius_sprint: float = 14.0
+
+const CATEGORIES := {
+	MovementComponent.Mode.SNEAK: &"footstep_sneak",
+	MovementComponent.Mode.WALK: &"footstep_walk",
+	MovementComponent.Mode.JOG: &"footstep_jog",
+	MovementComponent.Mode.SPRINT: &"footstep_sprint",
+}
 
 ## Radius multipliers keyed by source (&"encumbrance": heavy loads clank).
 var radius_multipliers: Dictionary = {}
@@ -35,14 +39,13 @@ func multiplier() -> float:
 	return m
 
 
+static func category_for(mode: MovementComponent.Mode) -> StringName:
+	return CATEGORIES.get(mode, &"footstep_jog")
+
+
 ## Footstep radius for [mode], including the multipliers.
 func radius_for(mode: MovementComponent.Mode) -> float:
-	var r := radius_jog
-	match mode:
-		MovementComponent.Mode.SNEAK: r = radius_sneak
-		MovementComponent.Mode.WALK: r = radius_walk
-		MovementComponent.Mode.SPRINT: r = radius_sprint
-	return r * multiplier()
+	return SoundManager.category_radius(category_for(mode)) * multiplier()
 
 
 func _physics_process(delta: float) -> void:
@@ -54,5 +57,5 @@ func _physics_process(delta: float) -> void:
 	if _accum < period:
 		return
 	_accum -= period
-	var r := radius_for(_character.effective_mode)
-	EventBus.sound_emitted.emit(_character.global_position, r, minf(r / radius_sprint, 1.0), &"footstep", _character)
+	var mode := _character.effective_mode
+	SoundManager.emit_sound(category_for(mode), _character.global_position, _character, {"radius": radius_for(mode)})

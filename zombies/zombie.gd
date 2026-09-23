@@ -321,7 +321,7 @@ func die(p_killer: Node = null) -> ZombieCorpse:
 	if ai:
 		ai.on_death()
 	if senses:
-		senses.enabled = false
+		senses.stop_listening()
 	remove_from_group(&"zombie")
 	corpse = ZombieCorpse.new()
 	corpse.name = name + "Corpse"

@@ -11,8 +11,13 @@ extends WallFixture
 ## The climb tween is owned by the ACTOR (Character.begin_busy), so the
 ## actor's busy lock always clears even if this window is freed mid-climb.
 ##
-## States: closed / open / smashed. Smashed windows can be climbed but with
-## hazard = true (glass; injuries come in Round 4).
+## States: closed / open / smashed. Smashing leaves GlassShards on the
+## floor on both sides (a foot-scratch hazard) and shards in the frame:
+## climbing is hazardous (laceration roll) until "Remove broken glass"
+## (3 s busy, 3 m glass_clear noise) clears both. Sounds go through SoundManager: window_open /
+## window_close (5 m), window_smash (20 m — the loudest thing a survivor
+## can do so far). A closed pane muffles sound ×0.7; open / smashed lets
+## it out (sound_passes()).
 
 const STATE_CLOSED := &"closed"
 const STATE_OPEN := &"open"
@@ -21,12 +26,15 @@ const ACTION_OPEN := &"open"
 const ACTION_CLOSE := &"close"
 const ACTION_SMASH := &"smash"
 const ACTION_CLIMB := &"climb"
+const ACTION_CLEAR_GLASS := &"clear_glass"
 const CLIMB_CONTEXT := &"climb"
+const CLEAR_GLASS_CONTEXT := &"clear_glass"
 ## Physics layer index (0-based) of "window_panes".
 const PANE_LAYER_BIT := 7
-## Noise radii (m) for EventBus.sound_emitted.
-const SOUND_TOGGLE_RADIUS := 5.0
-const SOUND_SMASH_RADIUS := 18.0
+## SoundManager categories (radii in data/audio/sound_categories.tres).
+const SOUND_OPEN := &"window_open"
+const SOUND_CLOSE := &"window_close"
+const SOUND_SMASH := &"window_smash"
 
 @export var width: float = 1.2
 @export var wall_thickness: float = 0.2
@@ -38,6 +46,8 @@ const SOUND_SMASH_RADIUS := 18.0
 @export var climb_seconds: float = 0.8
 ## How far past the wall centre the climber lands.
 @export var climb_clearance: float = 0.9
+## Seconds of "Remove broken glass".
+@export var clear_glass_seconds: float = 3.0
 
 var state: StringName = STATE_CLOSED
 ## Set by the last climb: true when the climber went through broken glass.
@@ -45,6 +55,9 @@ var last_climb_hazard: bool = false
 var _pane: MeshInstance3D
 var _shards: MeshInstance3D
 var _pane_body: StaticBody3D
+## Floor hazard left by a smash (null when none / cleared).
+var glass: GlassShards = null
+var _clearing_actor: Node = null
 
 
 ## True while the pane glows (night).
@@ -153,53 +166,58 @@ func interaction_actions(_actor: Node) -> Array[Dictionary]:
 			out.append(Interactable.action(ACTION_CLOSE, "Close window", not busy, "Busy" if busy else ""))
 			out.append(Interactable.action(ACTION_SMASH, "Smash window"))
 		STATE_SMASHED:
-			out.append(Interactable.action(ACTION_CLIMB, "Climb through (glass)"))
-			out.append(Interactable.action(ACTION_OPEN, "Open window", false, "Frame is smashed"))
-			out.append(Interactable.action(ACTION_CLOSE, "Close window", false, "Frame is smashed"))
+			# Open / close are gone for good: not listed (no clutter).
+			out.append(Interactable.action(ACTION_CLIMB, "Climb through (glass)" if has_glass() else "Climb through"))
+			if has_glass():
+				out.append(Interactable.action(ACTION_CLEAR_GLASS, "Remove broken glass"))
 	return out
 
 
 func interaction_perform(action_id: StringName, actor: Node) -> Dictionary:
 	match action_id:
 		ACTION_OPEN:
-			return open_window()
+			return open_window(actor)
 		ACTION_CLOSE:
-			return close_window()
+			return close_window(actor)
 		ACTION_SMASH:
-			return smash()
+			return smash(actor)
 		ACTION_CLIMB:
 			return climb(actor)
+		ACTION_CLEAR_GLASS:
+			return clear_glass(actor)
 	return {"ok": false, "reason": "Unknown action"}
 
 
 # --- State ------------------------------------------------------------------
 
-func open_window() -> Dictionary:
+func open_window(actor: Node = null) -> Dictionary:
 	if state != STATE_CLOSED:
 		return {"ok": false, "reason": "Frame is smashed" if state == STATE_SMASHED else "Already open"}
 	if on_cooldown():
 		return {"ok": false, "reason": "Busy"}
-	_set_state(STATE_OPEN)
+	_set_state(STATE_OPEN, actor)
 	return {"ok": true}
 
 
-func close_window() -> Dictionary:
+func close_window(actor: Node = null) -> Dictionary:
 	if state != STATE_OPEN:
 		return {"ok": false, "reason": "Frame is smashed" if state == STATE_SMASHED else "Already closed"}
 	if on_cooldown():
 		return {"ok": false, "reason": "Busy"}
-	_set_state(STATE_CLOSED)
+	_set_state(STATE_CLOSED, actor)
 	return {"ok": true}
 
 
-func smash() -> Dictionary:
+## Smash the pane ([actor] is who did it: the noise is theirs).
+func smash(actor: Node = null) -> Dictionary:
 	if state == STATE_SMASHED:
 		return {"ok": false, "reason": "Already smashed"}
-	_set_state(STATE_SMASHED)
+	_set_state(STATE_SMASHED, actor)
+	_spawn_glass()
 	return {"ok": true}
 
 
-func _set_state(s: StringName) -> void:
+func _set_state(s: StringName, actor: Node = null) -> void:
 	state = s
 	_mark_toggled()
 	_refresh_visual()
@@ -207,10 +225,103 @@ func _set_state(s: StringName) -> void:
 		_pane_body.collision_layer = (1 << PANE_LAYER_BIT) if s == STATE_CLOSED else 0
 	EventBus.window_state_changed.emit(self, state)
 	if is_inside_tree():
-		if s == STATE_SMASHED:
-			EventBus.sound_emitted.emit(global_position, SOUND_SMASH_RADIUS, 1.0, &"glass", null)
-		else:
-			EventBus.sound_emitted.emit(global_position, SOUND_TOGGLE_RADIUS, 0.3, &"window", null)
+		var cat := SOUND_SMASH if s == STATE_SMASHED else (SOUND_OPEN if s == STATE_OPEN else SOUND_CLOSE)
+		SoundManager.emit_sound(cat, sound_position(actor), actor)
+
+
+# --- Broken glass -------------------------------------------------------------------
+
+func _notification(what: int) -> void:
+	# The glass lives next to the window (not under it): take it along.
+	if what == NOTIFICATION_PREDELETE and glass != null and is_instance_valid(glass):
+		glass.queue_free()
+
+
+## True while shards lie on the floor / in the frame.
+func has_glass() -> bool:
+	return glass != null and is_instance_valid(glass)
+
+
+func _spawn_glass() -> void:
+	if has_glass():
+		return
+	glass = GlassShards.new()
+	glass.name = "GlassShards"
+	glass.size = Vector2(width, 2.4)
+	# A sibling on the floor, not a child: the occlusion cutaway fades the
+	# window's meshes, never the glass on the floor.
+	var host := get_parent() if get_parent() != null else self
+	host.add_child(glass)
+	glass.global_transform = Transform3D(global_basis.orthonormalized(), global_position)
+
+
+## "Remove broken glass": [clear_glass_seconds] busy for a Character
+## (instant otherwise). Clears the floor hazard and the frame shards.
+func clear_glass(actor: Node = null) -> Dictionary:
+	if not has_glass():
+		return {"ok": false, "reason": "No glass"}
+	if actor == null or not actor.has_method(&"begin_busy"):
+		remove_glass()
+		return {"ok": true}
+	if bool(actor.get(&"is_busy")):
+		return {"ok": false, "reason": "Busy"}
+	if actor.has_method(&"is_dead") and actor.is_dead():
+		return {"ok": false, "reason": "Dead"}
+	_clearing_actor = actor
+	if actor.has_signal(&"busy_cancelled") and not actor.is_connected(&"busy_cancelled", _on_clear_cancelled):
+		actor.connect(&"busy_cancelled", _on_clear_cancelled)
+	var tw: Tween = actor.call(&"begin_busy", CLEAR_GLASS_CONTEXT)
+	tw.tween_interval(clear_glass_seconds)
+	tw.tween_callback(_finish_clear.bind(actor))
+	EventBus.timed_action_started.emit(actor, CLEAR_GLASS_CONTEXT, "Removing broken glass…", clear_glass_seconds)
+	SoundManager.emit_sound(&"glass_clear", sound_position(actor), actor)
+	return {"ok": true, "busy": true, "seconds": clear_glass_seconds}
+
+
+func is_clearing_glass() -> bool:
+	return _clearing_actor != null and is_instance_valid(_clearing_actor) \
+		and bool(_clearing_actor.get(&"is_busy")) and _clearing_actor.get(&"busy_context") == CLEAR_GLASS_CONTEXT
+
+
+func remove_glass() -> void:
+	if has_glass():
+		glass.queue_free()
+	glass = null
+	if _shards:
+		_shards.visible = false
+	EventBus.window_state_changed.emit(self, state)
+
+
+func _finish_clear(actor: Node) -> void:
+	_stop_clearing(actor)
+	remove_glass()
+	EventBus.timed_action_finished.emit(actor, CLEAR_GLASS_CONTEXT, true)
+
+
+func _on_clear_cancelled(context: StringName) -> void:
+	if context != CLEAR_GLASS_CONTEXT:
+		return
+	var actor := _clearing_actor
+	_stop_clearing(actor)
+	EventBus.timed_action_finished.emit(actor, CLEAR_GLASS_CONTEXT, false)
+
+
+func _stop_clearing(actor: Node) -> void:
+	if actor != null and is_instance_valid(actor) and actor.is_connected(&"busy_cancelled", _on_clear_cancelled):
+		actor.disconnect(&"busy_cancelled", _on_clear_cancelled)
+	_clearing_actor = null
+
+
+# --- Sound propagation --------------------------------------------------------------
+
+func sound_passes() -> bool:
+	return state != STATE_CLOSED
+
+
+## A ray hitting the pane (closed) is muffled ×0.7; hitting the sill /
+## header of an open window counts as wall.
+func sound_obstacle_kind() -> StringName:
+	return SoundMath.WINDOW_CLOSED if state == STATE_CLOSED else SoundMath.WALL
 
 
 func _refresh_visual() -> void:
@@ -251,7 +362,7 @@ func climb(actor: Node) -> Dictionary:
 		return {"ok": false, "reason": "No actor", "hazard": false}
 	if "is_busy" in body and body.is_busy:
 		return {"ok": false, "reason": "Busy", "hazard": false}
-	var hazard := state == STATE_SMASHED
+	var hazard := state == STATE_SMASHED and has_glass()
 	last_climb_hazard = hazard
 	var from := body.global_position
 	var target := landing_point(from)

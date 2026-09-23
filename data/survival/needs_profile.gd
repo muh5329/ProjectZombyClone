@@ -67,6 +67,9 @@ extends Resource
 @export var thirst_speed: Array[float] = [1.0, 1.0, 0.95, 0.85]
 ## Sleeping is possible from this fatigue level on (1 = Tired).
 @export var sleep_min_fatigue_level: int = 1
+## Round 8: a sound wakes the sleeper when its propagated strength at the
+## ear (SoundManager, walls / doors included) is at least this (0..1).
+@export var wake_sound_strength: float = 0.1
 
 @export_group("Food")
 ## Food's hunger reduction derives from its calories: 1 hunger point per

@@ -26,11 +26,22 @@ extends Resource
 @export var vision_fov_degrees: float = 120.0
 ## Eye height above the feet (m).
 @export var eye_height: float = 1.5
-## Multiplier on incoming sound radii (1 = normal; deaf = 0).
+## Multiplier on incoming sound radii (1 = normal; deaf = 0). Walls /
+## doors / windows between ear and sound are handled by SoundManager.
 @export var hearing_sensitivity: float = 1.0
-## Sound radius multiplier when a wall / closed door lies between the ear
-## and the sound (Round 8 replaces this with real propagation).
-@export var hearing_wall_attenuation: float = 0.5
+## A heard sound at least this strong (SoundMath.perceived, 0..1) is
+## "loud": investigated at chase speed. Fainter ones: the zombie turns,
+## pauses [faint_turn_seconds], then shambles over.
+@export var loud_sound_strength: float = 0.4
+@export var faint_turn_seconds: float = 0.8
+## An investigating zombie only switches to a sound at least as strong as
+## the one it follows, which fades by this much per second.
+@export var sound_priority_decay: float = 0.05
+## Investigating zombies moan (SoundManager zombie_moan, 6 m) at most this
+## often; neighbours that hear it head for the same spot (hordes form).
+@export var moan_cooldown: float = 10.0
+## A moan relayed this many times is not relayed again (0 = never moan).
+@export var moan_max_hops: int = 2
 ## Anything this close (with line of sight) is noticed regardless of facing.
 @export var proximity_range: float = 1.5
 ## Seconds a lost target is still pursued to its last known position.
@@ -128,6 +139,12 @@ extends Resource
 @export var search_walk_chance: float = 0.35
 @export var search_walk_radius: float = 2.0
 @export var search_stuck_seconds: float = 1.0
+## Round 8: sounds that are deliberate lures (the player's shout): the
+## search after arriving lasts longer and widens.
+@export var lure_search_categories: Array[StringName] = [&"shout"]
+@export var lure_search_time_min: float = 8.0
+@export var lure_search_time_max: float = 12.0
+@export var lure_search_extra_radius: float = 4.0
 ## Within this distance of the last known position, a lost target is
 ## searched for on the spot instead of walked to.
 @export var lost_near_distance: float = 1.5

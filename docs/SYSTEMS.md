@@ -55,15 +55,16 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
 - Round 3: doors are **breakables** (group `breakable`, `take_damage()`,
   `blocks_path()`) with `health` 300. A zombie bangs 8 per 2 s (one
   zombie ≈ 75 s, four ≈ 20 s); every bang emits `door_banged(door,
-  source)` plus a 10 m sound that recruits neighbours. At 0 the door is
+  source)` plus a 12 m `door_bang` sound that recruits neighbours. At 0 the door is
   **broken**: leaf gone, doorway open forever, body kept on layer 4 only
   so "Close door (Door is broken)" stays readable. `door_state_changed
   (door, &"broken")`. Door leaves live on physics layer 7 so the navmesh
   bakes through doorways. Windows: sill + header are wall (layer 1); the
   glass is a child body on layer 8 (`window_panes`) while closed and on no
   layer once open / smashed — vision and interaction rays (1+7+8) see
-  through open windows only. Open/close/hit/break/smash emit
-  `sound_emitted` (see Sound events).
+  through open windows only. Open/close/bang/break/smash make
+  SoundManager sounds (see Sound propagation); smashing leaves broken
+  glass (Round 8, below).
 
 ## Buildings ✅ (Round 2, blockout)
 
@@ -102,6 +103,9 @@ Status key: ✅ working & verified · 🔶 partial · ⬜ planned
   while charging, bandage progress bar; "Stamina 60 %" + " · max 80 %"
   only when wounds lower the cap; mode "Idle" when standing; health bar
   follows `health_changed` (bleeding); key hints on a dark strip.
+- Round 8: "Noise" meter under the stamina bar (last player noise
+  radius, LOUD past 10 m), "You shout!" / "Stepped on broken glass!"
+  notices, busy label "Clearing glass", hint line gains H shout / F4.
 - Round 3: dark-red "♥ Health" bar (white text) above stamina; exhausted
   stamina is orange-red so the two never match; top-centre danger
   indicator "!  N chasing" (zombies in chase/attack on the player, from
@@ -189,10 +193,9 @@ Round 5 it is a `LootContainer` ("Search corpse", zombie_corpse table);
   Pure `can_see()` is unit-tested.
 - Proximity: anything within 1.5 m with a clear chest-to-chest line is
   noticed regardless of facing.
-- Hearing: `sound_emitted` within radius × `hearing_sensitivity` →
-  investigate that position (chasing zombies ignore sounds). A wall or
-  closed door between ear and sound halves the radius
-  (`hearing_wall_attenuation`).
+- Hearing (Round 8): the senses node is a SoundManager listener; see
+  "Sound propagation / zombie hearing" below. The Round-3 "halved
+  through walls" rule is gone.
 - Round 3 prey is the player only (`GameManager.player`); dead players are
   ignored.
 
@@ -218,17 +221,105 @@ with priority-bracketed probe nodes): **calm/loud ≈ 5 ms** (budget 8),
 **hostile — all 200 chasing / holding / biting an invulnerable player —
 ≈ 8.5 ms** (budget 10) on the 2-core dev box (empty scene ≈ 0.2 ms).
 
-## Sound events 🔶 (Round 3 stub, Round 8 fleshes out)
+## Sound propagation / zombie hearing ✅ (Round 8)
 
-`EventBus.sound_emitted(position, radius, intensity, category, source)`.
-Emitters: player footsteps at 1 Hz while moving (`FootstepEmitter`:
-sneak 2 m, walk 4 m, jog 8 m, sprint 14 m; × encumbrance 1.2 heavy /
-1.35 overloaded), door open/close 6 m, door
-bang 10 m (+ `door_banged`), door break 18 m, window open/close 5 m,
-window smash 18 m, melee hit = weapon noise radius (bat 8 m, knife 2 m,
-shove 2 m). Listener side (`ZombieSenses`): radius test, halved
-when a wall / closed door lies between ear and source (one ray). No real
-propagation yet.
+Gameplay sounds (not audio playback) go through the `SoundManager`
+autoload: `emit_sound(category, position, source, overrides)`. Every
+event also fires `EventBus.sound_emitted` (HUD, sleep, debug).
+
+**Categories** (`data/audio/sound_categories.tres`, radius m / intensity):
+
+| Category | Radius | Int. | Emitter |
+|---|---|---|---|
+| footstep_sneak / walk / jog / sprint | 2 / 4 / 8 / 14 (× encumbrance 1.2 / 1.35) | 0.1–0.6 | FootstepEmitter, 1 Hz while moving |
+| door_open / door_close | 6 / 8 | 0.3 / 0.4 | Door (source = the actor) |
+| door_bang / door_break | 12 / 18 | 0.7 / 1.0 | Door.take_damage (zombies) |
+| window_open / window_close | 5 | 0.3 | HouseWindow |
+| window_smash | 20 | 1.0 | HouseWindow.smash(actor) — the loudest player noise so far |
+| melee_swing | 4 | 0.2 | every weapon swing (not shoves) |
+| melee_hit / shove | weapon `noise_radius` (bat 8, knife 2, fists 3) / 5 | radius / 14 | HitResolver, on connect |
+| rummage | 3 (container `search_noise_radius`) | 0.2 | ContainerAccess.search |
+| eat / bottle_fill | 1.5 / 4 | 0.1 / 0.2 | ConsumeAction |
+| shout | 20 | 0.9 | player H (ShoutComponent: 6 stamina, 3 s cooldown) |
+| glass_clear | 3 | 0.2 | "Remove broken glass" |
+| zombie_moan | 6 | 0.25 | investigating zombies, 10 s cooldown |
+| alarm / gunshot / generator / vehicle | 60 / 60 / 25 / 30 | — | future |
+
+**Propagation** (per listener within radius × sensitivity × masking):
+- Direct: an iterative ray sound (1.2 m up) → ear (zombie eye 1.5 m) on
+  layers 1+7+8 with `hit_from_inside`, re-cast past each hit body (≤ 5
+  obstacles). EVERY obstacle multiplies: wall ×0.5, closed door ×0.6,
+  closed window ×0.7, other solids (furniture, props) ×0.85 — a prop
+  never hides the wall behind it; product ≥ 0.15. Cached per event by
+  the ear's 1.5 m cell.
+- Door / window sounds start 0.3 m off the opening on the actor's side
+  (outward without one), so the leaf muffles them for the far side; a
+  door's close sound comes when the swing ends.
+- Through openings (open exterior doors / open or smashed windows):
+  sound in building A, ear outdoors on the outward side of an A opening;
+  sound outdoors on the outward side of an opening of the ear's building
+  B; or A → B through one opening of each (the leg between them assumed
+  clear). slack = radius × Π leg attenuations − Σ leg lengths; the best
+  path wins (`path` = `direct` / `opening`). Ear buildings are cached
+  per listener at 5 Hz.
+- `emit_sound` rejects non-finite positions / radii (warning, no event);
+  `queue_sound` spreads bursts (zombie moans) over frames, ≤ 2 per frame.
+- Heard when slack ≥ 0; strength = intensity × slack / (radius ×
+  sensitivity × masking). `SoundManager.ambient_masking` (1.0) is the
+  weather / rain hook.
+- Dispatch is O(listeners near): a SpatialHash (8 m cells) of listener
+  ears refreshed at 5 Hz; dead / freed zombies unregister (death,
+  `_exit_tree`, and a prune on dispatch).
+
+**Zombie reactions** (`ZombieProfile`): idle / wander / search /
+investigate zombies react; chasing ones ignore sounds.
+- strength ≥ `loud_sound_strength` (0.4) → investigate at chase speed
+  (1.6 m/s); fainter → turn toward it, stand `faint_turn_seconds` (0.8),
+  then shamble (0.9 m/s).
+- Priority: an investigating zombie switches only to a sound at least as
+  strong as its current one minus `sound_priority_decay` (0.05/s) × age;
+  a re-target never downgrades (loud stays loud, hop count keeps the
+  minimum, strength the maximum).
+- Lures: after investigating a `lure_search_categories` sound (the
+  player's shout) the search lasts 8–12 s and its shuffles widen by up
+  to 4 m.
+- Hordes: investigating zombies moan (`zombie_moan`, 6 m) every
+  `moan_cooldown` (10 s); a zombie that hears a moan heads for the
+  moaner's own goal (`lure`), relayed at most `moan_max_hops` (2) times.
+- Examples (tests): sneaking 4 m behind an idle zombie is not heard,
+  sprinting is; a shout lures a zombie 18 m away; a window smash is heard
+  15 m in front of the window but not 15 m away behind two walls; a bang
+  inside with the front door open reaches 11 m in line with the door but
+  not 6.6 m behind the wall.
+
+**Player feedback**: `NoiseRings` (map node) — a ground ring per
+player-caused sound that expands to the radius and fades in 1.1 s
+(orange at ≥ `SoundCategoryTable.player_loud_radius`, 10 m — the same
+number as the meter; pool of 20); HUD "Noise" meter under stamina (last
+player noise radius on a 0–20 m bar, tick + "LOUD" at 10 m, holds
+0.8 s, drains 8 m/s); "You shout!" notice. A dead player gets no
+rings, meter or shout notice. **F4** (`toggle_sound_debug`) →
+`SoundDebugOverlay`: every live event as a circle (orange = player,
+cyan = others) + a line from each zombie that heard it (green direct,
+yellow via an opening) labelled with its perceived strength; no work
+at all while off.
+
+**Sleep** (Round 8): the sleeper is a SoundManager listener; a sound
+whose propagated strength at the ear reaches
+`NeedsProfile.wake_sound_strength` (0.1) wakes, as does a zombie within
+10 m WITH line of sight (no more waking through walls).
+
+**Broken glass** (`GlassShards`, a sibling of the smashed window so the
+cutaway never fades it): 1.2 m out on both sides of the wall (1.2 ×
+2.4 m, 40 bright shards); walking (not sneaking, not busy) without shoes
+(`Player.has_foot_protection()`: an equipped item tagged `shoes` — none
+exist yet) → leg scratch at 25 %/s (1 − 0.75^dt per tick, ≥ 1.5 s
+apart), `EventBus.hazard_hurt`, notice "Stepped on broken glass!".
+Climbing through while glass remains: 40 % laceration
+(`InjuryProfile.glass_laceration_chance`). Window action "Remove broken
+glass" (3 s busy `clear_glass`, 3 m `glass_clear` noise, HUD "Clearing
+glass") frees it and makes climbing safe. Smashed windows no longer
+list the permanently disabled Open / Close entries.
 
 ## Navigation ✅ (Round 3)
 
@@ -747,7 +838,7 @@ through doorways / windows — and window panes glow warm
 
 ## Planned (see MASTER_PLAN for order)
 
-Sound propagation ⬜ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
+Sound propagation ✅ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
 Loot tables ✅ · Needs ✅ (hunger / thirst / fatigue / sickness; temperature, wetness, stress ⬜) ·
 Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ✅ · Vehicles ⬜ ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·

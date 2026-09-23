@@ -51,7 +51,8 @@ extends ItemData
 @export var condition_loss: int = 1
 
 @export_group("Noise")
-## Radius (m) of the sound a hit makes (EventBus.sound_emitted).
+## Radius (m) of the sound a hit makes (SoundManager melee_hit / shove;
+## overrides the category radius).
 @export var noise_radius: float = 6.0
 
 @export_group("Handling")

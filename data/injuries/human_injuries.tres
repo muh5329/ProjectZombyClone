@@ -91,7 +91,7 @@ glass_region_weights = {
 &"right_hand": 0.2,
 &"right_leg": 0.15
 }
-glass_laceration_chance = 1.0
+glass_laceration_chance = 0.4
 glass_damage = 4.0
 bandage_seconds = 4.0
 bandage_priority = {

@@ -11,6 +11,10 @@ var player: Node = null
 ## When true, HUD shows extra debug info (toggle with F3 / "toggle_debug").
 var debug_overlay: bool = true
 
+## When true, the SoundDebugOverlay draws every live sound event and the
+## zombie hearing lines (toggle with F4 / "toggle_sound_debug").
+var sound_debug: bool = false
+
 ## Set by the test harness so gameplay code can skip things that need a
 ## real window (e.g. mouse capture).
 var headless: bool = false
@@ -32,3 +36,5 @@ func unregister_player(p: Node) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"toggle_debug"):
 		debug_overlay = not debug_overlay
+	elif event.is_action_pressed(&"toggle_sound_debug"):
+		sound_debug = not sound_debug

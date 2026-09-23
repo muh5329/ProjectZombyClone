@@ -170,10 +170,14 @@ func test_window_smashed_actions() -> void:
 	check(it.perform(&"smash", _actor).ok, "smash")
 	check_eq(w.state, &"smashed", "smashed")
 	var acts := it.get_actions(_actor)
-	check_eq(_ids(acts, true), [&"climb"], "only climb enabled")
+	check_eq(_ids(acts, true), [&"climb", &"clear_glass"], "climb + remove glass enabled")
 	check_eq(acts[0].label, "Climb through (glass)", "glass label")
-	check_eq(_find(acts, &"open").reason, "Frame is smashed", "open reason")
-	check_eq(_find(acts, &"close").reason, "Frame is smashed", "close reason")
+	check_eq(_find(acts, &"clear_glass").label, "Remove broken glass", "clear glass label")
+	check(w.has_glass(), "shards on the floor")
+	check(_find(acts, &"open").is_empty() and _find(acts, &"close").is_empty(),
+		"open / close not listed once the frame is smashed (permanent)")
+	check_eq(_ids(acts), [&"climb", &"clear_glass"], "smashed: climb + remove glass only")
+	check_eq(w.open_window().reason, "Frame is smashed", "open still explains when called")
 	check(not it.perform(&"smash", _actor).ok, "cannot smash twice")
 	check(not it.perform(&"open", _actor).ok, "open refused")
 

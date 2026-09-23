@@ -15,7 +15,8 @@
 - **Events over references.** Cross-system notifications go through the
   `EventBus` autoload. Emitters never know their listeners.
 - **Autoloads stay thin.** `GameManager` holds only the player reference and
-  debug flags. `TimeManager` (R7) owns world time; future managers (`SaveManager`,
+  debug flags. `TimeManager` (R7) owns world time; `SoundManager` (R8)
+  owns gameplay sound propagation; future managers (`SaveManager`,
   `WorldManager`) are separate autoloads with single responsibilities.
 - **Data-driven content** (from Round 5 on): items, loot tables, recipes,
   zombies as `Resource` files under `data/`.
@@ -25,13 +26,17 @@
 ```
 core/         event_bus.gd, game_manager.gd             (autoloads)
               time_manager.gd (autoload TimeManager), game_clock.gd (GameClock) (R7)
+audio/        sound_manager.gd (autoload SoundManager), sound_event.gd (SoundEvent),
+              sound_category.gd (SoundCategory), sound_category_table.gd (SoundCategoryTable),
+              sound_math.gd (SoundMath), spatial_hash.gd (SpatialHash) (R8)
 characters/   character.gd, movement_component.gd, stats_component.gd,
-              health_component.gd, footstep_emitter.gd, body_helpers.gd (R3)
+              health_component.gd, footstep_emitter.gd, body_helpers.gd (R3),
+              shout_component.gd (ShoutComponent) (R8)
 player/       player.gd, player.tscn, player_controller.gd, player_interaction.gd,
               player_combat_input.gd (R4)
 camera/       isometric_camera.gd, occlusion_manager.gd
 interaction/  interactable.gd, wall_fixture.gd, door.gd, window.gd (R2), loot_container.gd, container_visual.gd (R5),
-              rest_furniture.gd (RestFurniture), sink.gd (Sink) (R7)
+              rest_furniture.gd (RestFurniture), sink.gd (Sink) (R7), glass_shards.gd (GlassShards) (R8)
 survival/     needs_component.gd (NeedsComponent), needs_math.gd (NeedsMath), consume_action.gd
               (ConsumeAction), rest_component.gd (RestComponent), danger.gd (Danger) (R7)
 buildings/    building.gd, room.gd, building_plan.gd, house_blockout.gd (R2), furniture_catalog.gd (R5)
@@ -43,20 +48,23 @@ inventory/    item_container.gd (ItemContainer), container_access.gd (ContainerA
 loot/         loot_table.gd, loot_table_db.gd (autoload LootTableDB), loot_resolver.gd (R5)
 combat/       melee_combat.gd, swing_state_machine.gd, hit_resolver.gd, melee_visuals.gd (R4)
 injuries/     injury.gd, injury_type_spec.gd, injury_component.gd (R4)
-effects/      blood_decals.gd (R4)
+effects/      blood_decals.gd (R4), noise_rings.gd (NoiseRings) + noise_ring.gdshader,
+              sound_debug_overlay.gd (SoundDebugOverlay) (R8)
 zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses.gd,
               zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3)
 world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5),
               day_night_lighting.gd (DayNightLighting) (R7)
 ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader, hotbar.gd (HotbarWidget, R6),
-              clock_widget.gd (ClockWidget), moodle_list.gd (MoodleList) (R7)
+              clock_widget.gd (ClockWidget), moodle_list.gd (MoodleList) (R7),
+              noise_meter.gd (NoiseMeter) (R8)
 ui/inventory/ loot_window.gd/.tscn (LootWindow controller), item_list_panel.gd (ItemListPanel),
               item_context_menu.gd (ItemContextMenu), inventory_drag_drop.gd (InventoryDragDrop) (R5/R6)
 maps/         test_ground.tscn                           (main scene)
 data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tres, zombies/zombie_basic.tres,
               items/<category>/*.tres (41 items, R5), loot/*.tres + loot/garage/*.tres (R5),
               combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4),
-              world/time_config.gd + .tres, survival/needs_profile.gd + .tres (R7)
+              world/time_config.gd + .tres, survival/needs_profile.gd + .tres (R7),
+              audio/sound_categories.tres (R8)
 assets/       materials/grid_ground.gdshader
 tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd
 scripts/      test.sh, screenshots.sh, perf.sh
@@ -64,7 +72,7 @@ docs/
 ```
 
 Planned folders follow the brief (`crafting/`, `simulation/`,
-`vehicles/`, `farming/`, `weather/`, `electricity/`, `audio/`, `npc/`).
+`vehicles/`, `farming/`, `weather/`, `electricity/`, `npc/`).
 
 ## Key types
 
@@ -526,8 +534,42 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
   injuries lower max stamina.
 
 ### `FootstepEmitter` (characters/footstep_emitter.gd)
-- Child of a Character; emits `sound_emitted` once per second while it
-  moves, radius by effective mode (2 / 4 / 8 / 14 m).
+- Child of a Character; once per second while it moves calls
+  `SoundManager.emit_sound(footstep_<mode>)` (2 / 4 / 8 / 14 m from the
+  category data) × `radius_multipliers` (encumbrance).
+
+### Sound (audio/, R8)
+- `SoundManager` (autoload, no class_name): `emit_sound(category,
+  position, source, overrides) -> SoundEvent` (overrides: radius /
+  intensity / duration; other keys → `event.extras`, e.g. a moan's
+  `lure` + `hops`). Emits `EventBus.sound_emitted` (UI / sleep / debug)
+  and dispatches synchronously to registered listeners found through a
+  `SpatialHash` (8 m cells, listener ears refreshed at 5 Hz, query
+  widened by 2 m). `evaluate(event, ear, sensitivity, ctx, ear_building)`
+  → {slack, attenuation, path}; `obstacle_attenuation(from, to)` (one
+  ray re-cast past each hit, ≤ 5, layers 1+7+8, hit_from_inside);
+  `queue_sound()` (≤ 2 per frame), `building_at()`; `classify(collider)` (fixtures answer
+  `sound_obstacle_kind()`); `ambient_masking` (weather hook);
+  `active_events()`, `recent_hearings()`, `stats`, `sound_dispatched`
+  signal, `register_listener / unregister_listener / prune /
+  listener_count / hashed_count`.
+- Listener contract (duck-typed; `ZombieSenses` implements it):
+  `sound_ear_position()`, `sound_sensitivity()` (0 = deaf now),
+  `sound_owner()` (own sounds skipped), `on_sound(event, info)`.
+- `SoundMath` (pure statics): obstacle factors, `attenuation(kinds)`
+  (min 0.15), `effective_radius`, `slack`, `via_opening_slack`,
+  `perceived`, `should_retarget`, `on_outward_side`.
+- `SoundEvent` (RefCounted): id, category, position, radius, intensity,
+  duration, created_minute / created_time, extras, weak `source()`.
+- `SoundCategory` / `SoundCategoryTable` resources
+  (`data/audio/sound_categories.tres`).
+- `WallFixture` sound API: `sound_passes()` (open door / open or smashed
+  window), `sound_opening_center()`, `sound_obstacle_kind()`,
+  `wall_normal()`, `sound_position(actor)` (0.3 m to the actor's side).
+- `RestComponent` is a listener while asleep (wake by strength).
+- Visuals: `NoiseRings` (map node, pool of 20 shader rings, player
+  sounds only), `SoundDebugOverlay` (map node, ImmediateMesh, F4 →
+  `GameManager.sound_debug`), HUD `NoiseMeter`.
 
 ### `TimeManager` (core/time_manager.gd, autoload, R7) / `GameClock`
 - `minutes` (game minutes since the start instant), `config: TimeConfig`,
@@ -592,6 +634,9 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
 `zombie_state_changed(zombie, from, to)`, `zombie_spotted_target(zombie, target)`,
 `zombie_lost_target(zombie)`, `zombie_attacked(zombie, target, hit)`,
 `zombie_died(zombie, killer)`.
+Round 8: `sound_emitted` is emitted only by SoundManager (categories are
+data ids: `footstep_jog`, `window_smash`, …); `shouted(character, ok,
+reason)`, `hazard_hurt(character, hazard, region)`.
 Round 4: `health_changed(character, value, max)`,
 `injuries_changed(character, summary)`, `bandage_started(character,
 region, seconds)`, `bandage_finished(character, region)`,
@@ -639,6 +684,7 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `breakable` (doors: `take_damage` + `blocks_path`), `zombie`, `corpse`,
 `world_item` (R4; dropped items and bags on the ground too, R6), `blood_decals` (R4), `container`, `persistent`,
 `furniture`, `world_config` (R5), `interior_light` (R7, room OmniLights),
+`glass_shards`, `noise_rings`, `sound_debug` (R8),
 `navigation_mesh_source_group` (the map root; parsed by NavBaker).
 
 ## Testing
@@ -657,7 +703,11 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 - Gotcha: `wait_until` counts *process* frames, which run far faster than
   physics headless. Gameplay timers (AI, cooldowns, memory) are waited on
   with `wait_physics_until`.
-- `tests/perf/perf_zombies.gd` (`scripts/perf.sh`, calm and `--hostile`)
+- `tests/perf/perf_zombies.gd` (`scripts/perf.sh`, calm, `--hostile`,
+  `--noisy` — 30 random SoundManager events / s emitted from inside the
+  measured bracket — and `--horde-noise` — 60 clustered zombies + 10
+  window smashes / s; every mode checks avg and p99 (16 ms, horde 20 ms);
+  `scripts/perf.sh --noisy|--horde-noise` runs one mode)
   measures the scene-tree part of every physics step with two probe
   nodes at the lowest / highest physics priority (all `_physics_process`
   callbacks incl. move_and_slide; the Jolt step for kinematic bodies is

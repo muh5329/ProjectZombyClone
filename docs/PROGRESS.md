@@ -6,6 +6,63 @@ that did not write the code).
 
 ---
 
+## Round 8 — Sound propagation + zombie hearing (2026-09-22)
+
+### Goal
+Replace the flat-radius noise stub with a real gameplay sound system:
+data-driven categories, wall/door/window attenuation, escape through
+openings, priority-based zombie hearing, moan recruitment, player noise
+feedback, and systemic hooks (glass, shout).
+
+### What changed
+- `SoundManager` autoload + `SoundEvent`, 23 categories in
+  `data/audio/sound_categories.tres`, spatial hash of zombie ears; every
+  emitter migrated (footsteps, doors, windows, melee, rummage, eat, fill,
+  shout, moans). Non-finite input rejected.
+- Propagation (`audio/sound_math.gd`): one ray re-cast past up to 5 hits,
+  multiplicative factors (wall ×0.5, closed door ×0.6, closed window ×0.7,
+  prop ×0.85, openings ×1, floor 0.15); sounds escape/enter buildings via
+  open doors and windows in both directions; per-event cache by 1.5 m
+  ear cell.
+- Hearing: loud (≥0.4) investigate at chase speed, faint → turn + shamble;
+  louder-or-equal retarget with decay; investigating zombies moan (6 m,
+  10 s cooldown, ≤2 relays, ≤2 moans per frame). Chasing/stunned/downed
+  zombies ignore sound.
+- Player feedback: pooled noise rings, HUD noise meter (LOUD ≥10 m, one
+  data setting), F4 sound debug overlay with strength labels. H shouts
+  (20 m, 6 stamina, 3 s cooldown).
+- Glass: smashing leaves shards 1.2 m each side; walking over them
+  25 %/s scratch unless sneaking; climbing through glass 40 % laceration;
+  "Remove broken glass" 3 s, 3 m noise.
+- Sleep wakes through the sound system (strength threshold) or a zombie in
+  LOS within 10 m — no more waking through walls.
+
+### Tests performed
+Unit **137**, integration **187**, 0 failed (full suite now > 10 min, run in
+two halves). `scripts/screenshots.sh` OK (26_noise_rings, 27_debug_sound).
+`scripts/perf.sh` with p99 budgets: calm 3.1/6.2, hostile 7.3/14.8, noisy
+3.1/5.6, horde-noise 1.1/3.2 ms.
+
+### Bugs discovered (critic) → all fixed
+Furniture made sounds louder (two-ray model), 3 walls counted as 2,
+sounds starting inside colliders unmuffled (doors), NaN positions
+spamming engine errors, stale expired events, one-way opening path,
+moan retarget downgrading loud investigations, dead-player shout/meter,
+sleep waking through walls, weak glass hazard, cheap shout kiting,
+no worst-frame budgets, freed-mesh crash in the cutaway code.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8.5 (8) · System Integration 8.5 (8) · Survival Depth 7 (6) ·
+Architecture 8.5 (8) · Performance 8.5 (8) · UX/Feedback 7.5 (7) ·
+Bug Resistance 8 (6).
+
+### Highest-priority remaining issue
+Visual fidelity: characters are capsules and there are no vehicles. The
+owner asked for real zombie, survivor and vehicle models (PZ as style
+reference) — inserted as Round 8.5 before barricades.
+
+---
+
 ## Round 7 — World time, needs, eating/drinking, spoilage, sleep (2026-09-22)
 
 ### Goal

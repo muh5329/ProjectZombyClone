@@ -16,18 +16,21 @@ extends WallFixture
 ## take_damage() lowers [health]; at 0 the door is "broken" — the leaf is
 ## gone (the body stays on layer 4 only so "Close door (Door is broken)"
 ## remains readable), the doorway is permanently open. Every bang emits
-## door_banged + a 10 m sound so more zombies come. Sounds: open/close/
-## hit/break emit EventBus.sound_emitted (Round 8 grows this into real
-## propagation).
+## door_banged + a 12 m door_bang sound so more zombies come. Sounds go
+## through SoundManager (categories door_open / door_close / door_bang /
+## door_break); a closed door muffles sounds passing through it (×0.6),
+## an open or broken one lets them out (sound_passes()).
 
 const STATE_CLOSED := &"closed"
 const STATE_OPEN := &"open"
 const STATE_BROKEN := &"broken"
 ## Physics layer index (0-based) of the "doors" layer.
 const DOOR_LAYER_BIT := 6
-const SOUND_TOGGLE_RADIUS := 6.0
-const SOUND_HIT_RADIUS := 10.0
-const SOUND_BREAK_RADIUS := 18.0
+## SoundManager categories (radii live in data/audio/sound_categories.tres).
+const SOUND_OPEN := &"door_open"
+const SOUND_CLOSE := &"door_close"
+const SOUND_BANG := &"door_bang"
+const SOUND_BREAK := &"door_break"
 const ACTION_OPEN := &"open"
 const ACTION_CLOSE := &"close"
 ## Layers checked before swinging: 2 player + 3 zombies.
@@ -142,7 +145,7 @@ func interaction_perform(action_id: StringName, actor: Node) -> Dictionary:
 		ACTION_OPEN:
 			return open_door(actor)
 		ACTION_CLOSE:
-			return close_door()
+			return close_door(actor)
 	return {"ok": false, "reason": "Unknown action"}
 
 
@@ -191,11 +194,11 @@ func open_door(actor: Node = null) -> Dictionary:
 	_mark_toggled()
 	_animate_to(_swing)
 	EventBus.door_state_changed.emit(self, state)
-	_emit_sound(SOUND_TOGGLE_RADIUS, 0.3, actor)
+	_emit_sound(SOUND_OPEN, actor)
 	return {"ok": true}
 
 
-func close_door() -> Dictionary:
+func close_door(actor: Node = null) -> Dictionary:
 	if state == STATE_BROKEN:
 		return {"ok": false, "reason": "Door is broken"}
 	if state == STATE_CLOSED:
@@ -209,7 +212,12 @@ func close_door() -> Dictionary:
 	_mark_toggled()
 	_animate_to(0.0)
 	EventBus.door_state_changed.emit(self, state)
-	_emit_sound(SOUND_TOGGLE_RADIUS, 0.3, null)
+	# The slam is heard when the leaf is shut (so the leaf muffles it for
+	# the far side).
+	if _tween and _tween.is_valid():
+		_tween.tween_callback(_emit_close.bind(weakref(actor) if actor != null else null))
+	else:
+		_emit_sound(SOUND_CLOSE, actor)
 	return {"ok": true}
 
 
@@ -226,7 +234,7 @@ func take_damage(amount: float, source: Node = null, _info: Dictionary = {}) -> 
 	if health <= 0.0:
 		_break(source)
 		return {"ok": true, "broken": true, "health": 0.0}
-	_emit_sound(SOUND_HIT_RADIUS, 0.6, source)
+	_emit_sound(SOUND_BANG, source)
 	# Small shudder so banging reads visually (does not change collision).
 	if _mesh and is_inside_tree():
 		_new_tween().tween_property(_mesh, "position:x", _leaf_offset().x, 0.15).from(_leaf_offset().x + 0.04)
@@ -245,14 +253,49 @@ func _break(source: Node) -> void:
 		visual.visible = false
 	_mark_toggled()
 	EventBus.door_state_changed.emit(self, state)
-	_emit_sound(SOUND_BREAK_RADIUS, 1.0, source)
+	_emit_sound(SOUND_BREAK, source)
 
 
-func _emit_sound(radius: float, intensity: float, source: Node) -> void:
+func _emit_close(actor_ref: WeakRef) -> void:
+	var a: Variant = actor_ref.get_ref() if actor_ref != null else null
+	_emit_sound(SOUND_CLOSE, a if a != null and is_instance_valid(a) else null)
+
+
+## Sound 0.3 m off the doorway on [source]'s side (outward without one),
+## floor level: a closed leaf muffles it for the other side.
+func _emit_sound(category: StringName, source: Node) -> void:
 	if not is_inside_tree():
 		return
-	var at := _mesh.global_position if _mesh else global_position
-	EventBus.sound_emitted.emit(at, radius, intensity, &"door", source)
+	SoundManager.emit_sound(category, sound_position(source), source)
+
+
+# --- Sound propagation --------------------------------------------------------------
+
+func sound_passes() -> bool:
+	return is_open()
+
+
+## Middle of the doorway: the mount sits at the hinge, the doorway runs
+## along its local +X (the door body itself rotates when open).
+func sound_opening_center() -> Vector3:
+	var mount := get_parent() as Node3D
+	if mount == null:
+		return global_position
+	return mount.global_transform * Vector3(width * 0.5, 0.0, 0.0)
+
+
+## The doorway's wall normal (the mount's; the leaf itself swings).
+func wall_normal() -> Vector3:
+	var mount := get_parent() as Node3D
+	var n := mount.global_basis.z if mount else global_basis.z
+	n.y = 0.0
+	return n.normalized() if n.length_squared() > 0.0001 else Vector3.BACK
+
+
+## A ray that hits a closed leaf is muffled ×0.6; one that clips an open
+## leaf only a little.
+func sound_obstacle_kind() -> StringName:
+	return SoundMath.DOOR_CLOSED if state == STATE_CLOSED else SoundMath.PROP
 
 
 func _animate_to(angle: float) -> void:

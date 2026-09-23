@@ -124,7 +124,7 @@ func test_bat_swing_hits_zombie_in_front() -> void:
 	check(dmg >= 12.0 * 1.3 - 0.01 and dmg <= 18.0 * 1.3 + 0.01, "damage in bat range × charge (%.1f)" % dmg)
 	check_near(z.health(), 60.0 - dmg, 0.01, "zombie health")
 	check(z.visual.is_hit_flashing(), "hit flash")
-	check(sounds.any(func(s): return s[0] == &"melee" and is_equal_approx(s[1], bat.noise_radius)), "hit makes noise")
+	check(sounds.any(func(s): return s[0] == &"melee_hit" and is_equal_approx(s[1], bat.noise_radius)), "hit makes noise")
 	check_gt(float(decals.count), 0.0, "blood decal")
 	await physics_frames(20)
 	check_gt(_flat(z.global_position, player.global_position), 1.2, "knocked back")
@@ -485,6 +485,9 @@ func test_smashed_window_climb_lacerates() -> void:
 		if (w.global_position - Vector3(-14, 0, -4)).length() < 0.3:
 			win = w
 	check(win != null, "living room west window")
+	# 40 % in play (data); forced here to test the cut itself.
+	injuries.profile = injuries.profile.duplicate()
+	injuries.profile.glass_laceration_chance = 1.0
 	win.smash()
 	await _teleport(Vector3(-13.3, 0.1, -4))
 	var hp0 := player.health.health

@@ -143,10 +143,16 @@ signal sleep_ended(character: Node, reason: String)
 signal rest_started(character: Node, seat: Node)
 signal rest_ended(character: Node, reason: String)
 
-# --- Sound (stub; Round 8 adds propagation / occlusion) --------------------
-## Something made a noise. radius in metres, intensity 0..1, category e.g.
-## &"footstep", &"door", &"glass". source may be null.
+# --- Sound (Round 8: SoundManager emits this for every gameplay sound) ------
+## Something made a noise. radius in metres (before attenuation), intensity
+## 0..1, category = a SoundCategory id (&"footstep_jog", &"window_smash"…).
+## source may be null. Emitted by SoundManager.emit_sound() — never emit it
+## directly (zombies listen through SoundManager, not this signal).
 signal sound_emitted(position: Vector3, radius: float, intensity: float, category: StringName, source: Node)
+## The player shouted (H). ok = false with a reason when refused.
+signal shouted(character: Node, ok: bool, reason: String)
+## A floor hazard hurt a character (hazard &"glass"; region id).
+signal hazard_hurt(character: Node, hazard: StringName, region: StringName)
 
 # --- Zombies ----------------------------------------------------------------
 signal zombie_state_changed(zombie: Node, from: StringName, to: StringName)

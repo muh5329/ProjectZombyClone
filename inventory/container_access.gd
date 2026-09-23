@@ -62,7 +62,7 @@ func search(actor: Node, seconds: float) -> Dictionary:
 	EventBus.timed_action_started.emit(actor, SEARCH_CONTEXT, "Rummaging in %s…" % container.display_name.to_lower(), seconds)
 	if container.search_noise_radius > 0.0:
 		var at: Vector3 = (actor as Node3D).global_position if actor is Node3D else container.global_position
-		EventBus.sound_emitted.emit(at, container.search_noise_radius, 0.3, &"search", actor)
+		SoundManager.emit_sound(&"rummage", at, actor, {"radius": container.search_noise_radius})
 	return {"ok": true, "searching": true, "seconds": seconds}
 
 
