@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"civ_winter_coat"
+display_name = "Winter coat"
+has_jacket = true
+jacket_color = Color(0.4, 0.2, 0.42, 1)
+pants_color = Color(0.15, 0.15, 0.2, 1)
+shoes_color = Color(0.2, 0.14, 0.1, 1)
+hat = &"beanie"
+hat_color = Color(0.7, 0.65, 0.2, 1)
+zombie_weight = 0.8

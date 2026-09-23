@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"nurse_scrubs"
+display_name = "Scrubs"
+shirt_color = Color(0.36, 0.52, 0.52, 1)
+pants_color = Color(0.36, 0.52, 0.52, 1)
+shoes_color = Color(0.9, 0.9, 0.9, 1)
+badge = true
+badge_color = Color(0.9, 0.9, 0.9, 1)
+zombie_weight = 0.5

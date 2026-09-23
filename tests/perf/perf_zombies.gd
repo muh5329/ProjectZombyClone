@@ -130,9 +130,17 @@ func _run() -> void:
 	sound_manager().clear()
 	var t0 := Time.get_ticks_msec()
 	var frame := 0
+	# Round 8.5: idle-frame (process) time too — skeleton / skin updates of
+	# the character models happen there. Informational (Performance
+	# refreshes it once per second), not budgeted.
+	var process_ms := 0.0
+	var process_n := 0
 	while probe.samples.size() < FRAMES:
 		await physics_frame
 		frame += 1
+		if frame % 60 == 30:
+			process_ms += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+			process_n += 1
 		# Hostile: the player never leaves their sight (memory refreshed),
 		# so all 200 keep chasing / attacking / holding for the whole run.
 		if hostile and frame % 60 == 0:
@@ -166,6 +174,7 @@ func _run() -> void:
 		states[s] = states.get(s, 0) + 1
 	print("PERF zombies=%d frames=%d avg_physics_ms=%.3f p90_ms=%.3f p99_ms=%.3f worst_ms=%.3f nav_ms=%.3f wall_s=%.1f" % [spawned, counted, avg, p90, p99, worst, total_nav, wall])
 	print("PERF states: %s" % str(states))
+	print("PERF process_ms(avg of 1 s samples)=%.3f" % (process_ms / maxi(process_n, 1)))
 	print("PERF nodes=%d objects=%d phys_active=%d phys_pairs=%d nav_agents=%d nav_regions=%d" % [
 		Performance.get_monitor(Performance.OBJECT_NODE_COUNT), Performance.get_monitor(Performance.OBJECT_COUNT),
 		Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS), Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS),

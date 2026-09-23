@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="VehicleData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://vehicles/vehicle_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"van"
+display_name = "Van"
+shape = &"van"
+length = 4.9
+width = 1.96
+belt_height = 1.05
+roof_height = 2.0
+wheelbase = 2.9
+wheel_radius = 0.36
+cabin = Vector4(0.1, 0.24, 0.985, 0.995)
+trunk_label = "Search back of van"
+trunk_capacity = 80.0
+palette = Array[Color]([Color(0.74, 0.74, 0.7, 1), Color(0.66, 0.6, 0.46, 1), Color(0.26, 0.34, 0.5, 1), Color(0.4, 0.42, 0.38, 1)])

@@ -37,8 +37,8 @@ gameplay, and independent verification.
 | 6 | Inventory and equipment (weight, encumbrance → movement) | **DONE** (2026-09-22, 236 tests) |
 | 7 | Hunger / thirst + consumable food | **DONE** (2026-09-22, 288 tests) |
 | 8 | Sound propagation + zombie hearing | **DONE** (2026-09-22, 324 tests) |
-| 8.5 | Character + vehicle models (zombies, survivors, cars; PZ as style reference) | next (owner request) |
-| 9 | Barricading windows and doors | |
+| 8.5 | Character + vehicle models (zombies, survivors, cars; PZ as style reference) | **DONE** (2026-09-23, 351 tests) |
+| 9 | Barricading windows and doors | next |
 | 10 | Saving and restoring the entire micro-world | |
 
 After Round 10: **STOP** and run the full vertical-slice review + the Final

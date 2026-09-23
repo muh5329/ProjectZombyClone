@@ -80,6 +80,13 @@ var _move_counter: int = 0
 var _knock_left: Vector3 = Vector3.ZERO
 
 
+## Hand-placed zombies (seed 0) get a deterministic seed from their node
+## path (look, tick phases, AI randomness), before the children are ready.
+func _enter_tree() -> void:
+	if ai_seed == 0:
+		ai_seed = hash(String(get_path())) | 1
+
+
 func _ready() -> void:
 	add_to_group(&"zombie")
 	if profile == null:
@@ -204,6 +211,7 @@ func _physics_process(delta: float) -> void:
 			_step_movement(delta)
 	if visual.needs_update():
 		visual.update(delta)
+	visual.animate(delta)
 
 
 ## Movement step: MovementComponent computes the velocity; cheap movers

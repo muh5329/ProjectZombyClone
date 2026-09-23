@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"civ_green_tee_khakis"
+display_name = "Green tee and khakis"
+shirt_color = Color(0.3, 0.45, 0.28, 1)
+pants_color = Color(0.62, 0.55, 0.4, 1)
+shoes_color = Color(0.3, 0.2, 0.12, 1)
+has_belt = true
+zombie_weight = 1.2

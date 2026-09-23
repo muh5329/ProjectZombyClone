@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VehicleData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://vehicles/vehicle_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"sedan"
+display_name = "Sedan"
+shape = &"sedan"
+length = 4.9
+width = 1.85
+belt_height = 0.92
+roof_height = 1.38
+wheelbase = 2.8
+wheel_radius = 0.33
+cabin = Vector4(0.3, 0.42, 0.68, 0.79)
+palette = Array[Color]([Color(0.45, 0.1, 0.1, 1), Color(0.72, 0.66, 0.52, 1), Color(0.14, 0.2, 0.38, 1), Color(0.16, 0.3, 0.2, 1), Color(0.62, 0.63, 0.64, 1), Color(0.85, 0.85, 0.82, 1), Color(0.35, 0.24, 0.16, 1)])

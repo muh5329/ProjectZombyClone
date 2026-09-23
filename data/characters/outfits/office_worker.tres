@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"office_worker"
+display_name = "Office worker"
+shirt_color = Color(0.72, 0.8, 0.9, 1)
+short_sleeves = false
+pants_color = Color(0.3, 0.3, 0.33, 1)
+shoes_color = Color(0.06, 0.05, 0.05, 1)
+has_belt = true
+badge = true
+badge_color = Color(0.8, 0.1, 0.1, 1)
+zombie_weight = 1.2

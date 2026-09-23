@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VehicleData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://vehicles/vehicle_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"station_wagon"
+display_name = "Station wagon"
+shape = &"wagon"
+length = 5.1
+width = 1.88
+belt_height = 0.92
+roof_height = 1.44
+wheelbase = 2.9
+wheel_radius = 0.33
+cabin = Vector4(0.29, 0.41, 0.95, 0.975)
+palette = Array[Color]([Color(0.55, 0.4, 0.25, 1), Color(0.72, 0.66, 0.52, 1), Color(0.3, 0.36, 0.5, 1), Color(0.5, 0.12, 0.1, 1), Color(0.82, 0.8, 0.74, 1)])

@@ -1,4 +1,4 @@
-[gd_scene load_steps=27 format=3 uid="uid://c0testground0001"]
+[gd_scene load_steps=36 format=3 uid="uid://c0testground0001"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://camera/isometric_camera.gd" id="2_cam"]
@@ -22,6 +22,13 @@
 [ext_resource type="Script" path="res://world/day_night_lighting.gd" id="20_daynight"]
 [ext_resource type="Script" path="res://effects/noise_rings.gd" id="21_rings"]
 [ext_resource type="Script" path="res://effects/sound_debug_overlay.gd" id="22_sdebug"]
+[ext_resource type="Script" path="res://vehicles/vehicle.gd" id="23_vehicle"]
+[ext_resource type="Resource" path="res://data/vehicles/police_sedan.tres" id="24_police"]
+[ext_resource type="Resource" path="res://data/vehicles/sedan.tres" id="25_sedan"]
+[ext_resource type="Resource" path="res://data/vehicles/pickup.tres" id="26_pickup"]
+[ext_resource type="Resource" path="res://data/vehicles/station_wagon.tres" id="27_wagon"]
+[ext_resource type="Resource" path="res://data/vehicles/van.tres" id="28_van"]
+[ext_resource type="Resource" path="res://data/vehicles/fire_pickup.tres" id="29_fire"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
 size = Vector3(200, 1, 200)
@@ -39,9 +46,16 @@ ambient_light_source = 2
 ambient_light_color = Color(0.75, 0.78, 0.85, 1)
 ambient_light_energy = 0.35
 tonemap_mode = 2
+tonemap_exposure = 0.85
 
 [sub_resource type="StandardMaterial3D" id="Mat_road"]
 albedo_color = Color(0.28, 0.28, 0.3, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_line"]
+size = Vector2(0.18, 200)
+
+[sub_resource type="StandardMaterial3D" id="Mat_line"]
+albedo_color = Color(0.85, 0.7, 0.15, 1)
 
 [node name="TestGround" type="Node3D"]
 
@@ -77,6 +91,11 @@ mesh = SubResource("PlaneMesh_ground")
 scale = Vector3(0.1, 1, 1)
 surface_material_override/0 = SubResource("Mat_road")
 
+[node name="CenterLine" type="MeshInstance3D" parent="Ground"]
+position = Vector3(0, 0.02, 0)
+mesh = SubResource("PlaneMesh_line")
+surface_material_override/0 = SubResource("Mat_line")
+
 [node name="Props" type="Node3D" parent="."]
 
 [node name="Crate1" type="StaticBody3D" parent="Props"]
@@ -97,13 +116,6 @@ script = ExtResource("4_box")
 size = Vector3(8, 2.6, 0.3)
 color = Color(0.62, 0.6, 0.55, 1)
 
-[node name="Car" type="StaticBody3D" parent="Props"]
-position = Vector3(2, 0, 6)
-rotation = Vector3(0, 0.4, 0)
-script = ExtResource("4_box")
-size = Vector3(1.9, 1.4, 4.4)
-color = Color(0.3, 0.35, 0.55, 1)
-
 [node name="Tree1" type="StaticBody3D" parent="Props"]
 position = Vector3(-17, 0, -13)
 script = ExtResource("4_box")
@@ -115,6 +127,56 @@ position = Vector3(-2, 0, -13)
 script = ExtResource("4_box")
 size = Vector3(0.6, 4, 0.6)
 color = Color(0.35, 0.25, 0.15, 1)
+
+[node name="Vehicles" type="Node3D" parent="."]
+
+[node name="PoliceCar" type="StaticBody3D" parent="Vehicles"]
+position = Vector3(2, 0, 6)
+rotation = Vector3(0, 0.4, 0)
+script = ExtResource("23_vehicle")
+data = ExtResource("24_police")
+
+[node name="Sedan" type="StaticBody3D" parent="Vehicles"]
+position = Vector3(7.6, 0, 17)
+rotation = Vector3(0, 3.14159, 0)
+script = ExtResource("23_vehicle")
+data = ExtResource("25_sedan")
+variant_seed = 11
+
+[node name="Pickup" type="StaticBody3D" parent="Vehicles"]
+position = Vector3(7.7, 0, 24.5)
+rotation = Vector3(0, 3.1, 0)
+script = ExtResource("23_vehicle")
+data = ExtResource("26_pickup")
+variant_seed = 5
+
+[node name="Wagon" type="StaticBody3D" parent="Vehicles"]
+position = Vector3(7.6, 0, 32)
+rotation = Vector3(0, 3.14159, 0)
+script = ExtResource("23_vehicle")
+data = ExtResource("27_wagon")
+variant_seed = 7
+
+[node name="Van" type="StaticBody3D" parent="Vehicles"]
+position = Vector3(-7.6, 0, 19)
+rotation = Vector3(0, 0.03, 0)
+script = ExtResource("23_vehicle")
+data = ExtResource("28_van")
+variant_seed = 3
+
+[node name="Sedan2" type="StaticBody3D" parent="Vehicles"]
+position = Vector3(-7.6, 0, 26.5)
+rotation = Vector3(0, 0, 0)
+script = ExtResource("23_vehicle")
+data = ExtResource("25_sedan")
+variant_seed = 29
+
+[node name="FirePickup" type="StaticBody3D" parent="Vehicles"]
+position = Vector3(-7.7, 0, 34)
+rotation = Vector3(0, -0.05, 0)
+script = ExtResource("23_vehicle")
+data = ExtResource("29_fire")
+variant_seed = 1
 
 [node name="Buildings" type="Node3D" parent="."]
 

@@ -16,8 +16,15 @@ const GROUND_Y := 0.06
 const SWING_ARC_SECONDS := 0.3
 ## Resting tilt of the held weapon (tip up, radians about the pivot's X).
 const REST_PITCH := 0.8
+## Grip point in the hand bone's space (the hand hangs along -Y) and the
+## weapon's tilt there (tip forward and down while the arm hangs).
+const HAND_GRIP := Vector3(0.0, -0.085, -0.01)
+const HAND_PITCH := -0.6
 
 var combat: MeleeCombat
+## True when the weapon is parented to the character model's right hand
+## bone (the animation swings it; no procedural sweep).
+var on_hand_bone: bool = false
 var ring: MeshInstance3D
 var preview_arc: MeshInstance3D
 var swing_arc: MeshInstance3D
@@ -62,10 +69,18 @@ func _ready() -> void:
 	var body_visual := get_parent().get_node_or_null("Visual") as Node3D
 	weapon_pivot = Node3D.new()
 	weapon_pivot.name = "WeaponPivot"
-	# Held in the right hand, at the side of the body (readable from the
-	# dimetric camera); at rest the weapon points forward-up.
-	weapon_pivot.position = Vector3(0.36, 0.95, -0.05)
-	(body_visual if body_visual else self).add_child(weapon_pivot)
+	var model := body_visual.get_node_or_null("Model") as CharacterModel if body_visual else null
+	if model and model.skeleton:
+		# Round 8.5: gripped by the right hand bone; the swing clips move it.
+		on_hand_bone = true
+		weapon_pivot.position = HAND_GRIP
+		weapon_pivot.rotation.x = HAND_PITCH
+		model.attach(&"hand_r").add_child(weapon_pivot)
+	else:
+		# Held in the right hand, at the side of the body (readable from the
+		# dimetric camera); at rest the weapon points forward-up.
+		weapon_pivot.position = Vector3(0.36, 0.95, -0.05)
+		(body_visual if body_visual else self).add_child(weapon_pivot)
 	_weapon_mat = StandardMaterial3D.new()
 	weapon_mesh = MeshInstance3D.new()
 	weapon_mesh.name = "Weapon"
@@ -142,7 +157,9 @@ func _rebuild() -> void:
 		# Held pointing forward: length along -Z.
 		box.size = Vector3(w.world_size.z, w.world_size.y, w.world_size.x)
 		weapon_mesh.mesh = box
-		weapon_mesh.position = Vector3(0, 0, -w.world_size.x * 0.5)
+		# A little of the handle sticks out behind the fist.
+		var behind := 0.08 if on_hand_bone else 0.0
+		weapon_mesh.position = Vector3(0, 0, -w.world_size.x * 0.5 + behind)
 		_weapon_mat.albedo_color = w.color
 
 
@@ -181,6 +198,8 @@ func _process(delta: float) -> void:
 		_swing_mat.albedo_color = c
 		if _swing_left <= 0.0:
 			swing_arc.visible = false
+	if on_hand_bone:
+		return
 	# Weapon sweep: raised to one side during the windup, across the arc
 	# during the active window, back to rest in recovery.
 	var w := combat.current

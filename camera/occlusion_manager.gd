@@ -320,6 +320,9 @@ func _fade_to(meshes: Array, tw: Tween, alpha_scale: float) -> void:
 		if m == null:
 			continue
 		var target_a: float = float(mi.get_meta(&"occl_base_alpha", 1.0)) * alpha_scale
+		if alpha_scale > 0.0:
+			# Some meshes (vehicles) never fade below their floor (R8.5).
+			target_a = maxf(target_a, float(mi.get_meta(&"occl_min_alpha", 0.0)))
 		tw.tween_property(m, "albedo_color:a", target_a, tween_seconds)
 
 
@@ -336,5 +339,9 @@ func _fade_material(mi: MeshInstance3D) -> StandardMaterial3D:
 		m = StandardMaterial3D.new()
 	mi.set_meta(&"occl_base_alpha", m.albedo_color.a)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	if mi.get_meta(&"occl_depth_always", false):
+		# Keep writing depth while faded: the mesh's own inner faces are
+		# hidden (no x-ray through a car), what is behind still shows.
+		m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 	mi.material_override = m
 	return m

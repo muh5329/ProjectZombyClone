@@ -32,6 +32,13 @@ audio/        sound_manager.gd (autoload SoundManager), sound_event.gd (SoundEve
 characters/   character.gd, movement_component.gd, stats_component.gd,
               health_component.gd, footstep_emitter.gd, body_helpers.gd (R3),
               shout_component.gd (ShoutComponent) (R8)
+characters/models/  outfit.gd (Outfit), appearance.gd (Appearance), humanoid_builder.gd
+              (HumanoidBuilder), character_animations.gd (CharacterAnimations),
+              character_model.gd (CharacterModel), character_animator.gd
+              (CharacterAnimator), character_assets.gd (CharacterAssets) (R8.5)
+vehicles/     vehicle_data.gd (VehicleData), vehicle_builder.gd (VehicleBuilder),
+              vehicle.gd (Vehicle), vehicle_container.gd (VehicleContainer),
+              vehicle_assets.gd (VehicleAssets) (R8.5)
 player/       player.gd, player.tscn, player_controller.gd, player_interaction.gd,
               player_combat_input.gd (R4)
 camera/       isometric_camera.gd, occlusion_manager.gd
@@ -64,15 +71,17 @@ data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tr
               items/<category>/*.tres (41 items, R5), loot/*.tres + loot/garage/*.tres (R5),
               combat/combat_profile.gd + .tres, injuries/injury_profile.gd + human_injuries.tres (R4),
               world/time_config.gd + .tres, survival/needs_profile.gd + .tres (R7),
-              audio/sound_categories.tres (R8)
+              audio/sound_categories.tres (R8), characters/outfits/*.tres (14 outfits),
+              vehicles/*.tres (6 vehicle types), loot/vehicle_trunk + vehicle_glovebox (R8.5)
 assets/       materials/grid_ground.gdshader
-tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd
+tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd,
+              tools/ (dev previews: model_preview.gd, street_preview.gd — not tests)
 scripts/      test.sh, screenshots.sh, perf.sh
 docs/
 ```
 
 Planned folders follow the brief (`crafting/`, `simulation/`,
-`vehicles/`, `farming/`, `weather/`, `electricity/`, `npc/`).
+`farming/`, `weather/`, `electricity/`, `npc/`).
 
 ## Key types
 
@@ -252,15 +261,66 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
   from the player) integrates the velocity directly and takes the body
   out of the physics space; `hostile` raises the AI rate.
 
-### `ZombieVisual` (zombies/zombie_visual.gd, MeshInstance3D)
-- Shared 3-surface mesh and head materials from a `ZombieAssets` node
-  under the scene root (never statics: resources held by scripts at exit
-  are reported as leaks). Facing lerp, state tint, attack lunge offset,
-  swing flash, death collapse. Updated only while `needs_update()`.
+### `ZombieVisual` (zombies/zombie_visual.gd, Node3D — R8.5)
+- Child "Model" = `CharacterModel` with `CharacterAssets.zombie_appearance(ai_seed)`.
+  Facing lerp (`update`, only while `needs_update()`), eye mood material
+  (`set_tint`, `head_material()` = the eyes), `lunge` (scrubs z_attack +
+  offsets the model), `flash` (bite → grab), `hit_flash` (override
+  material + z_hit), `set_knocked_down`, `is_lying()` (hips pose),
+  `collapse()` (death; then its own `_process` finishes the fall),
+  `clip()`. `animate(delta)` is called by `Zombie._physics_process` every
+  tick and advances the AnimationPlayer at the LOD divider; pure
+  `clip_for(state, speed)`.
 
 ### `ZombieCorpse` (zombies/zombie_corpse.gd, StaticBody3D)
-- Layer 4 / mask 0, group `corpse`, adopts the zombie's Visual and
-  provides the disabled "Search corpse" action. `take_damage` refuses.
+- Layer 4 / mask 0, group `corpse`, adopts the zombie's Visual (model in
+  its death pose) and is a LootContainer ("Search corpse"). `take_damage`
+  refuses.
+
+### Character models (characters/models/, R8.5)
+- `Outfit` (Resource, data/characters/outfits): garment colours + style
+  flags + `zombie_weight`, `validate()`.
+- `Appearance` (RefCounted): outfit, skin, hair, zombie decay (blood,
+  torn sleeves, pattern seed), height scale; `random(seed, outfits,
+  zombie)`, `key()` (mesh cache key), `zombie_skin()`.
+- `HumanoidBuilder` (RefCounted, pure): `BONE_NAMES / BONE_PARENTS /
+  BONE_HEADS`, `build_skeleton()`, `build_skin()`, `build_mesh(app)` (2
+  surfaces: SURFACE_BODY vertex colour, SURFACE_EYES), `triangle_count()`.
+- `CharacterAnimations` (RefCounted, pure): `build_library()`,
+  `DESIGN_SPEED`, pose helpers.
+- `CharacterModel` (Node3D): builds Skeleton3D / "Body" MeshInstance3D
+  (shared mesh + Skin) / AnimationPlayer (MANUAL); `setup(app)` (or the
+  exported outfit / skin / hair for hand-placed models), `play`,
+  `advance`, `finish`, `set_eye_material`, `set_override`, `attach(bone)`,
+  `bone_global_position`, `bone_pose_rotation`.
+- `CharacterAnimator` (Node, child "Animator" of a Character): picks the
+  clip from death / busy context / MeleeCombat phase / damage /
+  locomotion each physics tick and advances the model; worn bag on the
+  chest bone (Equipment `equipped_changed`). Pure `locomotion_clip`,
+  `busy_clip`, `swing_clips`.
+- `CharacterAssets` (Node "CharacterAssets" under the root, added deferred;
+  `CharacterAssets.of(tree)`): Skin, AnimationLibrary, body / eye / hit
+  materials, outfit pool, typed mesh cache, 48 stratified zombie looks;
+  pure `stratify`, `variant_for_seed` (hash), `height_for_seed`.
+- `VehicleAssets` (Node "VehicleAssets", `VehicleAssets.of(tree)`): typed
+  mesh cache per (data id, seed), `material(surface, lit)`.
+- `ZombieSpawner.next_seed(rng)`: the per-zombie seed (static, tests).
+- `MeleeVisuals`: with a model, `weapon_pivot` lives on
+  `model.attach(&"hand_r")` (`on_hand_bone`), no procedural sweep.
+
+### Vehicles (vehicles/, R8.5)
+- `VehicleData` (Resource, data/vehicles): shape, dimensions, cabin,
+  palette / livery / light bar, wear chances, storage, `lights_at_night`,
+  `validate()`.
+- `VehicleBuilder` (RefCounted, pure): `build_mesh(data, seed)`,
+  `variation_for`, `axles`, `collision_size`, `triangle_count`; mesh meta
+  `surfaces` {name: index}.
+- `Vehicle` (StaticBody3D, layers 1 + 6, groups `vehicle` + `occluder`):
+  Visual/Body mesh, box collider, `trunk` / `glovebox`
+  (`VehicleContainer`), `set_night_lights(night)`, `lights_on`,
+  static `material(assets, surface, lit)`.
+- `VehicleContainer extends LootContainer`: layer 4 only, own small box,
+  `prompt_offset`, container types `vehicle_trunk` / `vehicle_glovebox`.
 
 ### `ZombieSenses` / `ZombieAI` / `ZombieSpawner` / `NavBaker` / `WorldQuery`
 - See SYSTEMS.md (Zombies, Navigation). `ZombieSenses.can_see()` is a
@@ -668,6 +728,9 @@ to, item)`, `timed_action_started(actor, action, label, seconds)`,
 1 world · 2 player · 3 zombies · 4 interactables · 5 items · 6 occluders ·
 7 doors · 8 window_panes
 
+Vehicles (R8.5): body 1 + 6 (navmesh-baked, fades), trunk / glovebox
+containers 4 only.
+
 Beds / sofas / sinks (R7): 1 + 4 (+6 when tall). World items (`WorldItem`): layer 4, mask 0. Loot containers /
 furniture (R5): 1+4 (+6 when tall); plain furniture 1 (+6); corpses 4. Melee target query: layer 3;
 melee LOS: 1+7+8. Walls: 1+6. Windows: sill + header body 1+4+6, glass child body 8 while
@@ -684,7 +747,7 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 `breakable` (doors: `take_damage` + `blocks_path`), `zombie`, `corpse`,
 `world_item` (R4; dropped items and bags on the ground too, R6), `blood_decals` (R4), `container`, `persistent`,
 `furniture`, `world_config` (R5), `interior_light` (R7, room OmniLights),
-`glass_shards`, `noise_rings`, `sound_debug` (R8),
+`glass_shards`, `noise_rings`, `sound_debug` (R8), `vehicle`, `day_night` (R8.5),
 `navigation_mesh_source_group` (the map root; parsed by NavBaker).
 
 ## Testing

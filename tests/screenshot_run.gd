@@ -150,11 +150,10 @@ func _run() -> void:
 	var hud: Node = inst.get_node("HUD")
 	if spawner.zombies.size() < 10:
 		_problems.append("map spawner placed %d zombies (expected 10)" % spawner.zombies.size())
+	# R8.5: at the default zoom (14) so the zombies read as hunched
+	# shamblers, not specks.
 	player.global_position = Vector3(-22, 0.1, 4)
-	await _tap(&"camera_zoom_out")
-	await _frames(5)
-	await _tap(&"camera_zoom_out")
-	var group_origin := player.global_position + Vector3(-7, 0, -6)
+	var group_origin := player.global_position + Vector3(-4, 0, -4)
 	var jitter := RandomNumberGenerator.new()
 	jitter.seed = 7
 	for i in 7:
@@ -167,7 +166,7 @@ func _run() -> void:
 	await _shot("11_zombies_overview")
 
 	# One zombie in front of the player: it must spot and chase within 1 s.
-	var chaser: Node3D = spawner.spawn_at(player.global_position + Vector3(-5.5, 0, 0))
+	var chaser: Node3D = spawner.spawn_at(player.global_position + Vector3(-4.5, 0, 0))
 	chaser.face_toward(player.global_position)
 	chaser.snap_facing(chaser.movement.facing)
 	var chasing := false
@@ -196,12 +195,17 @@ func _run() -> void:
 	if hud.flash_strength() < 0.05:
 		_problems.append("damage flash not visible after the hit (strength %.2f)" % hud.flash_strength())
 	await _shot("13_damage_flash")
+	# Back to the zoom the later sections were framed with.
+	await _tap(&"camera_zoom_out")
+	await _frames(5)
+	await _tap(&"camera_zoom_out")
 
 	await _round4(inst, player, cam, spawner, hud)
 	await _round5(inst, player, cam, spawner, hud)
 	await _round6(inst, player, cam, spawner, hud)
 	await _round7(inst, player, cam, spawner, hud)
 	await _round8(inst, player, cam, spawner, hud)
+	await _round85(inst, player, cam, spawner, hud)
 
 	if _problems.is_empty():
 		print("SCREENSHOT_RUN: OK")
@@ -743,6 +747,83 @@ func _round8(inst: Node, player: Node3D, _cam: Node3D, spawner: Node, hud: Node)
 	await _shot("27_debug_sound")
 	await _tap(&"toggle_sound_debug")
 	await _frames(2)
+
+
+# --- Round 8.5: procedural people, zombies and parked vehicles ---------------
+func _round85(inst: Node, player: Node3D, cam: Node3D, spawner: Node, _hud: Node) -> void:
+	var tm: Node = root.get_node("TimeManager")
+	tm.set_time_of_day(13, 0)
+	for z in root.get_tree().get_nodes_in_group(&"zombie"):
+		z.queue_free()
+	await _frames(5)
+	player.get_node("Health").invulnerable = true
+	player.get_node("Health").heal(100.0)
+	# Close-up: the survivor with a bat, a shambling crowd of townspeople.
+	player.global_position = Vector3(-24, 0.1, 16)
+	player.velocity = Vector3.ZERO
+	player.movement.facing = 0.0
+	for i in 4:
+		await _tap(&"camera_zoom_in")
+		await _frames(3)
+	var looks := {}
+	var ring := [Vector3(-2.6, 0, -2.2), Vector3(-1.0, 0, -3.3), Vector3(0.8, 0, -3.4), Vector3(2.5, 0, -2.4),
+		Vector3(-3.4, 0, -0.4), Vector3(3.3, 0, -0.8), Vector3(1.8, 0, -5.0)]
+	for off in ring:
+		var z: Node3D = spawner.spawn_at(player.global_position + off)
+		z.face_toward(player.global_position)
+		z.snap_facing(z.movement.facing)
+		looks[z.visual.model.appearance.key()] = true
+	if looks.size() < 5:
+		_problems.append("zombie crowd not varied (%d looks)" % looks.size())
+	await _frames(70)
+	var model: Node = player.get_node("Visual/Model")
+	if model == null or model.skeleton == null:
+		_problems.append("player has no character model")
+	var moving := 0
+	for z in root.get_tree().get_nodes_in_group(&"zombie"):
+		if z.visual.clip() in [&"z_walk", &"z_chase", &"z_attack"]:
+			moving += 1
+	if moving < 3:
+		_problems.append("zombies not shambling toward the player (%d)" % moving)
+	await _shot("28_characters_closeup")
+	for z in root.get_tree().get_nodes_in_group(&"zombie"):
+		z.queue_free()
+	await _frames(3)
+	# The street: parked cars incl. the police car, zoomed out like ref 2.
+	player.global_position = Vector3(0.5, 0.1, 25)
+	player.velocity = Vector3.ZERO
+	for i in 6:
+		await _tap(&"camera_zoom_out")
+		await _frames(3)
+	var wander := [Vector3(-3, 0, 20), Vector3(2, 0, 22), Vector3(-1.5, 0, 29), Vector3(4, 0, 31),
+		Vector3(-4.5, 0, 25), Vector3(1, 0, 17), Vector3(5, 0, 27), Vector3(-2, 0, 33)]
+	for p in wander:
+		var z: Node3D = spawner.spawn_at(p)
+		z.snap_facing(float(int(p.x * 7.0 + p.z)) * 0.7)
+	await _frames(60)
+	var vehicles := root.get_tree().get_nodes_in_group(&"vehicle")
+	if vehicles.size() < 5:
+		_problems.append("expected ≥ 5 parked vehicles (%d)" % vehicles.size())
+	if not vehicles.any(func(v): return v.data.livery == &"police"):
+		_problems.append("no police car")
+	await _shot("29_street_vehicles")
+	for i in 2:
+		await _tap(&"camera_zoom_in")
+		await _frames(3)
+	# Night street: the abandoned fire truck's light bar and its red /
+	# white light pool, other parked cars dark.
+	tm.set_time_of_day(23, 0)
+	player.global_position = Vector3(-3.5, 0.1, 31)
+	player.velocity = Vector3.ZERO
+	await _frames(40)
+	var lit := vehicles.filter(func(v): return v.lights_on)
+	if lit.is_empty():
+		_problems.append("no emergency lights at night")
+	if vehicles.any(func(v): return v.lights_on and not v.data.lights_at_night):
+		_problems.append("a civilian car lit its lamps")
+	await _shot("30_night_street")
+	tm.set_time_of_day(13, 0)
+	await _frames(5)
 
 
 func _right_click(p: Vector2) -> void:

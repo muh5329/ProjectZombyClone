@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="VehicleData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://vehicles/vehicle_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"police_sedan"
+display_name = "Police car"
+shape = &"sedan"
+length = 5.0
+width = 1.88
+belt_height = 0.92
+roof_height = 1.4
+wheelbase = 2.9
+wheel_radius = 0.34
+cabin = Vector4(0.3, 0.42, 0.68, 0.79)
+livery = &"police"
+livery_color = Color(0.93, 0.93, 0.92, 1)
+light_bar = true
+lights_at_night = true
+rust_chance = 0.1
+flat_tire_chance = 0.0
+trim_color = Color(0.15, 0.15, 0.16, 1)
+palette = Array[Color]([Color(0.06, 0.06, 0.07, 1)])

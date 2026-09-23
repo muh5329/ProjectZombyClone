@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"jogger"
+display_name = "Jogger"
+shirt_color = Color(0.2, 0.65, 0.7, 1)
+pants_color = Color(0.1, 0.1, 0.12, 1)
+shorts = true
+shoes_color = Color(0.92, 0.92, 0.92, 1)
+zombie_weight = 0.8

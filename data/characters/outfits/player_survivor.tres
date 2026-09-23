@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"player_survivor"
+display_name = "Survivor"
+shirt_color = Color(0.55, 0.56, 0.58, 1)
+has_jacket = true
+jacket_color = Color(0.3, 0.36, 0.2, 1)
+jacket_open = true
+pants_color = Color(0.16, 0.22, 0.36, 1)
+shoes_color = Color(0.3, 0.18, 0.1, 1)
+has_belt = true
+zombie_weight = 0.0

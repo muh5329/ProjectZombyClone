@@ -2,7 +2,7 @@
 
 Isometric 3D survival sandbox in **Godot 4.6 / GDScript**, inspired by the
 systemic gameplay of Project Zomboid. Blockout visuals (primitives), systems
-first. Built through a "gauntlet" of verified rounds; **Rounds 1–8 of 10 are
+first. Built through a "gauntlet" of verified rounds; **Rounds 1–8 (+8.5 models) of 10 are
 done and committed.**
 
 ## Status at handoff (2026-09-22)
@@ -17,10 +17,10 @@ done and committed.**
 | 6 | Equipment slots, bags, hotbar, inventory screen, encumbrance | ✅ done |
 | 7 | World time, day/night, hunger/thirst/fatigue, food + water, spoilage, sleep | ✅ done |
 | 8 | Sound propagation, attenuation, hearing, moans, noise UI, glass | ✅ done |
-| 8.5 | Real zombie / survivor / vehicle models | ⬜ next (owner request) |
+| 8.5 | Procedural people, zombies (48 looks, 31 animations) and 6 vehicle types | ✅ done |
 | 9–10 | Barricades, save/load | ⬜ planned |
 
-- **324 automated tests, 0 failing** (`scripts/test.sh unit` ~10 s + `scripts/test.sh integration` ~9 min; the full run exceeds 10 min).
+- **351 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, `integration-a` ~270 s, `integration-b` ~280 s).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,
@@ -39,6 +39,8 @@ rotate camera · wheel or +/− zoom · F5-F8 (or , .) time speed · H shout · 
 ```
 GODOT=/path/to/godot scripts/test.sh                 # all (unit + integration)
 GODOT=/path/to/godot scripts/test.sh unit
+GODOT=/path/to/godot scripts/test.sh integration-a       # half of the integration files
+GODOT=/path/to/godot scripts/test.sh integration-b       # the other half (--shard=K/N also works)
 GODOT=/path/to/godot scripts/test.sh --filter=zombie
 GODOT=/path/to/godot scripts/screenshots.sh          # real-input gameplay run + PNGs
 GODOT=/path/to/godot scripts/perf.sh                 # 200-zombie benchmark

@@ -6,6 +6,58 @@ that did not write the code).
 
 ---
 
+## Round 8.5 — Character and vehicle models (owner request) (2026-09-23)
+
+### Goal
+Replace capsules and boxes with real-looking people, zombies and cars in
+Project Zomboid's style (used as a style reference only — no PZ assets).
+
+### What changed
+- Fully procedural, owned assets (no downloads; see docs/ASSET_CREDITS.md):
+  `characters/models/humanoid_builder.gd` — 1.75 m skinned humans, 17
+  bones, ~600-800 tris, faces (eye sockets, nose, jaw), chunky PZ-like
+  proportions; 14 outfits as data (civilians, police, firefighter,
+  construction, doctor, nurse, jogger, office, player survivor).
+- Zombies: same pool, grey-green skin, torn sleeves, 3-shade blood capped
+  at 35 % torso, open mouths, hunched/limping shamble; 48 shared looks
+  stratified so every outfit appears; per-zombie height; eye-glow mood.
+- 31 code-built animations (idle/walk/jog/sprint/sneak/swings/shove/climb/
+  eat/sleep/death/hit; zombie shamble/chase/lunge/bang/knockdown/get-up/
+  death) driven by a visuals-only `CharacterAnimator`; LOD update rates
+  with hashed phases. Weapon on the hand bone, bag with straps on the back.
+- Vehicles (`vehicles/`, data/vehicles): sedan, wagon, pickup, van, police
+  sedan, fire pickup; dirt, rust, flat tyres, glass bands; trunk/glovebox
+  loot; collision + navmesh; emergency light pools at night (≤4).
+  Test map: 7 parked vehicles along a lined road.
+- Muted palette (exposure 0.85), subtle hit tint + blood spray, faded
+  vehicles capped at 50 % opacity. `CharacterAssets` / `VehicleAssets`.
+- Test runner gains `--shard=K/N`; `scripts/test.sh integration-a|b`.
+
+### Tests performed
+Unit **153**, integration **198** (two shards 268 s + 280 s), 0 failed.
+Screenshots OK (28_characters_closeup, 29_street_vehicles,
+30_night_street, refreshed 11/12). Perf: calm 3.7/5.7, hostile 7.1/11.0,
+noisy 3.7/6.2, horde 1.3/3.6 ms (avg/p99).
+
+### Bugs discovered (critic) → all fixed
+Odd-only spawner seeds used half the zombie looks (some outfits never
+appeared) and collapsed the animation LOD stagger; repeat hits didn't
+restart flinch; random look for hand-placed zombies; zombies didn't read
+as zombies at default zoom; stick-thin bodies; salmon full-body hit flash;
+harlequin blood; toy-like saturated palette; floating/sinking wheels;
+x-ray faded cars; no emergency light pools.
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8.5 (8) · System Integration 8 (8) · Survival Depth 6 (6) ·
+Architecture 8 (7.5) · Performance 8 (8) · UX/Visual fidelity 7.5 (5.5) ·
+Bug Resistance 8 (7).
+
+### Highest-priority remaining issue
+Round 9: barricading doors and windows (planks, nails, hammer; zombies
+attack barricades).
+
+---
+
 ## Round 8 — Sound propagation + zombie hearing (2026-09-22)
 
 ### Goal

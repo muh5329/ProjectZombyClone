@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"civ_hoodie"
+display_name = "Hoodie"
+has_jacket = true
+jacket_color = Color(0.45, 0.46, 0.48, 1)
+hood = true
+pants_color = Color(0.14, 0.14, 0.16, 1)
+shoes_color = Color(0.8, 0.8, 0.8, 1)
+zombie_weight = 1.5

@@ -4,6 +4,12 @@ extends SceneTree
 ##   godot --headless --path . -s tests/test_runner.gd            # all tests
 ##   godot --headless --path . -s tests/test_runner.gd -- unit    # one dir
 ##   godot --headless --path . -s tests/test_runner.gd -- --filter=stamina
+##   godot --headless --path . -s tests/test_runner.gd -- integration --shard=1/2
+##
+## --shard=K/N runs only the K-th of N balanced groups of test FILES
+## (greedy by the approximate runtimes in FILE_SECONDS, unknown files
+## count DEFAULT_FILE_SECONDS) so a long suite fits a per-call time cap;
+## the N shards together run every file exactly once.
 ##
 ## Discovers tests/<dir>/test_*.gd, runs every `test_*` method, prints a
 ## report and exits 0 on success / 1 on failure. Also writes
@@ -15,6 +21,14 @@ extends SceneTree
 
 const DIRS := ["unit", "integration"]
 const WATCHDOG_SECONDS := 900.0
+## Approximate runtimes (s) on the 2-core dev box, for --shard balancing.
+const FILE_SECONDS := {
+	"test_combat_scene.gd": 170.0, "test_survival_scene.gd": 88.0, "test_zombie_scene.gd": 72.0,
+	"test_player_scene.gd": 58.0, "test_sound_scene.gd": 48.0, "test_inventory_scene.gd": 38.0,
+	"test_loot_scene.gd": 36.0, "test_house_scene.gd": 32.0, "test_models_scene.gd": 18.0,
+	"test_inventory_perf.gd": 3.0,
+}
+const DEFAULT_FILE_SECONDS := 30.0
 
 var _total := 0
 var _failed := 0
@@ -39,9 +53,16 @@ func _run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var dirs: Array[String] = []
 	var filter := ""
+	var shard := 0
+	var shards := 1
 	for a in args:
 		if a.begins_with("--filter="):
 			filter = a.trim_prefix("--filter=")
+		elif a.begins_with("--shard="):
+			var parts := a.trim_prefix("--shard=").split("/")
+			if parts.size() == 2:
+				shard = int(parts[0]) - 1
+				shards = maxi(int(parts[1]), 1)
 		elif DIRS.has(a):
 			dirs.append(a)
 	if dirs.is_empty():
@@ -53,11 +74,16 @@ func _run() -> void:
 		var da := DirAccess.open(dir_path)
 		if da == null:
 			continue
-		var files := da.get_files()
-		files.sort()
-		for f in files:
+		var files: Array[String] = []
+		for f in da.get_files():
 			if f.begins_with("test_") and f.ends_with(".gd"):
-				await _run_script("%s/%s" % [dir_path, f], filter)
+				files.append(f)
+		files.sort()
+		if shards > 1:
+			files = shard_files(files, shard, shards)
+			_log("== shard %d/%d: %s" % [shard + 1, shards, ", ".join(files)])
+		for f in files:
+			await _run_script("%s/%s" % [dir_path, f], filter)
 
 	var elapsed := (Time.get_ticks_msec() - start) / 1000.0
 	var summary := "\n%d tests, %d failed (%.2fs)" % [_total, _failed, elapsed]
@@ -70,6 +96,33 @@ func _run() -> void:
 		fa.store_string("\n".join(_report))
 		fa.close()
 	quit(1 if _failed > 0 else 0)
+
+
+## Pure: the files of shard [k] (0-based) of [n], greedy longest-first
+## into the currently lightest shard; returned in name order.
+static func shard_files(files: Array[String], k: int, n: int) -> Array[String]:
+	var sorted := files.duplicate()
+	sorted.sort_custom(func(a, b):
+		var wa: float = FILE_SECONDS.get(a, DEFAULT_FILE_SECONDS)
+		var wb: float = FILE_SECONDS.get(b, DEFAULT_FILE_SECONDS)
+		return wa > wb if wa != wb else a < b)
+	var load_s: Array[float] = []
+	var groups: Array = []
+	for i in n:
+		load_s.append(0.0)
+		groups.append([])
+	for f in sorted:
+		var best := 0
+		for i in n:
+			if load_s[i] < load_s[best]:
+				best = i
+		load_s[best] += float(FILE_SECONDS.get(f, DEFAULT_FILE_SECONDS))
+		groups[best].append(f)
+	var out: Array[String] = []
+	if k >= 0 and k < n:
+		out.assign(groups[k])
+	out.sort()
+	return out
 
 
 func _run_script(path: String, filter: String) -> void:

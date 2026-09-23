@@ -104,7 +104,7 @@ func spawn_at(p: Vector3, p_profile: ZombieProfile = null) -> Zombie:
 		z.profile = p_profile
 	elif profile != null:
 		z.profile = profile
-	z.ai_seed = rng.randi() | 1
+	z.ai_seed = next_seed(rng)
 	spawn_counter += 1
 	z.spawn_id = "%s/%d" % [stable_id(), spawn_counter]
 	z.name = "Zombie%d" % (zombies.size() + 1)
@@ -112,6 +112,12 @@ func spawn_at(p: Vector3, p_profile: ZombieProfile = null) -> Zombie:
 	add_child(z)
 	zombies.append(z)
 	return z
+
+
+## The per-zombie seed drawn from the spawner's rng (never 0). Static so
+## tests can reproduce real spawn seeds.
+static func next_seed(r: RandomNumberGenerator) -> int:
+	return r.randi() | 1
 
 
 func stable_id() -> String:

@@ -5,6 +5,44 @@ that fixed them.
 
 ## Open
 
+0000000. **Round-8.5 models / animation / vehicles gaps** (ordered):
+   - **Rigid skinning** (one bone per vertex, no weights): elbows,
+     knees and the waist show small seams / interpenetration at strong
+     bends (sneak, sit, lying). Fine at the default zoom, visible at the
+     closest one.
+   - **No upper / lower body layering**: a swing, eat or bandage clip
+     drives the whole body, so swinging while walking slides the feet;
+     the second hand does not grip a two-handed weapon exactly.
+   - **Clothing is cosmetic**: outfits are not linked to the clothing
+     items / inventory (no wearable clothes yet, Round-6 gap), a
+     zombie's corpse loot table ignores its outfit (a dead cop has no
+     badge / baton), and blood / torn sleeves never change after spawn
+     (no new blood when hit; the blood decals on the ground still work).
+   - **Crowd variety is capped**: 48 zombie looks (+ per-seed height and
+     desynchronised clips); large hordes show repeats. Raising
+     `CharacterAssets.ZOMBIE_VARIANTS` costs ~3.5 ms build time and one mesh
+     per look.
+   - **Knocked-down / dead zombies keep their upright collision capsule**
+     until death (then the corpse box); the model lies but the body
+     still stands (Round-4 gap, unchanged).
+   - **No player facial expressions, fingers or hair physics**; hair
+     is 5 fixed shapes; hats replace the hair top.
+   - **Animation LOD is per-zombie counters**, not a manager: far calm
+     zombies still pay one GDScript call per physics tick; off-screen
+     zombies are not culled from animation (headless perf includes them
+     all). Skeleton / skin updates happen in the idle frame (~0.9 ms
+     process time for 200, printed by perf.sh, not budgeted).
+   - **Vehicles are parked props**: no driving, doors / hood / trunk do
+     not open visually, no damage, no alarms, no fuel / key / battery;
+     the trunk is a separate small interaction body at the rear, the
+     glovebox one at the driver's door (you cannot sit inside).
+   - **Vehicle collision is one box** (pickup beds are not walkable, the
+     roof is not climbable); the navmesh bakes the car roofs as tiny
+     islands (the spawner already rejects points above 0.75 m).
+   - **Parked cars never light up**; emergency vehicles cast one small
+     unshadowed OmniLight each (global budget 4 — the rest only glow).
+   - **Vehicle geometry is generic per shape**: no brand details, text,
+     damage decals or broken glass; rust is vertex-colour patches.
 000000. **Round-8 sound / hearing gaps** (ordered):
    - **Obstacles are counted, not measured**: up to 5 per ray; a thick
      wall and a thin one weigh the same. The per-event cache is keyed by
@@ -110,9 +148,10 @@ that fixed them.
    - **Targets are resolved once, at the start of the active window**; a
      zombie stepping into the arc mid-window is not hit. No per-frame
      sweep.
-   - **No animations / hit reactions**: the weapon is a box that sweeps
-     through the arc; bites do not stagger the player; the zombie hit
-     reaction is a 0.2 s red body flash + knockback.
+   - **Hit reactions are cosmetic** (R8.5 added swing / flinch / stagger
+     clips): the weapon is still a box in the hand; a bite does not
+     interrupt the player's swing; the zombie reaction is z_hit + a
+     0.2 s red flash + knockback.
    - **Arc / ring are depth-tested ground meshes**: hidden under zombie
      bodies and indoors under the cutaway rules; readable in the open.
    - No disinfectant / stitches / splint *use* yet (the items exist as
@@ -152,8 +191,9 @@ that fixed them.
      (stuck timer → idle / search). No window climbing, no vaulting.
    - **Player is the only prey**; `zombie.target` is duck-typed so NPCs
      can join through a group later.
-   - **Attack tell is minimal**: lunge + white head flash; no swing
-     animation, no player hit reaction (Round 4).
+   - **Attack tell** (R8.5): z_attack lunge / grab clip + white eye
+     flash; the player flinches on a bite. The eye glow alone is subtle
+     at the default zoom (by design, PZ-like).
    - **Perf budget is machine-bound**: ≈ 5 ms calm / ≈ 8.5 ms hostile per
      physics step with 200 zombies on the (slow, 2-core) dev box against
      8 / 10 ms budgets. Next step: a zombie manager ticking far zombies
@@ -186,9 +226,6 @@ that fixed them.
    a door leaf reads a little odd while the door is open.
 7. **Faded objects keep casting full shadows** — alpha fade does not affect
    shadow maps; a hidden roof stops shadows only once fully hidden.
-8. **Player facing indicator is subtle** — the "nose" box on the capsule is
-   hard to read at the default zoom; while aiming the ring + arc preview
-   show the direction, otherwise only the held weapon does.
 10. **No vault over low obstacles** — window climb exists (R2), shove
    exists (R4); fences / vaulting later.
 11. **HUD is not scaled for high-DPI** — stretch mode is `canvas_items`, so it
@@ -203,6 +240,11 @@ that fixed them.
    here).
 
 ## Fixed
+
+- (R8.5) Capsule people / blue-box car replaced: procedural animated
+  survivors and zombies (14 outfits, 31 clips) and six parked vehicle
+  types; the player's facing now reads from the body / face (was: item 8
+  "facing indicator is subtle").
 
 - (R8, critic) Two-ray attenuation undercounted walls and let furniture
   hide walls → iterative ray; door / window sounds started inside the

@@ -33,6 +33,7 @@ var _last_hour: float = -1.0
 
 
 func _ready() -> void:
+	add_to_group(&"day_night")
 	sun = get_node_or_null(sun_path) as DirectionalLight3D
 	var we := get_node_or_null(environment_path) as WorldEnvironment
 	environment = we.environment if we else null
@@ -87,6 +88,10 @@ func apply(hour_f: float, force: bool = false) -> void:
 		for w in get_tree().get_nodes_in_group(&"window"):
 			if w.has_method(&"set_night_glow"):
 				w.call(&"set_night_glow", on)
+		# Round 8.5: parked emergency vehicles left with their lights on.
+		for v in get_tree().get_nodes_in_group(&"vehicle"):
+			if v.has_method(&"set_night_lights"):
+				v.call(&"set_night_lights", on)
 
 
 ## Current sun energy (tests compare noon vs night).

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="Outfit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://characters/models/outfit.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"civ_flannel"
+display_name = "Flannel shirt"
+shirt_color = Color(0.62, 0.14, 0.12, 1)
+short_sleeves = false
+pants_color = Color(0.25, 0.33, 0.5, 1)
+shoes_color = Color(0.35, 0.22, 0.12, 1)
+hat = &"cap"
+hat_color = Color(0.15, 0.25, 0.18, 1)
+zombie_weight = 1.5

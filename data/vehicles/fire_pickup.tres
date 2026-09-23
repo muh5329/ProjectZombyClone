@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="VehicleData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://vehicles/vehicle_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"fire_pickup"
+display_name = "Fire department pickup"
+shape = &"pickup"
+length = 5.3
+width = 1.94
+belt_height = 1.0
+roof_height = 1.8
+wheelbase = 3.2
+wheel_radius = 0.38
+cabin = Vector4(0.3, 0.4, 0.55, 0.57)
+bed_start = 0.59
+livery = &"fire"
+livery_color = Color(0.93, 0.92, 0.9, 1)
+light_bar = true
+bed_boxes = true
+lights_at_night = true
+light_bar_colors = Array[Color]([Color(0.95, 0.1, 0.05, 1), Color(1.0, 0.92, 0.85, 1)])
+rust_chance = 0.1
+flat_tire_chance = 0.0
+trunk_label = "Search truck bed"
+trunk_capacity = 60.0
+palette = Array[Color]([Color(0.62, 0.06, 0.05, 1)])

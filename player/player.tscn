@@ -20,19 +20,13 @@
 [ext_resource type="Script" path="res://survival/rest_component.gd" id="18_rest"]
 [ext_resource type="Script" path="res://characters/shout_component.gd" id="19_shout"]
 
+[ext_resource type="Script" path="res://characters/models/character_model.gd" id="20_model"]
+[ext_resource type="Resource" path="res://data/characters/outfits/player_survivor.tres" id="21_outfit"]
+[ext_resource type="Script" path="res://characters/models/character_animator.gd" id="22_animator"]
+
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.3
 height = 1.7
-
-[sub_resource type="CapsuleMesh" id="CapsuleMesh_body"]
-radius = 0.3
-height = 1.7
-
-[sub_resource type="BoxMesh" id="BoxMesh_nose"]
-size = Vector3(0.16, 0.1, 0.22)
-
-[sub_resource type="StandardMaterial3D" id="Mat_body"]
-albedo_color = Color(0.85, 0.7, 0.45, 1)
 
 [node name="Player" type="CharacterBody3D" groups=["player"]]
 collision_layer = 2
@@ -47,15 +41,12 @@ shape = SubResource("CapsuleShape3D_body")
 
 [node name="Visual" type="Node3D" parent="."]
 
-[node name="Body" type="MeshInstance3D" parent="Visual"]
-position = Vector3(0, 0.85, 0)
-mesh = SubResource("CapsuleMesh_body")
-surface_material_override/0 = SubResource("Mat_body")
-
-[node name="Nose" type="MeshInstance3D" parent="Visual"]
-position = Vector3(0, 1.45, -0.36)
-mesh = SubResource("BoxMesh_nose")
-surface_material_override/0 = SubResource("Mat_body")
+[node name="Model" type="Node3D" parent="Visual"]
+script = ExtResource("20_model")
+outfit = ExtResource("21_outfit")
+skin_tone = 1
+hair_style = &"short"
+hair_color = 1
 
 [node name="Movement" type="Node" parent="."]
 script = ExtResource("2_move")
@@ -105,3 +96,6 @@ script = ExtResource("11_cinput")
 
 [node name="CombatVisuals" type="Node3D" parent="."]
 script = ExtResource("12_cvis")
+
+[node name="Animator" type="Node" parent="."]
+script = ExtResource("22_animator")

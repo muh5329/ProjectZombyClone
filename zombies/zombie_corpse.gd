@@ -2,7 +2,8 @@ class_name ZombieCorpse
 extends LootContainer
 ## What a dead zombie leaves behind: a static body on layer 4
 ## (interactables) only — it blocks nobody and is walked over — with the
-## collapsed ZombieVisual. Round 5: it is a LootContainer of type
+## ZombieVisual (its CharacterModel falls into the z_death pose and keeps
+## it). Round 5: it is a LootContainer of type
 ## &"zombie_corpse": "Search corpse" rolls the pockets lazily from the
 ## data/loot/zombie_corpse table (seeded by the world seed + the zombie's
 ## persist id "corpse/<ai_seed>"). Group "corpse".
@@ -31,9 +32,10 @@ func _ready() -> void:
 		var shape := CollisionShape3D.new()
 		shape.name = "Shape"
 		var box := BoxShape3D.new()
-		box.size = Vector3(0.6, 0.5, 1.7)
+		# The model falls face down along -Z (head ~0.8 m ahead of the feet).
+		box.size = Vector3(0.7, 0.5, 1.9)
 		shape.shape = box
-		shape.position = Vector3(0, 0.25, -0.5)
+		shape.position = Vector3(0, 0.25, -0.1)
 		add_child(shape)
 	super._ready()
 

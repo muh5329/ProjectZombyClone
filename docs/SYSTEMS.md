@@ -146,8 +146,8 @@ cooldown 1.5 s, damage 12, health 60, head hits ×3, door damage 20.
 
 `Zombie` (CharacterBody3D, layer 3, group `zombie`) = `MovementComponent`
 + `StatsComponent` (health) + `ZombieSenses` + `ZombieAI` +
-`ZombieVisual` (one shared 3-surface mesh: body / head / arms) +
-`NavigationAgent3D`. Every number lives in the profile (no magic
+`ZombieVisual` (Round 8.5: a procedural `CharacterModel` — a former
+townsperson, see "Character models & animation") + `NavigationAgent3D`. Every number lives in the profile (no magic
 constants in code).
 
 ### AI state machine (`zombies/zombie_ai.gd`, states in `zombies/states/`)
@@ -174,12 +174,15 @@ with `take_damage` that is not a zombie) makes it its target and chases;
 hit by anything else while it has no target it turns and investigates; a
 hit ≥ 10 stuns, a knockdown floors it (Round 4, see Melee combat). Bites
 roll a body region + wound type on the victim (`roll_attack_info()`).
-Head tint tells the state at a glance: normal / yellow (investigate,
-search, attack_door) / red (chase, attack) / white flash (swing) / dark
-(dead).
+The eyes tell the state (Round 8.5, subtle like PZ): dark sockets when
+calm / dim yellow glow (investigate, search, attack_door) / red glow
+(chase, attack) / white flash (bite) / dark (dead); the readable tell is
+the body language — hunched shamble, arms-out chase, the z_attack lunge.
 
 Death (`Zombie.die`): a `ZombieCorpse` (StaticBody3D, layer 4 only, group
-`corpse`) takes over the collapsed visual where the body stood; since
+`corpse`) takes over the visual where the body stood (the model falls
+face down with `z_death`, or stays on its back if it was knocked down,
+and keeps that pose); since
 Round 5 it is a `LootContainer` ("Search corpse", zombie_corpse table);
 `zombie_died(zombie, killer)` fires and the zombie node is freed.
 
@@ -220,6 +223,10 @@ frames, headless, measuring the scene-tree part of each physics step
 with priority-bracketed probe nodes): **calm/loud ≈ 5 ms** (budget 8),
 **hostile — all 200 chasing / holding / biting an invulnerable player —
 ≈ 8.5 ms** (budget 10) on the 2-core dev box (empty scene ≈ 0.2 ms).
+Round 8.5 (with the animated models, this box): calm 3.8–4.1 ms (was
+3.2), hostile 7.1–7.5 ms (was 5.9), noisy 3.8–3.9 (3.1), horde 1.3–1.7
+(1.1); p99 ≤ 12 ms; idle-frame process time ≈ 0.8–1.4 ms (printed, not
+budgeted).
 
 ## Sound propagation / zombie hearing ✅ (Round 8)
 
@@ -714,6 +721,9 @@ room (group `interior_light`, HouseBlockout `interior_lights`), on while
 the sun is below 0.5 — no light bleeds through walls, it only escapes
 through doorways / windows — and window panes glow warm
 (`HouseWindow.set_night_glow`), like the lit houses of reference 3.
+Round 8.5: parked emergency vehicles (`lights_at_night`) glow too
+(`Vehicle.set_night_lights`, group `vehicle`); the node is in group
+`day_night` so late vehicles pick the state up.
 
 ## Survival needs ✅ (Round 7)
 
@@ -836,10 +846,127 @@ through doorways / windows — and window panes glow warm
   `stamina_rest_multiplier`, fatigue −2 / h) until the player moves,
   gets hurt, or 1 h real.
 
+## Character models & animation ✅ (Round 8.5)
+
+Everything is procedural and owned (no third-party assets — see
+`docs/ASSET_CREDITS.md`); Project Zomboid is only the style reference:
+small, realistic-proportion people in everyday clothes, zombies = the
+same townspeople gone grey, bloodied and hunched.
+
+- **Body**: `HumanoidBuilder` (characters/models/) — 1.75 m, feet at
+  y 0, facing −Z, right hand +X; 17 bones (hips, spine, chest, neck,
+  head, upperarm / forearm / hand ×2, thigh / shin / foot ×2) with
+  identity rest rotations; one rigidly skinned ArrayMesh of tapered
+  prisms / ellipsoids / boxes: **584–764 triangles**, 2 surfaces (body in
+  vertex colour + a tiny "eyes" surface for the mood material) → 2 draw
+  calls per person. Head with nose, ears, eyes, hair (short / long / buzz
+  / ponytail / bald), hats (cap, police cap, hard hat, fire helmet,
+  beanie), shoes, belt, badge, hood, reflective stripes, hi-vis vest,
+  open jacket strip, short sleeves / shorts showing skin.
+- **Clothing as data**: `Outfit` resources in
+  `data/characters/outfits/*.tres` (14: t-shirt & jeans, flannel, hoodie,
+  leather jacket, green tee & khakis, winter coat, office worker, jogger,
+  police officer, firefighter, construction worker, doctor, scrubs, and
+  the player's `player_survivor`, which zombies never wear —
+  `zombie_weight` 0). `Appearance` = outfit + skin tone (6) + hair (5
+  styles × 6 colours) + height scale (0.94–1.05) + zombie decay;
+  `Appearance.random(seed, outfits, zombie)` is deterministic.
+- **Zombies**: the same builder with the skin turned grey-green /
+  grey-blue / pale (`Appearance.zombie_skin`), faded filthy clothes,
+  blood in coherent low-poly patches (heaviest down the front and on the
+  hands, `blood` 0.35–1), torn sleeves (bare forearm + ragged cuff, 45 %
+  per arm), dark eye sockets and a bloody mouth. A crowd picks from
+  `CharacterAssets.ZOMBIE_VARIANTS` (48) looks, stratified so every outfit
+  with `zombie_weight` > 0 gets ≥ 2 (rest by weight); a spawn seed maps to
+  a look through `hash(seed)` (spawner seeds are all odd), so 200 zombies
+  show ≥ 30 looks and every outfit while sharing ≤ 48 meshes. Height
+  (0.94–1.05) comes from the seed on the model node, not the shared mesh.
+  Zombie skin is a flat grey-green (~0.45, 0.50, 0.40); blood only on the
+  chest / collar and lower sleeves in three shades (≤ 35 % of the torso);
+  all cloth is muted (saturation ×0.75, value ≤ 0.75); everyone has dark
+  eye sockets, nose and jaw bumps, zombies an open dark mouth. Bodies are
+  chunky (thigh r 0.095, shin 0.07, upper arm 0.06, shoulders ±0.23,
+  head ×1.15).
+- **Animation**: `CharacterAnimations.build_library()` builds 31 clips
+  in code (every clip keys all 17 bone rotations + the hips position):
+  idle (breathing), walk, jog, sprint, sneak / sneak_idle (crouched),
+  windup / strike × {2h, 1h, punch, shove}, climb, eat, search, bandage,
+  sit, sleep (lying), death (fall on the back), hit (flinch); zombie
+  z_idle (sway), z_walk (hunched limping shamble, one arm forward),
+  z_chase (both arms reaching), z_attack (lunge → grab), z_bang (doors),
+  z_knockdown, z_getup, z_death (face down), z_hit. Locomotion clips are
+  speed-scaled against `DESIGN_SPEED` so feet do not slide.
+- **`CharacterModel`** (Node3D): Skeleton3D + skinned MeshInstance3D +
+  AnimationPlayer in **manual** process mode (the owner advances it);
+  `play(clip, blend, speed)`, `advance(dt)`, `attach(bone)` →
+  BoneAttachment3D. Shared resources in the `CharacterAssets` node (root).
+- **Player**: `Visual/Model` (outfit `player_survivor`) + `Animator`
+  (`CharacterAnimator`): dead → death; busy context → climb / eat /
+  sleep / sit (rest) / search / bandage; MeleeCombat phase → windup
+  (charging holds it) / strike, timed to the phase lengths (impact pose
+  at the end of the active window); damage → 0.35 s flinch; else
+  locomotion by effective mode + speed. The weapon (`MeleeVisuals`) is
+  parented to the **right-hand bone** (the swing clips move it; the old
+  procedural sweep only runs without a model); the worn bag is a box on
+  the **chest bone** (back).
+- **Zombie animation** (`ZombieVisual`): clip from the zombie's state /
+  speed (`clip_for`: attack_door → z_bang, > 1.2 m/s → z_chase, moving →
+  z_walk, else z_idle), the attack state's `lunge` scrubs z_attack, the
+  bite (`flash`) plays the grab, hits play z_hit, knockdown / get-up /
+  death their clips. **LOD**: advanced every 2nd physics tick when
+  hostile within 12 m of its target or in a one-shot clip, every 3rd
+  otherwise, every 6th for far "cheap movement" zombies; phases
+  from `hash(seed)` (even over 0–5); the crowd starts desynchronised.
+  A hit tints the body surface 30 % toward red for 0.08 s (vertex
+  colours kept), sprays a CPUParticles3D blood burst and restarts z_hit;
+  hand-placed zombies (seed 0) seed from their node path.
+
+## Vehicles 🔶 (Round 8.5: parked only)
+
+- **Data**: `VehicleData` (vehicles/, `data/vehicles/*.tres`): shape
+  (sedan / wagon / pickup / van), length / width / belt / roof, wheel
+  radius / wheelbase, cabin fractions, palette, trim, livery (police
+  black-and-white doors + white roof, fire white roof + stripe), light
+  bar + colours, pickup bed lockers, rust / flat-tyre chances, trunk
+  label / capacities, `lights_at_night`. Six types: sedan, station wagon,
+  pickup, van, police sedan, fire department pickup (ref 1).
+- **`VehicleBuilder`** (pure, owned geometry, 486–582 tris): side profile
+  with real wheel arches extruded across the width, tapered greenhouse
+  (dark glass, body-colour pillars), wheels + hubcaps, bumpers, grille,
+  head / tail lights, plate, mirrors, livery parts, open pickup bed.
+  Surfaces body / glass / head / tail / beacon_a / beacon_b (mesh meta
+  `surfaces`). `variation_for(data, seed)`: palette colour, fade, rust
+  patches, a flat tyre (the car sags), a missing hubcap. A future
+  VehicleBody3D reuses data + builder unchanged.
+- **`Vehicle`** (StaticBody3D, layers 1 + 6, groups `vehicle`,
+  `occluder`): one box collider (blocks movement, baked into the navmesh
+  → zombies path around cars, fades when it hides the player), meshes
+  cached per (type, seed) in `VehicleAssets`. Children
+  `VehicleContainer` "Trunk" (rear; "Search trunk" / "Search truck bed" /
+  "Search back of van", table `vehicle_trunk`, 1.5 s rummage) and
+  "Glovebox" (driver's door, "Search glovebox", `vehicle_glovebox`) —
+  layer-4 bodies outside the car so the interaction ray reaches them;
+  persist ids `Vehicle/<name>/trunk|glovebox`.
+- **Night**: `DayNightLighting` calls `set_night_lights(on)` on the
+  `vehicle` group; emergency vehicles (`lights_at_night` + light bar)
+  run the bar halves alternating at 2 Hz plus one OmniLight3D (range 4,
+  energy 0.8, colour alternating with the bar), at most 4 such lights in
+  the scene; parked cars keep head / tail lamps off.
+- **Look**: paint muted (saturation ×0.75, value ≤ 0.75), road dirt
+  (−25 %) below 0.35 m, rust patches on arches / sills, glass with a
+  lighter sky band on top; a flat tyre is smaller and only its corner of
+  the body sags (every wheel touches the ground). Faded by the occlusion
+  manager a car keeps alpha ≥ 0.5 and writes depth (no x-ray of its
+  inner faces). Meshes / materials: `VehicleAssets`.
+- The map environment uses tonemap exposure 0.85 (muted daylight, ref 2).
+- **Map**: the blue box "Car" is gone; test_ground has 7 parked vehicles
+  (police car at the old spot, sedan ×2, pickup, wagon, van, fire pickup)
+  along the road (x ±7.6, z 17–34), plus a yellow centre line.
+
 ## Planned (see MASTER_PLAN for order)
 
 Sound propagation ✅ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
 Loot tables ✅ · Needs ✅ (hunger / thirst / fatigue / sickness; temperature, wetness, stress ⬜) ·
-Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ✅ · Vehicles ⬜ ·
+Barricades ⬜ · Save/load ⬜ · Crafting ⬜ · World time ✅ · Vehicles 🔶 (parked, R8.5) · Character models ✅ (R8.5) ·
 Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ ·
 World streaming ⬜ · NPC survivors ⬜
