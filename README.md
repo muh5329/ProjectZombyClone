@@ -145,3 +145,4 @@ the screenshot runner is Linux/Xvfb-oriented (works on macOS with a display).
 - SceneTree `-s` runner scripts must not statically type gameplay classes
   (they compile before autoloads exist).
 - GDScript lambdas capture locals by value — use an Array holder.
+# ProjectZombyClone
