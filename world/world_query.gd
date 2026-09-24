@@ -33,4 +33,6 @@ static func random_nav_point(map: RID, rng: RandomNumberGenerator, center: Vecto
 		q.y = ground_y
 		if not avoid_buildings or tree == null or not is_inside_building(tree, q):
 			return q
-	return q
+	# Round 12: every try landed indoors — stay put (the centre) rather
+	# than walk into a building.
+	return Vector3(center.x, ground_y, center.z)

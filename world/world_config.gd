@@ -36,6 +36,12 @@ var destroyed_ids: Dictionary = {}
 ## Game minute of the last save / load / start of this world (the
 ## "unsaved progress" confirmation).
 var last_saved_minute: float = 0.0
+## Round 12: a load of a streamed world hands its chunk store over here
+## BEFORE the map enters the tree ({statics, chunks, focus: Vector3,
+## population, minutes}): ChunkStreamer builds the chunks around the saved
+## player with the saved deltas applied, PopulationDirector restores the
+## zombie population, and the clock is set before anything ages.
+var stream_state: Dictionary = {}
 
 
 func mark_destroyed(id: String) -> void:
@@ -59,6 +65,8 @@ func _enter_tree() -> void:
 ## A loaded world starts at its time config's start instant, at 1× (R7).
 func _ready() -> void:
 	TimeManager.reset()
+	if stream_state.has("minutes"):
+		TimeManager.from_dict({"minutes": float(stream_state.minutes)})
 
 
 ## Never leave the engine sped up / paused / asleep behind a freed world.

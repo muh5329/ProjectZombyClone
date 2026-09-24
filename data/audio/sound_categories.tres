@@ -54,6 +54,7 @@ note = "Door shut"
 [sub_resource type="Resource" id="c6"]
 script = ExtResource("2_cat")
 id = &"door_bang"
+sim_carry = 2.5
 radius = 12.0
 intensity = 0.7
 duration = 1.0
@@ -62,6 +63,7 @@ note = "Zombie banging on a door (recruits others)"
 [sub_resource type="Resource" id="c7"]
 script = ExtResource("2_cat")
 id = &"door_break"
+sim_carry = 3.5
 radius = 18.0
 intensity = 1.0
 duration = 1.5
@@ -86,6 +88,7 @@ note = "Window slid shut"
 [sub_resource type="Resource" id="c10"]
 script = ExtResource("2_cat")
 id = &"window_smash"
+sim_carry = 3.5
 radius = 20.0
 intensity = 1.0
 duration = 1.5
@@ -142,6 +145,7 @@ note = "Filling bottles at a tap"
 [sub_resource type="Resource" id="c17"]
 script = ExtResource("2_cat")
 id = &"shout"
+sim_carry = 3.5
 radius = 20.0
 intensity = 0.9
 duration = 1.2
@@ -158,6 +162,7 @@ note = "An investigating zombie moans: recruits neighbours (hordes)"
 [sub_resource type="Resource" id="c19"]
 script = ExtResource("2_cat")
 id = &"alarm"
+sim_carry = 3.5
 radius = 60.0
 intensity = 1.0
 duration = 10.0
@@ -166,6 +171,7 @@ note = "House / car alarm (future)"
 [sub_resource type="Resource" id="c20"]
 script = ExtResource("2_cat")
 id = &"gunshot"
+sim_carry = 2.0
 radius = 60.0
 intensity = 1.0
 duration = 1.5
@@ -174,6 +180,7 @@ note = "Firearm (future)"
 [sub_resource type="Resource" id="c21"]
 script = ExtResource("2_cat")
 id = &"generator"
+sim_carry = 1.0
 radius = 25.0
 intensity = 0.5
 duration = 5.0
@@ -182,6 +189,7 @@ note = "Running generator (future)"
 [sub_resource type="Resource" id="c22"]
 script = ExtResource("2_cat")
 id = &"vehicle"
+sim_carry = 1.0
 radius = 30.0
 intensity = 0.7
 duration = 2.0
@@ -198,6 +206,7 @@ note = "Picking broken glass out of a window frame"
 [sub_resource type="Resource" id="c24"]
 script = ExtResource("2_cat")
 id = &"hammering"
+sim_carry = 3.5
 radius = 18.0
 intensity = 0.8
 duration = 1.5
@@ -206,6 +215,7 @@ note = "Nailing / prying planks, taking furniture apart with a hammer (PZ: very 
 [sub_resource type="Resource" id="c25"]
 script = ExtResource("2_cat")
 id = &"wood_break"
+sim_carry = 2.5
 radius = 10.0
 intensity = 0.6
 duration = 1.0
@@ -214,6 +224,7 @@ note = "A barricade plank or a piece of furniture breaks"
 [sub_resource type="Resource" id="c26"]
 script = ExtResource("2_cat")
 id = &"barricade_bang"
+sim_carry = 2.5
 radius = 12.0
 intensity = 0.7
 duration = 1.0

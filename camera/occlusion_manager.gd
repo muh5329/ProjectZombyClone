@@ -101,6 +101,11 @@ func update_now() -> void:
 		_set_location(null, null)
 		return
 	var ppos := player.global_position
+	# Round 12: the building may have been streamed out (freed).
+	if not is_instance_valid(current_room):
+		current_room = null
+	if not is_instance_valid(current_building):
+		current_building = null
 	var loc := Building.locate(get_tree(), ppos + Vector3.UP * 0.5, current_room, room_exit_margin)
 	_set_location(loc.building, loc.room)
 
@@ -297,7 +302,7 @@ func _transition(n: Node, target: StringName) -> void:
 			_fade_to(meshes, tw, 1.0)
 			var holder := [n, meshes]
 			tw.finished.connect(func():
-				if state_of(holder[0]) == STATE_FULL:
+				if is_instance_valid(holder[0]) and state_of(holder[0]) == STATE_FULL:
 					# Untyped: a cached mesh may have been freed meanwhile.
 					for mv: Variant in holder[1]:
 						if is_instance_valid(mv) and (mv as MeshInstance3D).has_meta(&"occl_base_alpha"):
@@ -317,7 +322,7 @@ func _transition(n: Node, target: StringName) -> void:
 			_fade_to(meshes, tw, 0.0)
 			var holder := [n, visual]
 			tw.finished.connect(func():
-				if is_instance_valid(holder[1]) and state_of(holder[0]) == STATE_HIDDEN:
+				if is_instance_valid(holder[1]) and is_instance_valid(holder[0]) and state_of(holder[0]) == STATE_HIDDEN:
 					holder[1].visible = false)
 
 

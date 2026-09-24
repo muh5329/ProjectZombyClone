@@ -58,7 +58,9 @@ func test_world_loads_within_budget_with_chunked_nav() -> void:
 	check_lt(load_ms, 20000.0, "generate + build under 20 s (%.0f ms)" % load_ms)
 	check_lt(builder.layout_ms, 2000.0, "layout under 2 s")
 	check(nav.baked, "chunk navmesh baked")
-	check_eq(builder.chunks.size(), 144, "12 x 12 chunk nodes")
+	check_eq(builder.recipes.size(), 144, "12 x 12 chunk recipes")
+	# Round 12: only the chunks around the player are instantiated.
+	check(builder.chunks.size() >= 25 and builder.chunks.size() <= 49, "7 x 7 chunks loaded at most (%d)" % builder.chunks.size())
 	check_eq(nav.regions.size(), 25, "5 x 5 chunk nav regions around the start")
 	check_gt(builder.buildings.size(), 40.0, "buildings instantiated")
 	# A path that crosses chunk borders (tiles are joined).
@@ -310,8 +312,9 @@ func test_navigation_ready_only_when_regions_answer_under_load() -> void:
 	check(nav.baked, "baked under load")
 	check(ready_ok[0], "every region queryable when navigation_ready fired")
 	var sp: ZombieSpawner = scene.get_node("Zombies")
-	await wait_physics_until(func(): return sp.zombies.size() >= sp.spawn_points.size() - 2, 600)
-	check_gt(float(sp.zombies.size()), float(sp.spawn_points.size() - 3), "start population spawned (%d / %d)" % [sp.zombies.size(), sp.spawn_points.size()])
+	var want := builder.layout.zombies.size()
+	await wait_physics_until(func(): return sp.zombies.size() >= want - 2, 600)
+	check_gt(float(sp.zombies.size()), float(want - 3), "start population spawned (%d / %d)" % [sp.zombies.size(), want])
 	stop[0] = true
 	busy.wait_to_finish()
 	slow.queue_free()
@@ -321,23 +324,32 @@ const _SlowFrames := preload("res://tests/integration/slow_frames.gd")
 
 
 ## Walking far: regions beyond keep_radius are freed, chunks ahead are
-## baked, and a rural group spawns once its chunk's navmesh is live.
+## baked, and a rural group (now population data, Round 12) turns into
+## real zombies once its chunk is loaded and its navmesh is live.
 func test_walking_frees_regions_bakes_ahead_and_spawns_rural_groups() -> void:
+	var pd: PopulationDirector = scene.get_node("Population")
 	var sp: ZombieSpawner = scene.get_node("Zombies")
 	await wait_physics_until(func(): return sp.zombies.size() >= 30, 300)
 	for z in sp.zombies:
 		if is_instance_valid(z):
 			z.set_physics_process(false)
-	check_gt(float(sp.groups.size()), 0.0, "rural groups configured")
-	# Walk (teleport in 6 m steps with a matching velocity) to the nearest group.
-	var g: Dictionary = sp.groups[0]
+	check_gt(float(builder.layout.zombie_groups.size()), 0.0, "rural groups in the layout")
+	var g: Dictionary = builder.layout.zombie_groups[0]
 	var best := INF
-	for gg in sp.groups:
+	for gg in builder.layout.zombie_groups:
 		var d := (gg.points[0] as Vector2).distance_to(builder.layout.spawn_point)
 		if d < best:
 			best = d
 			g = gg
 	var goal: Vector2 = g.points[0]
+	var tagged := -1
+	for id in pd.population.groups:
+		if String(pd.population.groups[id].get("tag", "")) == String(g.id):
+			tagged = id
+	check(tagged >= 0, "the rural group is a population group")
+	# A private copy: the params .tres is a shared, cached resource.
+	pd.population.params = pd.population.params.duplicate()
+	pd.population.params.wander_speed = 0.0
 	var from := Vector2(player.global_position.x, player.global_position.z)
 	var dir := (goal - from).normalized()
 	var steps := int(from.distance_to(goal) / 6.0)
@@ -348,8 +360,13 @@ func test_walking_frees_regions_bakes_ahead_and_spawns_rural_groups() -> void:
 		player.velocity = Vector3(dir.x, 0.0, dir.y) * 6.0
 		await physics_frames(6)
 	player.velocity = Vector3.ZERO
-	await wait_physics_until(func(): return sp.groups_spawned.has(String(g.id)), 900)
-	check(sp.groups_spawned.has(String(g.id)), "group %s spawned near its hamlet / farm" % g.id)
+	await wait_physics_until(func(): return not pd.population.groups.has(tagged), 900)
+	check(not pd.population.groups.has(tagged), "group %s instantiated near its hamlet / farm" % g.id)
+	var near := 0
+	for z in pd.real_zombies():
+		if Vector2(z.global_position.x, z.global_position.z).distance_to(goal) < 40.0:
+			near += 1
+	check_gt(float(near), 0.0, "its zombies stand there (%d)" % near)
 	if best > 64.0 * (nav.keep_radius + 1):
 		check_gt(float(nav.freed_count), 0.0, "far regions freed (%d)" % nav.freed_count)
 	check(nav.regions.size() <= (2 * nav.keep_radius + 1) * (2 * nav.keep_radius + 1), "regions bounded (%d)" % nav.regions.size())

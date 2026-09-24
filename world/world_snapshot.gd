@@ -105,6 +105,12 @@ static func capture(map: Node) -> Dictionary:
 	var wb := WorldBuilder.of(tree)
 	if wb != null and wb.layout != null and map.is_ancestor_of(wb):
 		data.world["worldgen"] = {"version": wb.layout.version, "layout_hash": wb.layout_hash()}
+	# Round 12: a streamed world saves only DELTAS (the chunk store + the
+	# live deltas of loaded chunks), dropped items / corpses / blood per
+	# chunk, and the zombie population as data.
+	var streamer := ChunkStreamer.of(tree)
+	if streamer != null and map.is_ancestor_of(streamer) and streamer.enabled and streamer.builder != null:
+		return _capture_streamed(map, data, streamer)
 	var statics := {}
 	for n in Saveable.collect(tree, map):
 		var id := String(n.get(&"persist_id"))
@@ -156,6 +162,49 @@ static func capture(map: Node) -> Dictionary:
 	return data
 
 
+static func _capture_streamed(map: Node, data: Dictionary, streamer: ChunkStreamer) -> Dictionary:
+	var tree := map.get_tree()
+	var cfg := WorldConfig.find(tree)
+	var snap := streamer.live_snapshot()
+	data["statics"] = snap.statics
+	var destroyed: Array = cfg.destroyed_ids.keys() if cfg else []
+	destroyed.sort()
+	data["destroyed"] = destroyed
+	data["chunks"] = snap.chunks
+	var sp := {}
+	for s in spawners_of(map):
+		sp[s.stable_id()] = s.save_state()
+	data["spawners"] = sp
+	var zs: Array = []
+	for z in _in_map(map, &"zombie"):
+		if z is Zombie and not (z as Zombie).dead:
+			zs.append(_compact_zombie((z as Zombie).save_record()))
+	zs.sort_custom(func(a, b): return String(a.spawn_id) < String(b.spawn_id))
+	data[KEY_ZOMBIES] = zs
+	data[KEY_CORPSES] = []
+	data[KEY_ITEMS] = []
+	var pd := PopulationDirector.of(tree)
+	if pd != null and map.is_ancestor_of(pd):
+		data["population"] = pd.save_state()
+	var player := player_of(map)
+	data["player"] = player.call(&"save_state") if player != null and player.has_method(&"save_state") else {}
+	var cam := tree.get_first_node_in_group(&"isometric_camera")
+	if cam != null and map.is_ancestor_of(cam) and cam.has_method(&"view_state"):
+		data["camera"] = cam.call(&"view_state")
+	return data
+
+
+## Shorter numbers in a zombie record (positions to the centimetre).
+static func _compact_zombie(d: Dictionary) -> Dictionary:
+	for k in ["position", "home", "target"]:
+		if d.get(k) is Array:
+			var a: Array = d[k]
+			d[k] = [snappedf(a[0], 0.01), snappedf(a[1], 0.01), snappedf(a[2], 0.01)]
+	d["facing"] = snappedf(float(d.get("facing", 0.0)), 0.001)
+	d["health"] = snappedf(float(d.get("health", 1.0)), 0.01)
+	return d
+
+
 ## Counts for meta.json / the slot list.
 static func summary(data: Dictionary) -> Dictionary:
 	var p: Dictionary = data.get("player", {})
@@ -189,6 +238,19 @@ static func apply_world_config(map: Node, data: Dictionary) -> void:
 			var gp := String(w.get("worldgen_params", ""))
 			if gp != "":
 				cfg.worldgen_params = gp
+			# Round 12: a streamed world's store, population and clock go
+			# in before _ready (chunks are built with their deltas, the
+			# destroyed statics are removed as they are built).
+			if data.has("chunks"):
+				var pl: Dictionary = data.get("player", {})
+				cfg.stream_state = {"statics": data.get("statics", {}), "chunks": data.chunks,
+					"population": data.get("population", {}),
+					"focus": Saveable.to_vec3(pl.get("position"), Vector3.INF),
+					"minutes": float((data.get("time", {}) as Dictionary).get("minutes", 0.0))}
+				if cfg.stream_state.focus == Vector3.INF:
+					cfg.stream_state.erase("focus")
+				for id in data.get("destroyed", []):
+					cfg.mark_destroyed(String(id))
 
 ## Phase 1, right after the fresh map is ready and BEFORE the navmesh is
 ## baked (so moved / destroyed furniture bakes correctly): world config,
@@ -205,10 +267,19 @@ static func apply_static(map: Node, data: Dictionary, index: Dictionary) -> Dict
 		cfg.world_age_days = float(w.get("age_days", cfg.world_age_days))
 		cfg.water_shutoff_day = int(w.get("water_shutoff_day", cfg.water_shutoff_day))
 	index.clear()
+	var out := {"applied": 0, "unknown": 0, "removed": 0}
+	if data.has("chunks"):
+		# Streamed world (Round 12): the ChunkStreamer applied the statics,
+		# destroyed ids, items, corpses and blood of every chunk it built.
+		var sps: Dictionary = data.get("spawners", {})
+		for s in spawners_of(map):
+			s.auto_spawn = false
+			if sps.has(s.stable_id()):
+				s.load_state(sps[s.stable_id()])
+		return out
 	for n in Saveable.collect(tree, map):
 		index[String(n.get(&"persist_id"))] = n
 	var statics: Dictionary = data.get("statics", {})
-	var out := {"applied": 0, "unknown": 0, "removed": 0}
 	for id: String in statics:
 		var node: Node = index.get(id)
 		if node == null:

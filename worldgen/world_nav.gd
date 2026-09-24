@@ -69,11 +69,18 @@ var _verify_count: int = 0
 var _verify_iter: int = -1
 var _rebake_chunk: Vector2i = Vector2i(-999, -999)
 var _warned: bool = false
+var _tasks: Dictionary = {}  # WorkerThreadPool task id → true (bakes in flight)
+var _ready_cache: Dictionary = {}  # Vector2i → the verified region
+var _ready_asked: Dictionary = {}  # Vector2i → physics frame of the last check
 
 
 func _ready() -> void:
 	add_to_group(&"nav_baker")
 	_match_map_cells()
+	# Round 12: on a 2-core machine two background bakes starve the main
+	# thread (chunk building / zombies measured 3-10× slower meanwhile).
+	if OS.get_processor_count() <= 2:
+		max_parallel = mini(max_parallel, 1)
 	# This node only coordinates: its own region stays empty and disabled.
 	navigation_mesh = null
 	enabled = false
@@ -123,11 +130,57 @@ func _new_mesh(c: Vector2i) -> NavigationMesh:
 func _source_of(c: Vector2i, fresh: bool = false) -> NavigationMeshSourceGeometryData3D:
 	if _sources.has(c) and not fresh:
 		return _sources[c]
-	var src := NavigationMeshSourceGeometryData3D.new()
+	_parse_jobs.erase(c)
+	while not _parse_step(c):
+		if not builder.chunks.has(c):
+			return null
+	return _sources[c]
+
+
+var _parse_jobs: Dictionary = {}  # Vector2i → {src, nodes}
+const _PARSE_GROUP := &"_world_nav_parse"
+
+
+## Parse chunk [c]'s source geometry incrementally: one child node (a
+## building, a vehicle, the Solids body…) per call. True when complete
+## (then _sources[c] is set).
+func _parse_step(c: Vector2i) -> bool:
 	var node: Node3D = builder.chunks.get(c)
 	if node == null:
-		return null
-	NavigationServer3D.parse_source_geometry_data(_new_mesh(c), src, node)
+		_parse_jobs.erase(c)
+		return false
+	if _parse_jobs.has(c) and _parse_jobs[c].get("node") != node:
+		_parse_jobs.erase(c)  # the chunk was unloaded and rebuilt meanwhile
+	if not _parse_jobs.has(c):
+		var nodes: Array = []
+		for ch in node.get_children():
+			if ch.name == "Buildings" or ch.name == "Vehicles":
+				nodes.append_array(ch.get_children())
+			elif ch.name != "Solids":
+				# The Solids body (fences, props, trunks: hundreds of
+				# shapes) is turned into faces from the chunk recipe on the
+				# bake worker thread instead (_solid_faces).
+				nodes.append(ch)
+		_parse_jobs[c] = {"src": NavigationMeshSourceGeometryData3D.new(), "nodes": nodes, "node": node}
+	var job: Dictionary = _parse_jobs[c]
+	var nodes2: Array = job.nodes
+	while not nodes2.is_empty():
+		var nv: Variant = nodes2.pop_front()  # untyped: may have been freed
+		if not is_instance_valid(nv) or not (nv as Node).is_inside_tree():
+			continue
+		var n: Node = nv
+		var nm := _new_mesh(c)
+		nm.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
+		nm.geometry_source_group_name = _PARSE_GROUP
+		var part := NavigationMeshSourceGeometryData3D.new()
+		n.add_to_group(_PARSE_GROUP)
+		NavigationServer3D.parse_source_geometry_data(nm, part, n)
+		n.remove_from_group(_PARSE_GROUP)
+		(job.src as NavigationMeshSourceGeometryData3D).merge(part)
+		break
+	if not nodes2.is_empty():
+		return false
+	var src: NavigationMeshSourceGeometryData3D = job.src
 	var cs := builder.layout.chunk_size
 	var x0 := c.x * cs
 	var z0 := c.y * cs
@@ -135,7 +188,8 @@ func _source_of(c: Vector2i, fresh: bool = false) -> NavigationMeshSourceGeometr
 		Vector3(x0, 0, z0), Vector3(x0 + cs, 0, z0), Vector3(x0 + cs, 0, z0 + cs),
 		Vector3(x0, 0, z0), Vector3(x0 + cs, 0, z0 + cs), Vector3(x0, 0, z0 + cs)]), Transform3D.IDENTITY)
 	_sources[c] = src
-	return src
+	_parse_jobs.erase(c)
+	return true
 
 
 ## Chunks within [radius] of [p] (only those the builder built).
@@ -168,18 +222,89 @@ func bake_now() -> void:
 
 func _bake_chunk(c: Vector2i, purpose: String, fresh: bool = false) -> void:
 	var b := _find_builder()
-	var src := NavigationMeshSourceGeometryData3D.new()
+	var parts: Array = []
+	var solids: Array = []
 	for nb in b.layout.chunks_around(c, 1):
 		if not b.chunks.has(nb):
 			continue
 		var part := _source_of(nb, fresh and nb == c)
 		if part != null:
-			src.merge(part)
+			parts.append(part)
+			solids.append((b.recipes.get(nb, {}) as Dictionary).get("solids", []))
 	var nm := _new_mesh(c)
 	if not regions.has(c):
 		regions[c] = null
 	_pending[c] = purpose
-	NavigationServer3D.bake_from_source_geometry_data_async(nm, src, _on_chunk_baked.bind(c, nm))
+	# Round 12: merging the 3 x 3 sources copies every vertex (10-30 ms on
+	# the main thread in town): merge and bake on a worker thread. Parsed
+	# sources are never modified once complete.
+	var tid := WorkerThreadPool.add_task(_merge_and_bake.bind(parts, solids, nm, _apply_chunk.bind(c, nm)), false, "WorldNav chunk bake")
+	_tasks[tid] = true
+
+
+## Worker thread: merge the neighbour sources and bake (thread-safe
+## server call); the hand-over is deferred to the main thread. Static: it
+## never touches the node (which may be freed meanwhile; _exit_tree waits
+## for running tasks anyway).
+static func _merge_and_bake(parts: Array, solids: Array, nm: NavigationMesh, done: Callable) -> void:
+	var src := NavigationMeshSourceGeometryData3D.new()
+	for part in parts:
+		src.merge(part)
+	var aabb := nm.filter_baking_aabb
+	for list in solids:
+		var faces := solid_faces(list, aabb)
+		if not faces.is_empty():
+			src.add_faces(faces, Transform3D.IDENTITY)
+	NavigationServer3D.bake_from_source_geometry_data(nm, src)
+	done.call_deferred()
+
+
+## Triangles of a chunk recipe's solids ([shape, transform]: boxes and
+## cylinders — 8-sided prisms) whose centre lies within [aabb] grown by
+## the shape's size (the rest is cut away by the bake anyway).
+static func solid_faces(solids: Array, aabb: AABB) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	var grown := aabb.grow(3.0)
+	for e in solids:
+		var shape: Shape3D = e[0]
+		var xf: Transform3D = e[1]
+		if not grown.has_point(xf.origin):
+			continue
+		if shape is BoxShape3D:
+			var h := (shape as BoxShape3D).size * 0.5
+			var v: Array[Vector3] = []
+			for k in 8:
+				v.append(xf * Vector3(h.x if k & 1 else -h.x, h.y if k & 2 else -h.y, h.z if k & 4 else -h.z))
+			for q in [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]]:
+				out.append_array([v[q[0]], v[q[1]], v[q[2]], v[q[0]], v[q[2]], v[q[3]]])
+		elif shape is CylinderShape3D:
+			# CRITIC FIX: tree trunks (thin cylinders) are not carved out of
+			# the navmesh: they fragment the woods into ~4x the polygons of a
+			# town chunk; zombies slide around trunks (move_and_slide).
+			if (shape as CylinderShape3D).radius < 0.45:
+				continue
+			var r := (shape as CylinderShape3D).radius
+			var hh := (shape as CylinderShape3D).height * 0.5
+			var ring: Array[Vector2] = []
+			for k in 8:
+				var a := TAU * k / 8.0
+				ring.append(Vector2(cos(a), sin(a)) * r)
+			var top := xf * Vector3(0, hh, 0)
+			for k in 8:
+				var p0 := ring[k]
+				var p1 := ring[(k + 1) % 8]
+				var a0 := xf * Vector3(p0.x, -hh, p0.y)
+				var a1 := xf * Vector3(p1.x, -hh, p1.y)
+				var b0 := xf * Vector3(p0.x, hh, p0.y)
+				var b1 := xf * Vector3(p1.x, hh, p1.y)
+				out.append_array([a0, a1, b1, a0, b1, b0, top, b1, b0])
+	return out
+
+
+func _exit_tree() -> void:
+	for tid in _tasks.keys():
+		WorkerThreadPool.wait_for_task_completion(tid)
+	_tasks.clear()
 
 
 func _on_chunk_baked(c: Vector2i, nm: NavigationMesh) -> void:
@@ -189,6 +314,10 @@ func _on_chunk_baked(c: Vector2i, nm: NavigationMesh) -> void:
 
 
 func _apply_chunk(c: Vector2i, nm: NavigationMesh) -> void:
+	for tid in _tasks.keys():
+		if WorkerThreadPool.is_task_completed(tid):
+			WorkerThreadPool.wait_for_task_completion(tid)
+			_tasks.erase(tid)
 	if not is_inside_tree():
 		return
 	var t0 := Time.get_ticks_usec()
@@ -326,8 +455,11 @@ func _drain_queue() -> void:
 			if builder.chunks.has(nb) and not _sources.has(nb):
 				if parsed:
 					return
-				_source_of(nb)
+				# Round 12: one child node per tick (a town chunk parsed in
+				# one go took ~25 ms on the main thread).
 				parsed = true
+				if not _parse_step(nb):
+					return
 		_queue.pop_front()
 		_bake_chunk(c, "queue")
 
@@ -349,9 +481,22 @@ func _free_far(pc: Vector2i) -> void:
 		var s2: Vector2i = c2
 		if maxi(absi(s2.x - pc.x), absi(s2.y - pc.y)) > keep_radius + 1:
 			_sources.erase(s2)
+	for c3 in _parse_jobs.keys():
+		if not builder.chunks.has(c3):
+			_parse_jobs.erase(c3)
+
+
+## µs of the last _physics_process (perf probes).
+var tick_usec: int = 0
 
 
 func _physics_process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	_tick(delta)
+	tick_usec = Time.get_ticks_usec() - t0
+
+
+func _tick(delta: float) -> void:
 	if _wait >= 0:
 		if _wait == 0:
 			_wait = -1
@@ -404,5 +549,21 @@ func baked_chunks() -> Array:
 
 
 ## Whether chunk [c] has a live, verified region (spawning checks this).
+## Round 12: a positive answer is cached until the region changes —
+## navigation queries every few frames (the population director asks for
+## every active chunk) kept the navigation map busy (~15 ms per physics
+## frame on the 2-core box).
 func chunk_ready(c: Vector2i) -> bool:
-	return regions.get(c) != null and regions_verified([c])
+	if regions.get(c) == null:
+		return false
+	var r: NavigationRegion3D = regions[c]
+	if _ready_cache.get(c) == r:
+		return true
+	var now := Engine.get_physics_frames()
+	if int(_ready_asked.get(c, -100)) > now - 10:
+		return false
+	_ready_asked[c] = now
+	if regions_verified([c]):
+		_ready_cache[c] = r
+		return true
+	return false

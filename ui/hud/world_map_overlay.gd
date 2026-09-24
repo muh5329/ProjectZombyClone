@@ -4,6 +4,11 @@ extends CanvasLayer
 ## `toggle_map`) toggles it. The picture is WorldMapRenderer's render of
 ## the WorldBuilder's layout (made on first open, ~0.2 s) with settlement
 ## names and a live player marker (position + facing).
+## Round 12: F2 (`toggle_chunk_debug`) adds the streaming debug layer —
+## the chunk grid (loaded chunks green, queued amber, the chunk being
+## built outlined), the number of simulated zombies per chunk, the data
+## groups as dots (red = investigating a noise, orange = migrating) and
+## the live zombies — and opens the map if it is closed.
 
 const MPP := 1.5
 
@@ -14,6 +19,9 @@ var title: Label
 var is_open: bool = false
 var _texture: ImageTexture
 var _labels: Array[Label] = []
+## Round 12 chunk debug layer (F2).
+var debug_chunks: bool = false
+var debug_label: Label
 
 
 func _ready() -> void:
@@ -46,12 +54,31 @@ func _ready() -> void:
 	title.add_theme_color_override(&"font_color", Color(0.92, 0.9, 0.84))
 	title.position = Vector2(24, 12)
 	panel.add_child(title)
+	debug_label = Label.new()
+	debug_label.name = "DebugStats"
+	debug_label.add_theme_font_size_override(&"font_size", 14)
+	debug_label.add_theme_color_override(&"font_color", Color(0.85, 0.95, 0.8))
+	debug_label.position = Vector2(24, 40)
+	debug_label.visible = false
+	panel.add_child(debug_label)
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"toggle_map") and not event.is_echo():
 		toggle()
 		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed(&"toggle_chunk_debug") and not event.is_echo():
+		set_debug(not debug_chunks)
+		get_viewport().set_input_as_handled()
+
+
+## Chunk debug layer on / off (opens the map when turning it on).
+func set_debug(on: bool) -> void:
+	debug_chunks = on
+	debug_label.visible = on
+	if on and not is_open:
+		set_open(true)
+	_update_marker()
 
 
 func toggle() -> void:
@@ -123,6 +150,8 @@ func player_uv() -> Vector2:
 
 
 func _draw_marker() -> void:
+	if debug_chunks:
+		_draw_debug()
 	var uv := player_uv()
 	if uv.x < 0.0:
 		return
@@ -138,3 +167,58 @@ func _draw_marker() -> void:
 	marker.draw_circle(c, 9.0, Color(0, 0, 0, 0.6))
 	marker.draw_colored_polygon(PackedVector2Array([c + fwd * 10.0, c - fwd * 6.0 + side * 6.0, c - fwd * 6.0 - side * 6.0]),
 		Color(1.0, 0.25, 0.2))
+
+
+# --- Round 12: streaming debug layer --------------------------------------------------------
+
+## Chunk grid, loaded / queued chunks, simulated zombies per chunk, data
+## groups and live zombies.
+func _draw_debug() -> void:
+	var b := WorldBuilder.of(get_tree())
+	if b == null or b.layout == null:
+		return
+	var st := ChunkStreamer.of(get_tree())
+	var pd := PopulationDirector.of(get_tree())
+	var scale := map_rect.size / b.layout.size
+	var cs := b.layout.chunk_size
+	var queued := {}
+	if st != null:
+		for c in st.queued():
+			queued[c] = true
+	var counts: Dictionary = pd.population.chunk_counts() if pd != null and pd.population != null else {}
+	var font := ThemeDB.fallback_font
+	for cz in b.layout.chunks_z():
+		for cx in b.layout.chunks_x():
+			var c := Vector2i(cx, cz)
+			var r := Rect2(Vector2(c) * cs * scale, Vector2(cs, cs) * scale)
+			if b.chunks.has(c):
+				marker.draw_rect(r.grow(-1.0), Color(0.3, 1.0, 0.45, 0.9), false, 2.0)
+			elif b.building_chunks.has(c):
+				marker.draw_rect(r, Color(1.0, 0.9, 0.2, 0.35))
+			elif queued.has(c):
+				marker.draw_rect(r, Color(1.0, 0.6, 0.1, 0.3))
+			else:
+				# Not loaded: data only (dimmed).
+				marker.draw_rect(r, Color(0.0, 0.0, 0.05, 0.35))
+			marker.draw_rect(r, Color(1, 1, 1, 0.25), false, 1.0)
+			var n := int(counts.get(c, 0))
+			if n > 0:
+				marker.draw_string(font, r.position + Vector2(3, 13), str(n), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 0.85, 0.8))
+	if pd != null and pd.population != null:
+		for id in pd.population.groups:
+			var g: Dictionary = pd.population.groups[id]
+			var col := Color(0.95, 0.95, 0.95, 0.85)
+			match int(g.state):
+				ZombiePopulation.State.INVESTIGATE:
+					col = Color(1.0, 0.2, 0.15)
+				ZombiePopulation.State.MIGRATE:
+					col = Color(1.0, 0.6, 0.1)
+			var rad := 1.5 + sqrt(float((g.members as PackedInt32Array).size()))
+			marker.draw_circle((g.pos as Vector2) * scale, rad, col)
+		for z in pd.real_zombies():
+			marker.draw_circle(Vector2(z.global_position.x, z.global_position.z) * scale, 2.0, Color(0.3, 1.0, 0.4))
+		debug_label.text = "F2 chunk debug · loaded (green frame) %d/%d chunks · simulated %d zombies in %d groups (white · red investigating · orange migrating) · live %d / %d (green) · dead %d" % [
+			b.chunks.size(), b.recipes.size(), pd.population.total(), pd.population.groups.size(),
+			pd.active_count(), pd.max_active, pd.died_count]
+	elif debug_label != null:
+		debug_label.text = "F2 chunk debug · loaded %d chunks" % b.chunks.size()

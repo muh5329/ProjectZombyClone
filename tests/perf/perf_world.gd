@@ -7,13 +7,13 @@ extends SceneTree
 ## measured with the same start / end probes as perf_zombies.gd.
 ## Then the player walks 300 m at sprint speed (whole-frame times while
 ## chunks bake ahead / regions are freed).
-## Budgets: layout < 2 s, load (generate + build + nav) < 20 s, avg < 10 ms,
+## Budgets: layout < 2 s, load (generate + build + nav) < 8 s (Round 12), avg < 10 ms,
 ## p99 < 16 ms (hostile physics and walking frames). Exit 1 when over budget.
 ## No static typing against gameplay classes (-s scripts compile first).
 
 const FRAMES := 600
 const LAYOUT_BUDGET_MS := 2000.0
-const LOAD_BUDGET_MS := 20000.0
+const LOAD_BUDGET_MS := 8000.0
 const AVG_BUDGET_MS := 10.0
 const P99_BUDGET_MS := 16.0
 const WANT_ZOMBIES := 40

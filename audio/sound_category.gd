@@ -12,5 +12,10 @@ extends Resource
 @export_range(0.0, 1.0) var intensity: float = 0.5
 ## Seconds the event stays "alive" (debug rings, late queries).
 @export var duration: float = 1.0
+## Round 12: how far this sound carries for the OFF-SCREEN zombie
+## population, as a multiple of [radius] (0 = the simulation never hears
+## it: footsteps, doors, rummaging). A group within radius × sim_carry
+## (halved when the sound is made indoors) walks toward it.
+@export var sim_carry: float = 0.0
 ## Free text for designers.
 @export var note: String = ""

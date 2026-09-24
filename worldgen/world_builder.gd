@@ -3,25 +3,28 @@ extends Node3D
 ## Builds a WorldLayout into the scene (Round 11; node "Generated" in
 ## maps/world.tscn). At _ready: reads the seed (WorldConfig.world_seed)
 ## and params (WorldConfig.worldgen_params, else [params]), generates the
-## layout (WorldGenerator, pure) and instantiates it:
+## layout (WorldGenerator, pure) and turns it into per-chunk RECIPES
+## (Round 12): everything a 64 m chunk holds, precomputed once as data +
+## shared resources —
 ##
-##   Ground        one StaticBody (box) + one plane with the splat shader
-##   Bounds        invisible walls around the world
-##   Chunks/C_x_z  one Node3D per 64 m chunk (group "world_chunk", meta
-##                 "chunk" = Vector2i) holding everything whose centre is
-##                 in it: HouseBlockout buildings (plan from the layout,
-##                 building_id = layout id → stable save ids), a road /
-##                 sidewalk / marking / path mesh, "Solids" (StaticBody
-##                 with one box / cylinder shape owner per fence piece,
-##                 prop, tree trunk — parsed by the chunk navmesh bake)
-##                 + one MultiMesh of vertex-coloured boxes (fences,
-##                 props, crop rows), tree trunk / canopy MultiMeshes,
-##                 vehicles, gas pumps, lamp lights, ponds.
+##   boxes      one MultiMesh of vertex-coloured unit boxes (fences, props,
+##              crop rows, lamp posts, canopy posts)
+##   roads      one ArrayMesh (roads, sidewalks, markings, paths, parking)
+##   trees      trunk / canopy / pine MultiMeshes
+##   solids     [shape, transform] collision shape owners (fences, props,
+##              trunks, silos, ponds) for the chunk's "Solids" body
+##   buildings  layout building records → HouseBlockout (stable ids)
+##   nodes      [kind, payload]: lamp lights, canopy roofs, silos, pumps,
+##              vehicles, ponds
 ##
-## Everything is built at load (~60 buildings, ~7k trees); WorldNav bakes
-## navigation only for chunks near the player; zombies exist only near the
-## start (ZombieSpawner.spawn_points = layout.zombies). Round 12 streams
-## chunks in / out using the same chunk nodes.
+## Chunk CONTENT is instantiated from its recipe in steps (base, one step
+## per building, nodes, finish: build_chunk_step) so ChunkStreamer can
+## spread it over frames; free_chunk() removes it again. [chunks] only
+## lists chunks whose content is complete (WorldNav bakes only those).
+## Without a ChunkStreamer ([streaming] false) every chunk is built at
+## _ready, as in Round 11. Far buildings keep a low-detail impostor (walls
+## + roof-coloured slab, one MultiMesh per chunk) while their chunk is not
+## loaded, so the horizon is never empty.
 
 const GROUP := &"world_builder"
 const DEFAULT_PARAMS := "res://data/worldgen/default_world.tres"
@@ -44,10 +47,17 @@ const CURB_COLOR := Color(0.72, 0.71, 0.67)
 const CROPS := {&"corn": [Color(0.36, 0.52, 0.2), 1.7, 0.55], &"wheat": [Color(0.78, 0.68, 0.34), 0.8, 1.1],
 	&"cabbage": [Color(0.4, 0.6, 0.34), 0.35, 0.5], &"fallow": [Color(0.4, 0.31, 0.21), 0.14, 0.8]}
 
+## Emitted when a chunk's content is complete / has been freed.
+signal chunk_built(c: Vector2i)
+signal chunk_freed(c: Vector2i)
+
 @export var params: WorldGenParams
 @export var build_on_ready: bool = true
 ## Build only chunks within this Chebyshev radius of the start (-1 = all).
 @export var build_radius: int = -1
+## Round 12: a ChunkStreamer in the map instantiates chunks around the
+## player (set by the streamer). false = build every chunk at _ready.
+@export var streaming: bool = false
 @export_group("Night lights")
 ## Lights (room lights, street lamps) are only on within this Chebyshev
 ## chunk radius of the player and [light_far] metres.
@@ -58,24 +68,33 @@ const CROPS := {&"corn": [Color(0.36, 0.52, 0.2), 1.7, 0.55], &"wheat": [Color(0
 
 var layout: WorldLayout
 var world_seed: int = 0
-## Vector2i → chunk Node3D.
+## Vector2i → chunk Node3D whose content is COMPLETE (loaded chunks).
 var chunks: Dictionary = {}
-## Building id → HouseBlockout.
+## Vector2i → chunk Node3D being built (steps pending).
+var building_chunks: Dictionary = {}
+## Building id → HouseBlockout (loaded chunks only).
 var buildings: Dictionary = {}
+## Vector2i → recipe Dictionary (every chunk of the world, see header).
+var recipes: Dictionary = {}
 var layout_ms: float = 0.0
 var build_ms: float = 0.0
+var recipe_ms: float = 0.0
 var canopy_material: ShaderMaterial
 var box_material: StandardMaterial3D
 var road_material: StandardMaterial3D
+var impostor_material: StandardMaterial3D
 var built: bool = false
+## Chunks instantiated / freed so far (tests, perf).
+var built_count: int = 0
+var freed_count: int = 0
 
 var _batches: Dictionary = {}
 var _roads: Dictionary = {}
-var _solids: Dictionary = {}
 var _shape_cache: Dictionary = {}
 var _vehicle_data: Dictionary = {}
 var _trees: Dictionary = {}
 var _unit_box: BoxMesh
+var _impostors: Dictionary = {}  # Vector2i → MultiMeshInstance3D
 
 
 static func of(tree: SceneTree) -> WorldBuilder:
@@ -114,8 +133,8 @@ func generate_and_build() -> void:
 	build_ms = (Time.get_ticks_usec() - t1) / 1000.0
 	_place_player()
 	_configure_spawner()
-	print("WorldBuilder: seed %d, layout %.0f ms, build %.0f ms, %d chunks, %d buildings, %d trees, %d nodes" % [
-		world_seed, layout_ms, build_ms, chunks.size(), buildings.size(), layout.tree_count(), node_count()])
+	print("WorldBuilder: seed %d, layout %.0f ms, recipes %.0f ms, build %.0f ms, %d/%d chunks built, %d buildings, %d trees, %d nodes" % [
+		world_seed, layout_ms, recipe_ms, build_ms, chunks.size(), recipes.size(), buildings.size(), layout.tree_count(), node_count()])
 
 
 var _layout_hash: String = ""
@@ -139,13 +158,17 @@ static func _count(n: Node) -> int:
 	return c
 
 
-## The chunk node holding world point [p] (null when not built).
+## The chunk node holding world point [p] (null when not loaded).
 func chunk_node_at(p: Vector3) -> Node3D:
 	return chunks.get(layout.chunk_of(Vector2(p.x, p.z))) as Node3D
 
 
 func start_position() -> Vector3:
 	return Vector3(layout.spawn_point.x, 0.1, layout.spawn_point.y)
+
+
+func is_chunk_loaded(c: Vector2i) -> bool:
+	return chunks.has(c)
 
 
 # --- Build ----------------------------------------------------------------------------
@@ -157,27 +180,15 @@ func _wanted(c: Vector2i) -> bool:
 	return maxi(absi(c.x - sc.x), absi(c.y - sc.y)) <= build_radius
 
 
-func _chunk(c: Vector2i) -> Node3D:
-	if chunks.has(c):
-		return chunks[c]
-	var holder := get_node_or_null("Chunks")
-	if holder == null:
-		holder = Node3D.new()
-		holder.name = "Chunks"
-		add_child(holder)
-	var n := Node3D.new()
-	n.name = "C_%02d_%02d" % [c.x, c.y]
-	n.set_meta(&"chunk", c)
-	n.add_to_group(&"world_chunk")
-	holder.add_child(n)
-	chunks[c] = n
-	return n
+func _has(c: Vector2i) -> bool:
+	return recipes.has(c)
 
 
 func _chunk_of(p: Vector2) -> Vector2i:
 	return layout.chunk_of(p)
 
 
+## Ground + recipes (+ every chunk when not streaming).
 func build() -> void:
 	built = false
 	_unit_box = BoxMesh.new()
@@ -188,13 +199,30 @@ func build() -> void:
 	road_material = StandardMaterial3D.new()
 	road_material.vertex_color_use_as_albedo = true
 	road_material.roughness = 0.95
+	impostor_material = StandardMaterial3D.new()
+	impostor_material.vertex_color_use_as_albedo = true
+	impostor_material.roughness = 1.0
 	canopy_material = ShaderMaterial.new()
 	canopy_material.shader = load("res://assets/materials/tree_canopy.gdshader")
 	_build_ground()
+	var t0 := Time.get_ticks_usec()
+	build_recipes()
+	recipe_ms = (Time.get_ticks_usec() - t0) / 1000.0
+	_build_impostors()
+	if not streaming:
+		for c in recipes:
+			build_chunk_now(c)
+		built = true
+
+
+## Every chunk's recipe (pure data + shared resources; no nodes).
+func build_recipes() -> void:
+	recipes.clear()
 	for cz in layout.chunks_z():
 		for cx in layout.chunks_x():
-			if _wanted(Vector2i(cx, cz)):
-				_chunk(Vector2i(cx, cz))
+			var c := Vector2i(cx, cz)
+			if _wanted(c):
+				recipes[c] = {"boxes": null, "roads": null, "trees": [], "solids": [], "buildings": [], "nodes": []}
 	_build_roads()
 	_build_paths()
 	_build_buildings()
@@ -205,7 +233,248 @@ func build() -> void:
 	_build_trees()
 	_build_ponds()
 	_flush()
-	built = true
+
+
+func _holder() -> Node3D:
+	var holder := get_node_or_null("Chunks") as Node3D
+	if holder == null:
+		holder = Node3D.new()
+		holder.name = "Chunks"
+		add_child(holder)
+	return holder
+
+
+## The build steps of chunk [c]: "base", one per building index, "nodes",
+## "finish" (ChunkStreamer runs them over frames).
+func chunk_steps(c: Vector2i) -> Array:
+	var out: Array = ["base"]
+	var rc: Dictionary = recipes.get(c, {})
+	for i in (rc.get("buildings", []) as Array).size():
+		out.append(i)
+	# Lights / props / pumps / ponds in one step, each vehicle on its own
+	# (a vehicle's first mesh build can take a few ms).
+	out.append("nodes")
+	var nodes: Array = rc.get("nodes", [])
+	for i in nodes.size():
+		if nodes[i][0] == "vehicle":
+			out.append("v%d" % i)
+	out.append("finish")
+	return out
+
+
+## Run one build step of chunk [c]. Returns the node(s) created by a
+## building step (the HouseBlockout) or null.
+func build_chunk_step(c: Vector2i, step: Variant) -> Node:
+	var rc: Dictionary = recipes[c]
+	if step is String and step == "base":
+		_build_base(c, rc)
+		return null
+	var n: Node3D = building_chunks.get(c)
+	if n == null:
+		return null
+	if step is int:
+		return _instantiate_building(c, rc.buildings[step])
+	if step == "nodes":
+		for e in rc.nodes:
+			if e[0] != "vehicle":
+				call(StringName("_make_" + String(e[0])), c, e[1])
+		return null
+	if String(step).begins_with("v"):
+		var e: Array = rc.nodes[int(String(step).substr(1))]
+		return _make_vehicle(c, e[1])
+	if step == "finish":
+		building_chunks.erase(c)
+		chunks[c] = n
+		built_count += 1
+		var imp: Node3D = _impostors.get(c)
+		if imp != null:
+			imp.visible = false
+		chunk_built.emit(c)
+	return null
+
+
+## Instantiate chunk [c] completely right now.
+func build_chunk_now(c: Vector2i) -> void:
+	if chunks.has(c):
+		return
+	for st in chunk_steps(c):
+		if st is String and st == "base" and building_chunks.has(c):
+			continue
+		build_chunk_step(c, st)
+
+
+## Free chunk [c]'s content (the streamer captured its state first):
+## detach it logically (no longer loaded, impostor shown) and free its
+## nodes now.
+func free_chunk(c: Vector2i) -> void:
+	for n in detach_chunk(c):
+		if is_instance_valid(n):
+			if n.get_parent() != null:
+				n.get_parent().remove_child(n)
+			n.queue_free()
+
+
+## Chunk [c] is no longer loaded: forget it (buildings, [chunks]), show
+## its impostor, and return the nodes to free — its buildings / vehicles
+## first, the chunk node last — so the caller can spread the (costly)
+## removal over frames. The nodes stay in the tree until then.
+func detach_chunk(c: Vector2i) -> Array[Node]:
+	var out: Array[Node] = []
+	var n: Node3D = chunks.get(c)
+	if n == null:
+		n = building_chunks.get(c)
+	chunks.erase(c)
+	building_chunks.erase(c)
+	if n == null:
+		return out
+	for rec in (recipes[c].buildings as Array):
+		var hb: Node = buildings.get(rec.id)
+		buildings.erase(rec.id)
+		if hb != null and is_instance_valid(hb):
+			out.append(hb)
+	var veh := n.get_node_or_null("Vehicles")
+	if veh != null:
+		out.append_array(veh.get_children())
+	out.append(n)
+	freed_count += 1
+	var imp: Node3D = _impostors.get(c)
+	if imp != null:
+		imp.visible = true
+	chunk_freed.emit(c)
+	return out
+
+
+func _build_base(c: Vector2i, rc: Dictionary) -> void:
+	if chunks.has(c) or building_chunks.has(c):
+		return
+	var n := Node3D.new()
+	n.name = "C_%02d_%02d" % [c.x, c.y]
+	n.set_meta(&"chunk", c)
+	n.add_to_group(&"world_chunk")
+	building_chunks[c] = n
+	if rc.boxes != null:
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "Boxes"
+		mmi.multimesh = rc.boxes
+		n.add_child(mmi)
+	if rc.roads != null:
+		var mi := MeshInstance3D.new()
+		mi.name = "Roads"
+		mi.mesh = rc.roads
+		mi.material_override = road_material
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		n.add_child(mi)
+	for t in rc.trees:
+		var tm := MultiMeshInstance3D.new()
+		tm.name = String(t[0])
+		tm.multimesh = t[1]
+		tm.material_override = t[2]
+		n.add_child(tm)
+	if not (rc.solids as Array).is_empty():
+		var body := StaticBody3D.new()
+		body.name = "Solids"
+		body.collision_layer = 1
+		body.collision_mask = 0
+		body.add_to_group(&"world_solids")
+		for sh in rc.solids:
+			var owner_id := body.create_shape_owner(body)
+			body.shape_owner_add_shape(owner_id, sh[0])
+			body.shape_owner_set_transform(owner_id, sh[1])
+		n.add_child(body)
+	_holder().add_child(n)
+
+
+func _instantiate_building(c: Vector2i, b: Dictionary) -> HouseBlockout:
+	var holder := _sub(c, "Buildings")
+	var hb := HouseBlockout.new()
+	hb.name = String(b.id)
+	hb.building_id = String(b.id)
+	hb.plan = layout.plans[b.id]
+	var bxf: Transform2D = b.xf
+	hb.position = Vector3(bxf.origin.x, 0.0, bxf.origin.y)
+	hb.rotation.y = -bxf.get_rotation()
+	hb.set_meta(&"kind", b.kind)
+	holder.add_child(hb)
+	buildings[b.id] = hb
+	return hb
+
+
+## Build (and free at once) one building of every kind in the layout: the
+## first building of a kind pays one-off costs (plan resources, furniture
+## catalog entries, materials, sign fonts) of up to ~15 ms — at load time
+## instead of in the middle of a sprint. Returns the ms spent.
+func prewarm_kinds() -> float:
+	var t0 := Time.get_ticks_usec()
+	var seen := {}
+	for b in layout.buildings:
+		if seen.has(b.kind):
+			continue
+		seen[b.kind] = true
+		var hb := HouseBlockout.new()
+		hb.name = "Prewarm_%s" % b.kind
+		hb.building_id = "_prewarm/%s" % b.kind
+		hb.plan = layout.plans[b.id]
+		hb.position = Vector3(-500.0, -50.0, -500.0)
+		add_child(hb)
+		remove_child(hb)
+		hb.free()
+	return (Time.get_ticks_usec() - t0) / 1000.0
+
+
+## Low-detail building boxes per chunk, shown while the chunk is not loaded.
+func _build_impostors() -> void:
+	var holder := Node3D.new()
+	holder.name = "Impostors"
+	add_child(holder)
+	var list := {}
+	for b in layout.buildings:
+		var c := _chunk_of((b.rect as Rect2).get_center())
+		if not recipes.has(c):
+			continue
+		var plan: BuildingPlan = layout.plans.get(b.id)
+		var h := 2.8
+		var roof := Color(0.36, 0.3, 0.3)
+		var wall := Color(0.62, 0.58, 0.5)
+		if plan != null:
+			h = plan.wall_height * maxf(float(plan.storeys), 1.0)
+			roof = plan.roof_color
+			wall = plan.wall_color
+		var bxf: Transform2D = b.xf
+		var sz: Vector2 = b.size
+		var ctr := bxf * (sz * 0.5)
+		var yaw := -bxf.get_rotation()
+		if not list.has(c):
+			list[c] = []
+		list[c].append([Transform3D(Basis(Vector3.UP, yaw).scaled_local(Vector3(sz.x, h, sz.y)), Vector3(ctr.x, h * 0.5, ctr.y)), wall])
+		list[c].append([Transform3D(Basis(Vector3.UP, yaw).scaled_local(Vector3(sz.x + 0.6, 0.5, sz.y + 0.6)), Vector3(ctr.x, h + 0.25, ctr.y)), roof])
+	for c in list:
+		var mm := _make_multimesh(_unit_box, list[c])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "I_%02d_%02d" % [c.x, c.y]
+		mmi.multimesh = mm
+		mmi.material_override = impostor_material
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visible = not chunks.has(c)
+		holder.add_child(mmi)
+		_impostors[c] = mmi
+
+
+## Whether chunk [c]'s impostor is showing (tests).
+func impostor_visible(c: Vector2i) -> bool:
+	var imp: Node3D = _impostors.get(c)
+	return imp != null and imp.visible
+
+
+static func _make_multimesh(mesh: Mesh, list: Array) -> MultiMesh:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		mm.set_instance_transform(i, list[i][0])
+		mm.set_instance_color(i, list[i][1])
+	return mm
 
 
 # --- Ground -----------------------------------------------------------------------------
@@ -412,7 +681,7 @@ func _build_roads() -> void:
 			var a: Vector2 = pc[0]
 			var b: Vector2 = pc[1]
 			var c := _chunk_of((a + b) * 0.5)
-			if not chunks.has(c):
+			if not _has(c):
 				continue
 			var st := _st(c)
 			if sw > 0.0:
@@ -420,7 +689,7 @@ func _build_roads() -> void:
 			_quad(st, a, b, w, y, col)
 		for i in pts.size():
 			var c2 := _chunk_of(pts[i])
-			if not chunks.has(c2):
+			if not _has(c2):
 				continue
 			var st2 := _st(c2)
 			if sw > 0.0:
@@ -430,7 +699,7 @@ func _build_roads() -> void:
 		if float(rd.get("cap", 0.0)) > 0.0:
 			var endp := pts[pts.size() - 1]
 			var c3 := _chunk_of(endp)
-			if chunks.has(c3):
+			if _has(c3):
 				_disc(_st(c3), endp, float(rd.cap) + sw, Y_SIDEWALK, SIDEWALK_COLOR, 20)
 				_disc(_st(c3), endp, float(rd.cap), y, col, 20)
 		# Curbs: a pale kerb line on both road edges of streets.
@@ -466,7 +735,7 @@ func _dashes(rd: Dictionary, offset: float, dash: float, gap: float, width: floa
 			var p0 := a + dir * t + nrm * offset
 			var p1 := a + dir * t1 + nrm * offset
 			var c := _chunk_of((p0 + p1) * 0.5)
-			if chunks.has(c) and not _near_junction((p0 + p1) * 0.5, rd):
+			if _has(c) and not _near_junction((p0 + p1) * 0.5, rd):
 				_quad(_st(c), p0, p1, width, y_mark, col)
 			t = t1 + gap
 
@@ -499,7 +768,7 @@ func _build_crosswalks() -> void:
 			var half := float(rd2.width) * 0.5 - 0.4
 			var mid := j + dir * (widest + 1.6)
 			var c := _chunk_of(mid)
-			if not chunks.has(c):
+			if not _has(c):
 				continue
 			var k := -half + 0.3
 			while k <= half - 0.2:
@@ -523,7 +792,7 @@ func _build_paths() -> void:
 			var pxf: Transform2D = pth.xf
 			var psz: Vector2 = pth.size
 			var c := _chunk_of(pxf * (psz * 0.5))
-			if chunks.has(c):
+			if _has(c):
 				_obb_quad(_st(c), pxf, psz, Y_PATH, PARKING_COLOR)
 			continue
 		var a: Vector2 = pth.a
@@ -534,13 +803,13 @@ func _build_paths() -> void:
 			col = DIRT_COLOR
 		for pc in pieces(PackedVector2Array([a, b])):
 			var c2 := _chunk_of((pc[0] + pc[1]) * 0.5)
-			if chunks.has(c2):
+			if _has(c2):
 				_quad(_st(c2), pc[0], pc[1], float(pth.width), Y_PATH, col)
 	for pk in layout.parking:
 		var kxf: Transform2D = pk.xf
 		var ksz: Vector2 = pk.size
 		var c3 := _chunk_of(kxf * (ksz * 0.5))
-		if not chunks.has(c3):
+		if not _has(c3):
 			continue
 		var st := _st(c3)
 		_obb_quad(st, kxf, ksz, Y_PATH, PARKING_COLOR)
@@ -560,29 +829,26 @@ func _build_buildings() -> void:
 	for b in layout.buildings:
 		var r: Rect2 = b.rect
 		var c := _chunk_of(r.get_center())
-		if not chunks.has(c):
-			continue
-		var holder := _sub(c, "Buildings")
-		var hb := HouseBlockout.new()
-		hb.name = String(b.id)
-		hb.building_id = String(b.id)
-		hb.plan = layout.plans[b.id]
-		var bxf: Transform2D = b.xf
-		hb.position = Vector3(bxf.origin.x, 0.0, bxf.origin.y)
-		hb.rotation.y = -bxf.get_rotation()
-		hb.set_meta(&"kind", b.kind)
-		holder.add_child(hb)
-		buildings[b.id] = hb
+		if _has(c):
+			recipes[c].buildings.append(b)
 
 
+## Sub-holder [name] of the chunk node being built / loaded.
 func _sub(c: Vector2i, name: String) -> Node3D:
-	var ch: Node3D = chunks[c]
+	var ch: Node3D = building_chunks.get(c)
+	if ch == null:
+		ch = chunks[c]
 	var n := ch.get_node_or_null(name) as Node3D
 	if n == null:
 		n = Node3D.new()
 		n.name = name
 		ch.add_child(n)
 	return n
+
+
+## A node the chunk makes when it is instantiated: _make_<kind>(c, payload).
+func _node(c: Vector2i, kind: String, payload: Variant) -> void:
+	recipes[c].nodes.append([kind, payload])
 
 
 # --- Box batches + solids ------------------------------------------------------------------
@@ -606,48 +872,15 @@ func _solid_box(c: Vector2i, center: Vector3, size: Vector3, yaw: float) -> void
 
 
 func _solid_shape(c: Vector2i, shape: Shape3D, xf: Transform3D) -> void:
-	var body := _solid_body(c)
-	var owner_id := body.create_shape_owner(body)
-	body.shape_owner_add_shape(owner_id, shape)
-	body.shape_owner_set_transform(owner_id, xf)
-
-
-func _solid_body(c: Vector2i) -> StaticBody3D:
-	if not _solids.has(c):
-		var body := StaticBody3D.new()
-		body.name = "Solids"
-		body.collision_layer = 1
-		body.collision_mask = 0
-		body.add_to_group(&"world_solids")
-		chunks[c].add_child(body)
-		_solids[c] = body
-	return _solids[c]
+	recipes[c].solids.append([shape, xf])
 
 
 func _flush() -> void:
 	for c in _batches:
-		var list: Array = _batches[c]
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true
-		mm.mesh = _unit_box
-		mm.instance_count = list.size()
-		for i in list.size():
-			mm.set_instance_transform(i, list[i][0])
-			mm.set_instance_color(i, list[i][1])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.name = "Boxes"
-		mmi.multimesh = mm
-		chunks[c].add_child(mmi)
+		recipes[c].boxes = _make_multimesh(_unit_box, _batches[c])
 	_batches.clear()
 	for c in _roads:
-		var st: SurfaceTool = _roads[c]
-		var mi := MeshInstance3D.new()
-		mi.name = "Roads"
-		mi.mesh = st.commit()
-		mi.material_override = road_material
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		chunks[c].add_child(mi)
+		recipes[c].roads = (_roads[c] as SurfaceTool).commit()
 	_roads.clear()
 	for c in _trees:
 		_flush_trees(c, _trees[c])
@@ -662,7 +895,7 @@ func _build_fences() -> void:
 			var a: Vector2 = pc[0]
 			var b: Vector2 = pc[1]
 			var c := _chunk_of((a + b) * 0.5)
-			if not chunks.has(c):
+			if not _has(c):
 				continue
 			var len := a.distance_to(b)
 			if len < 0.05:
@@ -716,7 +949,7 @@ func _build_fields() -> void:
 				var p0: Vector2 = pc[0]
 				var p1: Vector2 = pc[1]
 				var c := _chunk_of((p0 + p1) * 0.5)
-				if not chunks.has(c):
+				if not _has(c):
 					continue
 				var len := p0.distance_to(p1) - 0.3
 				var mid := (p0 + p1) * 0.5
@@ -732,7 +965,7 @@ func _build_props() -> void:
 	for pr in layout.props:
 		var p: Vector2 = pr.pos
 		var c := _chunk_of(p)
-		if not chunks.has(c):
+		if not _has(c):
 			continue
 		var yaw := float(pr.get("yaw", 0.0))
 		match StringName(pr.kind):
@@ -767,18 +1000,17 @@ func _build_props() -> void:
 				_box(c, Vector3(p.x, 7.4, p.y), Vector3(1.8, 0.12, 0.12), yaw + PI * 0.5, Color(0.33, 0.25, 0.17))
 				_solid_box(c, Vector3(p.x, 1.5, p.y), Vector3(0.3, 3.0, 0.3), yaw)
 			&"pump":
-				var gp := GasPump.new()
-				gp.name = String(pr.get("id", "pump")).replace("/", "_")
-				gp.persist_id = String(pr.get("id", ""))
-				gp.position = Vector3(p.x, 0.0, p.y)
-				gp.rotation.y = yaw
-				_sub(c, "Pumps").add_child(gp)
+				_node(c, "pump", pr)
 
 
 func _lamp(c: Vector2i, p: Vector2) -> void:
 	_box(c, Vector3(p.x, 2.3, p.y), Vector3(0.14, 4.6, 0.14), 0.0, Color(0.25, 0.25, 0.27))
 	_box(c, Vector3(p.x, 4.55, p.y), Vector3(0.5, 0.14, 0.3), 0.0, Color(0.85, 0.82, 0.7))
 	_solid_box(c, Vector3(p.x, 2.3, p.y), Vector3(0.2, 4.6, 0.2), 0.0)
+	_node(c, "lamp", p)
+
+
+func _make_lamp(c: Vector2i, p: Vector2) -> void:
 	var l := OmniLight3D.new()
 	l.name = "Lamp"
 	l.position = Vector3(p.x, 4.3, p.y)
@@ -793,6 +1025,16 @@ func _lamp(c: Vector2i, p: Vector2) -> void:
 	_sub(c, "Lamps").add_child(l)
 
 
+func _make_pump(c: Vector2i, pr: Dictionary) -> void:
+	var p: Vector2 = pr.pos
+	var gp := GasPump.new()
+	gp.name = String(pr.get("id", "pump")).replace("/", "_")
+	gp.persist_id = String(pr.get("id", ""))
+	gp.position = Vector3(p.x, 0.0, p.y)
+	gp.rotation.y = float(pr.get("yaw", 0.0))
+	_sub(c, "Pumps").add_child(gp)
+
+
 func _canopy(c: Vector2i, pr: Dictionary) -> void:
 	var h := 4.6
 	var size: Vector2 = pr.size
@@ -804,7 +1046,15 @@ func _canopy(c: Vector2i, pr: Dictionary) -> void:
 			var q := cxf * Vector2(lx, ly)
 			_box(c, Vector3(q.x, h * 0.5, q.y), Vector3(0.3, h, 0.3), yaw, Color(0.85, 0.85, 0.85))
 			_solid_box(c, Vector3(q.x, h * 0.5, q.y), Vector3(0.3, h, 0.3), yaw)
-	# Roof: an occluder (fades when it hides the player), never solid.
+	_node(c, "canopy_roof", [center, yaw, size, h])
+
+
+## Canopy roof: an occluder (fades when it hides the player), never solid.
+func _make_canopy_roof(c: Vector2i, a: Array) -> void:
+	var center: Vector2 = a[0]
+	var yaw: float = a[1]
+	var size: Vector2 = a[2]
+	var h: float = a[3]
 	var roof := StaticBody3D.new()
 	roof.name = "CanopyRoof"
 	roof.collision_layer = 1 << 5
@@ -833,6 +1083,17 @@ func _canopy(c: Vector2i, pr: Dictionary) -> void:
 
 ## Farm silo: a corrugated-grey cylinder with a dome (solid trunk shape).
 func _silo(c: Vector2i, p: Vector2, rad: float, height: float) -> void:
+	_node(c, "silo", [p, rad, height])
+	var cyl := CylinderShape3D.new()
+	cyl.radius = rad
+	cyl.height = height
+	_solid_shape(c, cyl, Transform3D(Basis(), Vector3(p.x, height * 0.5, p.y)))
+
+
+func _make_silo(c: Vector2i, a: Array) -> void:
+	var p: Vector2 = a[0]
+	var rad: float = a[1]
+	var height: float = a[2]
 	var mi := MeshInstance3D.new()
 	mi.name = "Silo"
 	var cm := CylinderMesh.new()
@@ -859,34 +1120,37 @@ func _silo(c: Vector2i, p: Vector2, rad: float, height: float) -> void:
 	dome.position = Vector3(0.0, height * 0.5, 0.0)
 	mi.add_child(dome)
 	_sub(c, "Props").add_child(mi)
-	var cyl := CylinderShape3D.new()
-	cyl.radius = rad
-	cyl.height = height
-	_solid_shape(c, cyl, Transform3D(Basis(), Vector3(p.x, height * 0.5, p.y)))
 
 
 # --- Vehicles -----------------------------------------------------------------------------
 
 func _build_vehicles() -> void:
 	for v in layout.vehicles:
-		var p: Vector2 = v.pos
-		var c := _chunk_of(p)
-		if not chunks.has(c):
-			continue
-		var id := StringName(v.data)
-		if not _vehicle_data.has(id):
-			_vehicle_data[id] = load(VEHICLE_DIR % id)
-		var data := _vehicle_data[id] as VehicleData
-		if data == null:
-			continue
-		var veh := Vehicle.new()
-		veh.name = String(v.id)
-		veh.data = data
-		veh.variant_seed = int(v.seed)
-		veh.persist_prefix = "Vehicle/%s" % v.id
-		veh.position = Vector3(p.x, 0.0, p.y)
-		veh.rotation.y = float(v.yaw)
-		_sub(c, "Vehicles").add_child(veh)
+		var c := _chunk_of(v.pos)
+		if _has(c):
+			_node(c, "vehicle", v)
+
+
+func _make_vehicle(c: Vector2i, v: Dictionary) -> Vehicle:
+	var p: Vector2 = v.pos
+	var id := StringName(v.data)
+	if not _vehicle_data.has(id):
+		_vehicle_data[id] = load(VEHICLE_DIR % id)
+	var data := _vehicle_data[id] as VehicleData
+	if data == null:
+		return null
+	var veh := Vehicle.new()
+	veh.name = String(v.id)
+	veh.data = data
+	veh.variant_seed = int(v.seed)
+	veh.persist_prefix = "Vehicle/%s" % v.id
+	veh.position = Vector3(p.x, 0.0, p.y)
+	veh.rotation.y = float(v.yaw)
+	# Round 12: cars parked in town carry alarms.
+	var near := layout.building_at(p, 30.0)
+	veh.has_alarm = not near.is_empty() and String(near.get("settlement", "")).begins_with("town")
+	_sub(c, "Vehicles").add_child(veh)
+	return veh
 
 
 # --- Trees --------------------------------------------------------------------------------
@@ -896,7 +1160,7 @@ func _build_trees() -> void:
 	for i in range(0, t.size(), 4):
 		var p := Vector2(t[i], t[i + 1])
 		var c := _chunk_of(p)
-		if not chunks.has(c):
+		if not _has(c):
 			continue
 		if not _trees.has(c):
 			_trees[c] = []
@@ -974,19 +1238,7 @@ func _flush_trees(c: Vector2i, list: Array) -> void:
 func _multimesh(c: Vector2i, name: String, mesh: Mesh, list: Array, mat: Material) -> void:
 	if list.is_empty():
 		return
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = mesh
-	mm.instance_count = list.size()
-	for i in list.size():
-		mm.set_instance_transform(i, list[i][0])
-		mm.set_instance_color(i, list[i][1])
-	var mmi := MultiMeshInstance3D.new()
-	mmi.name = name
-	mmi.multimesh = mm
-	mmi.material_override = mat
-	chunks[c].add_child(mmi)
+	recipes[c].trees.append([name, _make_multimesh(mesh, list), mat])
 
 
 # --- Ponds ---------------------------------------------------------------------------------
@@ -995,29 +1247,35 @@ func _build_ponds() -> void:
 	for pd in layout.ponds:
 		var p: Vector2 = pd.center
 		var c := _chunk_of(p)
-		if not chunks.has(c):
+		if not _has(c):
 			continue
 		var rad := float(pd.radius)
-		var mi := MeshInstance3D.new()
-		mi.name = "Pond"
-		var cm := CylinderMesh.new()
-		cm.top_radius = rad
-		cm.bottom_radius = rad
-		cm.height = 0.04
-		cm.radial_segments = 24
-		var m := StandardMaterial3D.new()
-		m.albedo_color = Color(0.22, 0.36, 0.5)
-		m.roughness = 0.15
-		cm.material = m
-		mi.mesh = cm
-		mi.position = Vector3(p.x, 0.02, p.y)
-		chunks[c].add_child(mi)
+		_node(c, "pond", [p, rad])
 		# Deep water: a low invisible wall (you cannot wade in; eye-level
 		# rays pass over it).
 		var cyl := CylinderShape3D.new()
 		cyl.radius = rad
 		cyl.height = 1.1
 		_solid_shape(c, cyl, Transform3D(Basis(), Vector3(p.x, 0.55, p.y)))
+
+
+func _make_pond(c: Vector2i, a: Array) -> void:
+	var p: Vector2 = a[0]
+	var rad: float = a[1]
+	var mi := MeshInstance3D.new()
+	mi.name = "Pond"
+	var cm := CylinderMesh.new()
+	cm.top_radius = rad
+	cm.bottom_radius = rad
+	cm.height = 0.04
+	cm.radial_segments = 24
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.22, 0.36, 0.5)
+	m.roughness = 0.15
+	cm.material = m
+	mi.mesh = cm
+	mi.position = Vector3(p.x, 0.02, p.y)
+	_sub(c, "Water").add_child(mi)
 
 
 # --- Game hookup -----------------------------------------------------------------------------
@@ -1028,6 +1286,14 @@ func _place_player() -> void:
 	if map == null:
 		return
 	var start := start_position()
+	# Round 12: a load puts the player back where it was saved (the
+	# streamer builds around that point; the player record follows later).
+	var cfg := WorldConfig.find(get_tree())
+	if cfg != null and cfg.stream_state.get("focus") is Vector3:
+		var player0 := map.get_node_or_null("Player") as Node3D
+		if player0 != null:
+			player0.position = cfg.stream_state.focus
+		return
 	var marker := map.get_node_or_null("PlayerStart") as Node3D
 	if marker != null:
 		marker.position = start
@@ -1044,6 +1310,16 @@ func _configure_spawner() -> void:
 	var sp := map.get_node_or_null("Zombies") as ZombieSpawner
 	if sp == null:
 		return
+	sp.position = Vector3.ZERO
+	sp.min_player_distance = 10.0
+	# Round 12: a PopulationDirector owns the population (the spawner is
+	# only its zombie factory).
+	for ch in map.get_children():
+		if ch is PopulationDirector and (ch as PopulationDirector).enabled:
+			sp.spawn_points = PackedVector3Array()
+			sp.count = 0
+			sp.groups = []
+			return
 	var pts := PackedVector3Array()
 	for q in layout.zombies:
 		pts.append(Vector3(q.x, 0.0, q.y))

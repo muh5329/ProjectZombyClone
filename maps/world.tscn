@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://c0worldgen00001"]
+[gd_scene load_steps=19 format=3 uid="uid://c0worldgen00001"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://camera/isometric_camera.gd" id="2_cam"]
@@ -16,6 +16,8 @@
 [ext_resource type="Script" path="res://effects/sound_debug_overlay.gd" id="22_sdebug"]
 [ext_resource type="Script" path="res://ui/menus/pause_menu.gd" id="30_pause"]
 [ext_resource type="Script" path="res://ui/hud/world_map_overlay.gd" id="31_map"]
+[ext_resource type="Script" path="res://world/chunk_streamer.gd" id="32_streamer"]
+[ext_resource type="Script" path="res://simulation/population_director.gd" id="33_pop"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -55,6 +57,9 @@ directional_shadow_max_distance = 90.0
 script = ExtResource("4_builder")
 params = ExtResource("5_params")
 
+[node name="Streamer" type="Node" parent="."]
+script = ExtResource("32_streamer")
+
 [node name="BloodDecals" type="Node3D" parent="."]
 script = ExtResource("14_blood")
 
@@ -77,6 +82,9 @@ script = ExtResource("10_spawner")
 count = 0
 seed = 1337
 min_player_distance = 10.0
+
+[node name="Population" type="Node" parent="."]
+script = ExtResource("33_pop")
 
 [node name="IsometricCamera" type="Node3D" parent="."]
 script = ExtResource("2_cam")

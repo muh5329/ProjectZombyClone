@@ -110,6 +110,7 @@ func build() -> void:
 	containers.clear()
 	wall_segments.clear()
 	rooms.clear()
+	_bound_r = -1.0
 	_build_floor()
 	for r in plan.rooms:
 		_build_room(r)

@@ -98,3 +98,46 @@ func from_dict(d: Dictionary) -> void:
 		_next = (_next + 1) % max_decals
 		count = mini(count + 1, max_decals)
 	multimesh.visible_instance_count = count
+
+
+# --- Streaming (Round 12) ----------------------------------------------------------------
+
+## Every live splat transform, oldest first.
+func transforms() -> Array[Transform3D]:
+	var out: Array[Transform3D] = []
+	for i in count:
+		out.append(multimesh.get_instance_transform(posmod(_next - count + i, max_decals)))
+	return out
+
+
+## Remove and return (as 12-float lists, oldest first) the splats lying in
+## [rect] (x / z): their chunk is unloading, the store keeps them.
+func take_in(rect: Rect2) -> Array:
+	var keep: Array[Transform3D] = []
+	var out: Array = []
+	for t in transforms():
+		if rect.has_point(Vector2(t.origin.x, t.origin.z)):
+			out.append(Saveable.xform(t))
+		else:
+			keep.append(t)
+	if out.is_empty():
+		return out
+	count = 0
+	_next = 0
+	for t in keep:
+		multimesh.set_instance_transform(_next, t)
+		_next = (_next + 1) % max_decals
+		count += 1
+	multimesh.visible_instance_count = count
+	return out
+
+
+## Put stored splats (12-float lists) back (their chunk loaded again).
+func add_transforms(list: Array) -> void:
+	for t in list:
+		if max_decals <= 0:
+			return
+		multimesh.set_instance_transform(_next, Saveable.to_xform(t))
+		_next = (_next + 1) % max_decals
+		count = mini(count + 1, max_decals)
+	multimesh.visible_instance_count = count

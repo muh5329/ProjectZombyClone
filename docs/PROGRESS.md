@@ -6,6 +6,64 @@ that did not write the code).
 
 ---
 
+## Round 12 — World streaming, zombie population simulation, delta saves (2026-09-24)
+
+### Goal
+Make the generated county hold up while the player roams: stream chunk
+content, keep changes in unloaded chunks, simulate off-screen zombies,
+and save only deltas.
+
+### What changed
+- `ChunkStreamer`: per-chunk recipes, load radius 3 / unload 4, ~4 ms
+  build budget per frame (player's 3×3 built immediately), background nav
+  bakes, low-detail building impostors on the horizon; building kinds
+  pre-warmed at load.
+- `WorldStateStore`: only deltas from generated defaults (containers,
+  doors/windows, barricades, furniture, dropped items, corpses, blood) per
+  chunk; unfinished chunk builds never erase records.
+- `simulation/`: pure `ZombiePopulation` (~900 zombies in ~300 groups:
+  wander, migrate, merge/split, follow loud sounds, scale with game time)
+  behind a budgeted `PopulationDirector` (live cap 120 nearest-first,
+  fold/unfold, calm far zombies frozen until woken). Sound categories gain
+  `sim_carry` (×3.5 for smash/hammering/shout/alarm, footsteps 0, halved
+  indoors); alerted groups recruit neighbours. Town cars have alarms
+  (≈30 % on break-in, 90 m).
+- Saves v2: seed + params + hash + deltas + population; untouched world
+  ≈24 KB; Round-11 saves migrate.
+- F2 chunk/population debug on the M map.
+- Perf root causes (critic): tree trunks carved into the navmesh (11k
+  polys) and zombies pathing to far off-mesh targets → trunks no longer
+  carved, 40 m path legs, 60 m search limit; removes the Godot "most
+  reachable polygons" engine error.
+
+### Tests performed
+Unit **223**; integration a/b/c/d/e **35/83/41/41/62** — **485 tests, 0
+failed**. Screenshots OK (44_chunk_debug, 45_horde_arriving + all
+earlier). Perf world: load 5.0 s (budget 8), sprint town/woods worst
+frame 16.9 / 18.7 ms (budget 33, restored), 0 unreachable nav queries,
+memory flat over the second km, population tick 0.7 ms for 1000
+zombies, save/load 42 ms / 4.2 s with 50 changes.
+
+### Bugs discovered (critic) → all fixed
+Woods frame spikes of 43-53 ms (and a perf bound the builder had
+loosened to 55 ms — restored to 33); engine nav errors; cheap-moving
+zombies walking through walls into sealed houses; items erased when a
+half-built chunk unloaded; zombies resurrected if killed as they were
+folded; tests mutating shared resources; a near-trivial conservation
+test; noise never reaching the population simulation (no hordes in real
+play).
+
+### Verifier score (after fixes; critic pre-fix in brackets)
+Functionality 8 (7) · System Integration 8 (7) · Survival Depth 7 (5) ·
+Architecture 8 (7.5) · Performance 8.5 (5) · UX 6.5 (6) ·
+Bug Resistance 8 (5).
+
+### Next
+Content depth in the generated world (two-storey interiors, more building
+types), audio + threat cues, vehicles you can drive, weather.
+
+---
+
 ## Round 11 — Procedurally generated starting world (2026-09-23)
 
 ### Goal

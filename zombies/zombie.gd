@@ -52,6 +52,9 @@ var home_position: Vector3 = Vector3.ZERO
 var dead: bool = false
 ## The corpse left behind (valid after die()).
 var corpse: ZombieCorpse = null
+## Round 12: the PopulationDirector that folded this zombie back into data
+## (it is out of the tree then, freed at the end of the frame).
+var folded_by: Object = null
 ## True while cheap (collision-free) movement is in use. Decided by the AI.
 ## The body leaves the physics space meanwhile; it is re-added (and
 ## depenetrated by move_and_slide) when full physics resumes.
@@ -193,6 +196,8 @@ func snap_facing(yaw: float) -> void:
 func _physics_process(delta: float) -> void:
 	if dead:
 		return
+	if cheap_veto > 0.0:
+		cheap_veto -= delta
 	_sense_accum += delta
 	if _sense_accum >= senses.period():
 		_sense_accum = 0.0
@@ -223,6 +228,20 @@ func _physics_process(delta: float) -> void:
 	visual.animate(delta)
 
 
+## Seconds during which the AI may not switch cheap movement back on
+## (set when a cheap step would have entered a building).
+var cheap_veto: float = 0.0
+
+
+## True when moving [a] → [b] goes from outside every building room to
+## inside one (the bounding-circle early-out keeps this cheap).
+func _enters_building(a: Vector3, b: Vector3) -> bool:
+	var tree := get_tree()
+	if not WorldQuery.is_inside_building(tree, b + Vector3.UP * 0.5, 0.3):
+		return false
+	return not WorldQuery.is_inside_building(tree, a + Vector3.UP * 0.5, 0.3)
+
+
 ## Movement step: MovementComponent computes the velocity; cheap movers
 ## integrate it directly, the others move_and_slide.
 func _step_movement(delta: float) -> void:
@@ -232,7 +251,17 @@ func _step_movement(delta: float) -> void:
 	if cheap_movement:
 		velocity.y = 0.0
 		velocity = movement.compute_velocity(intent_direction, velocity, delta)
-		global_position += Vector3(velocity.x, 0.0, velocity.z) * delta
+		var step := Vector3(velocity.x, 0.0, velocity.z) * delta
+		# Round 12: a cheap mover has no collision — it must never slide
+		# through a wall or a closed door into a building. A step that
+		# enters a room from outside hands over to full physics (doors and
+		# windows then block / get attacked as usual).
+		if _enters_building(global_position, global_position + step):
+			cheap_veto = 3.0
+			cheap_movement = false
+			velocity = Vector3.ZERO
+			return
+		global_position += step
 	else:
 		if not is_on_floor():
 			velocity.y -= 9.8 * delta
@@ -378,6 +407,14 @@ func health() -> float:
 ## body stood, announce it and free this node at the end of the frame.
 func die(p_killer: Node = null) -> ZombieCorpse:
 	if dead:
+		return corpse
+	# Round 12: killed after the population director folded it back into
+	# data (same frame, already out of the tree): the director removes the
+	# member, counts the death and lays the corpse.
+	if not is_inside_tree():
+		dead = true
+		if folded_by != null and is_instance_valid(folded_by):
+			corpse = folded_by.call(&"on_folded_zombie_died", self, p_killer)
 		return corpse
 	dead = true
 	target = null

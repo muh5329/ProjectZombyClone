@@ -192,6 +192,10 @@ func _world(data: Variant) -> void:
 			for j in 12:
 				if not _num(sp[i][j], "blood/splats/%d" % i, -MAX_COORD, MAX_COORD):
 					return
+	if d.has("chunks") and not _chunks(d.chunks, "chunks"):
+		return
+	if d.has("population") and not _population(d.population, "population"):
+		return
 	if d.has("camera"):
 		if not _dict(d.camera, "camera") or not _int((d.camera as Dictionary).get("yaw_index", 0), "camera/yaw_index", -1000, 1000) \
 				or not _int((d.camera as Dictionary).get("zoom_index", 0), "camera/zoom_index", -1000, 1000):
@@ -202,6 +206,8 @@ func _static(v: Variant, path: String) -> bool:
 	if not _dict(v, path):
 		return false
 	var d: Dictionary = v
+	if not _opt(d, "_t", path, func(x, p): return _num(x, p, 0.0, 1.0e9)):
+		return false
 	if not _enum(d.get("kind"), path + "/kind", STATIC_KINDS):
 		return false
 	match String(d.kind):
@@ -399,4 +405,91 @@ func _injuries(v: Variant, path: String) -> bool:
 				return false
 		if not _opt(w, "bandage_quality", p, func(x, pp): return _num(x, pp, 0.0, 10.0)):
 			return false
+	return true
+
+
+# --- Round 12: streamed chunks + zombie population ------------------------------------------
+
+## {"x,z": {items: [world items], corpses: [corpses], blood: [12 floats], t}}.
+func _chunks(v: Variant, path: String) -> bool:
+	if not _dict(v, path):
+		return false
+	for k in v:
+		var p := "%s/%s" % [path, k]
+		if not _str(k, path) or WorldStateStore.key_to_chunk(String(k)).x < 0 \
+				or WorldStateStore.key_to_chunk(String(k)).x > 10000 or WorldStateStore.key_to_chunk(String(k)).y > 10000:
+			return _fail(p, "not a chunk key")
+		var c: Variant = v[k]
+		if not _dict(c, p) or not _num((c as Dictionary).get("t", 0.0), p + "/t", 0.0, 1.0e9):
+			return false
+		var cd: Dictionary = c
+		for key in ["items", "corpses", "blood"]:
+			if not _arr(cd.get(key, []), "%s/%s" % [p, key], 20000):
+				return false
+		var items: Array = cd.get("items", [])
+		for i in items.size():
+			if not _world_item(items[i], "%s/items/%d" % [p, i]):
+				return false
+		var corpses: Array = cd.get("corpses", [])
+		for i in corpses.size():
+			if not _corpse(corpses[i], "%s/corpses/%d" % [p, i]):
+				return false
+		var blood: Array = cd.get("blood", [])
+		for i in blood.size():
+			if not blood[i] is Array or (blood[i] as Array).size() != 12:
+				return _fail("%s/blood/%d" % [p, i], "not a transform")
+			for j in 12:
+				if not _num(blood[i][j], "%s/blood/%d" % [p, i], -MAX_COORD, MAX_COORD):
+					return false
+	return true
+
+
+## ZombiePopulation.to_dict(), or {legacy: true, groups_spawned} (a
+## migrated Round-11 save).
+func _population(v: Variant, path: String) -> bool:
+	if not _dict(v, path):
+		return false
+	var d: Dictionary = v
+	if d.has("legacy"):
+		if not _bool(d.legacy, path + "/legacy") or not _arr(d.get("groups_spawned", []), path + "/groups_spawned"):
+			return false
+		for g in (d.get("groups_spawned", []) as Array):
+			if not _str(g, path + "/groups_spawned"):
+				return false
+		return true
+	if not (_int(d.get("next_group", 1), path + "/next_group", 1, 1.0e9) and _int(d.get("next_member", 0), path + "/next_member", 0, 1.0e9)
+			and _int(d.get("deaths", 0), path + "/deaths", 0, 1.0e9)):
+		return false
+	var st: Variant = d.get("rng", "0")
+	if not st is String or not (st as String).is_valid_int():
+		return _fail(path + "/rng", "not an integer string")
+	if not _arr(d.get("groups", []), path + "/groups", 100000):
+		return false
+	var members := 0
+	var gl: Array = d.get("groups", [])
+	for i in gl.size():
+		var p := "%s/groups/%d" % [path, i]
+		if not gl[i] is Array or (gl[i] as Array).size() != 9:
+			return _fail(p, "not a group record")
+		var g: Array = gl[i]
+		if not (_int(g[0], p + "/id", 1, 1.0e9) and _num(g[1], p + "/x", -MAX_COORD, MAX_COORD) and _num(g[2], p + "/z", -MAX_COORD, MAX_COORD)
+				and _num(g[3], p + "/heading", -100.0, 100.0) and _int(g[4], p + "/state", 0, 2)
+				and _num(g[5], p + "/tx", -MAX_COORD, MAX_COORD) and _num(g[6], p + "/tz", -MAX_COORD, MAX_COORD)
+				and _num(g[7], p + "/timer", -1.0e6, 1.0e6) and _str(g[8], p + "/members", 100000)):
+			return false
+		var m := ZombiePopulation.parse_ranges(String(g[8]))
+		if m.is_empty():
+			return _fail(p + "/members", "no members")
+		members += m.size()
+		if members > 1000000:
+			return _fail(p + "/members", "too many zombies")
+	for key in ["looks", "hurt"]:
+		if not _dict(d.get(key, {}), "%s/%s" % [path, key]):
+			return false
+		var dd: Dictionary = d.get(key, {})
+		for k in dd:
+			if not _str(k, "%s/%s" % [path, key]) or not String(k).is_valid_int():
+				return _fail("%s/%s/%s" % [path, key, k], "not a member id")
+			if not _num(dd[k], "%s/%s/%s" % [path, key, k], 0.0, 4294967296.0):
+				return false
 	return true

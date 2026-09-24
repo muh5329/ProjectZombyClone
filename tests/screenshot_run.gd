@@ -27,11 +27,14 @@ func _run() -> void:
 	await _frames(20)
 	var player: Node3D = inst.get_node("Player")
 	var cam: Node3D = inst.get_node("IsometricCamera")
-	if OS.get_environment("SCREENSHOT_ONLY") == "world":
-		# Dev shortcut: only the Round-11 generated-world section.
+	if OS.get_environment("SCREENSHOT_ONLY") in ["world", "streaming"]:
+		# Dev shortcut: only the generated-world sections (Rounds 11-12;
+		# "streaming" = Round 12 alone).
 		inst.queue_free()
 		await process_frame
-		await _round11()
+		if OS.get_environment("SCREENSHOT_ONLY") == "world":
+			await _round11()
+		await _round12()
 		_finish()
 		return
 	if OS.get_environment("SCREENSHOT_ONLY") == "r9":
@@ -223,6 +226,7 @@ func _run() -> void:
 	await _round9(inst, player, cam, spawner, hud)
 	await _round10(inst, player, cam, hud)
 	await _round11()
+	await _round12()
 	_finish()
 
 
@@ -1112,6 +1116,13 @@ func _round11() -> void:
 	player.get_node("Controller").scripted = true
 	tm.set_time_of_day(11, 0)
 	var sp: Node = map.get_node("Zombies")
+	# Round 12: the population director instantiates the start pack a
+	# few per frame.
+	var pd: Node = map.get_node_or_null("Population")
+	for i in 600:
+		if pd == null or pd.active_count() >= 30:
+			break
+		await physics_frame
 	if sp.zombies.size() < 30:
 		_problems.append("round 11: only %d zombies in the generated world" % sp.zombies.size())
 	var loc: Dictionary = load("res://buildings/building.gd").locate(self, player.global_position)
@@ -1180,8 +1191,107 @@ func _teleport(player: Node3D, cam: Node3D, p: Vector3) -> void:
 	player.global_position = p
 	player.velocity = Vector3.ZERO
 	await _frames(2)
+	# Round 12: build the streamed chunks around the new spot now (the
+	# streamer would take a few dozen frames).
+	var st: Node = player.get_parent().get_node_or_null("Streamer")
+	if st != null:
+		st.flush()
 	cam.global_position = p + Vector3.UP * 0.9
 	await _frames(40)
+
+
+## Round 12: world streaming + the zombie population simulation.
+## 44: M + F2 (real input) — the map with the chunk debug layer (loaded
+## chunks, per-chunk simulated zombies, data groups, live zombies) after
+## walking 250 m from the start; 45: a car alarm pulls a simulated horde
+## from outside the active area; it is instantiated at the edge and walks
+## in toward the noise (zoomed out).
+func _round12() -> void:
+	var sm: Node = root.get_node("SaveManager")
+	var tm: Node = root.get_node("TimeManager")
+	var map: Node = sm.instantiate_new_game("res://maps/world.tscn", 1337)
+	root.add_child(map)
+	var nav: Node = map.get_node("NavRegion")
+	for i in 1200:
+		if nav.baked:
+			break
+		await physics_frame
+	await _frames(30)
+	var player: Node3D = map.get_node("Player")
+	var cam: Node3D = map.get_node("IsometricCamera")
+	var builder: Node = map.get_node("Generated")
+	var st: Node = map.get_node("Streamer")
+	var pd: Node = map.get_node("Population")
+	var layout = builder.layout
+	player.get_node("Health").invulnerable = true
+	player.get_node("Controller").scripted = true
+	tm.set_time_of_day(11, 0)
+	# Walk (teleport in steps) 250 m toward the town so chunks stream.
+	var tc: Vector2 = layout.settlement("town").center
+	var from := Vector2(player.global_position.x, player.global_position.z)
+	var dir := (tc - from).normalized() if tc.distance_to(from) > 10.0 else Vector2(1, 0)
+	for k in 25:
+		var q := from + dir * 10.0 * (k + 1)
+		player.global_position = Vector3(q.x, 0.1, q.y)
+		await _frames(6)
+	await _teleport(player, cam, player.global_position)
+	if st.unloads == 0 and from.distance_to(Vector2(player.global_position.x, player.global_position.z)) > 200.0:
+		_problems.append("round 12: no chunk unloaded after walking 250 m")
+	await _tap(&"toggle_map")
+	await _frames(5)
+	await _tap(&"toggle_chunk_debug")
+	await _frames(10)
+	var overlay: Node = map.get_node("MapOverlay")
+	if not overlay.is_open or not overlay.debug_chunks:
+		_problems.append("round 12: M + F2 did not show the chunk debug map")
+	await _shot("44_chunk_debug")
+	await _tap(&"toggle_chunk_debug")
+	await _tap(&"toggle_map")
+	await _frames(5)
+	# 45: the horde. Stand on an open spot, find the biggest simulated
+	# groups 150-230 m away (outside the active area) and set off a car
+	# alarm (a loud noise, radius 120 m).
+	var pp := Vector2(player.global_position.x, player.global_position.z)
+	var pop = pd.population
+	var cands: Array = []
+	for id in pop.groups:
+		var g: Dictionary = pop.groups[id]
+		var d: float = pp.distance_to(g.pos)
+		if d > 150.0 and d < 230.0:
+			cands.append([-(g.members as PackedInt32Array).size(), id])
+	cands.sort()
+	var horde := 0
+	for c in cands.slice(0, 6):
+		horde += -int(c[0])
+	if horde < 6:
+		_problems.append("round 12: no simulated horde near enough (%d)" % horde)
+	root.get_node("SoundManager").emit_sound(&"alarm", Vector3(pp.x, 0.0, pp.y), null, {"radius": 120.0, "intensity": 1.0})
+	var coming := 0
+	for id in pop.groups:
+		if int(pop.groups[id].state) == 2:
+			coming += (pop.groups[id].members as PackedInt32Array).size()
+	print("round 12: %d simulated zombies heard the alarm" % coming)
+	# Game time passes (the sim walks them in); zoom out to watch.
+	var alive0: int = pd.active_count()
+	for k in 12:
+		tm.advance(6.0)
+		pd.tick_now()
+		pd.sync_now()
+		await _frames(20)
+	for i in 3:
+		await _tap(&"camera_zoom_out")
+		await _frames(3)
+	await _frames(120)
+	var walking := 0
+	for z in pd.real_zombies():
+		if z.state() == &"investigate" and z.global_position.distance_to(player.global_position) < 90.0:
+			walking += 1
+	print("round 12: live zombies %d → %d, %d walking in toward the alarm" % [alive0, pd.active_count(), walking])
+	if walking < 5:
+		_problems.append("round 12: the horde did not walk in (%d investigating)" % walking)
+	await _shot("45_horde_arriving")
+	map.queue_free()
+	await process_frame
 
 
 ## A meadow point at the edge of a deep woods mass (woods for 40 m

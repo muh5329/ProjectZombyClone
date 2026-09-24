@@ -64,4 +64,4 @@ population sim → 7 Long-term survival (farming, fishing, generators, seasons)
 | # | Round | Status |
 |---|-------|--------|
 | 11 | Procedurally generated starting world | **DONE** (2026-09-23, 452 tests) |
-| 12 | World streaming + zombie population simulation + delta saves | next |
+| 12 | World streaming + zombie population simulation + delta saves | **DONE** (2026-09-24, 485 tests) |

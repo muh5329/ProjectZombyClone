@@ -22,9 +22,9 @@ expanding the world.**
 | 9 | Barricades, furniture blocking, disassembly, carpentry, zombies breaking in | ✅ done |
 | 10 | Save/load of the whole world, menus, natural-play acceptance test (3 seeds) | ✅ done |
 | 11 | Procedurally generated county: towns, hamlets, farms, woods, road network (New game) | ✅ done |
-| 12 | World streaming, off-screen zombie population sim, delta saves | ⬜ next |
+| 12 | World streaming, off-screen zombie population sim (~900), noise-drawn hordes, delta saves | ✅ done |
 
-- **452 automated tests, 0 failing** (`scripts/test.sh unit` ~7 s, then `integration-a`/`-b`/`-c`/`-d` ~265–355 s each; run them as separate calls).
+- **485 automated tests, 0 failing** after Round 12 (`scripts/test.sh unit` ~40 s, then `integration-a` … `-e` ~275–377 s each; run them as separate calls).
 - Perf harness: 200 zombies calm 4.2 ms / all hostile 8.4 ms avg physics
   step on a 2-core box (`scripts/perf.sh`).
 - Screenshot evidence run through the real input map (`scripts/screenshots.sh`,
@@ -40,14 +40,14 @@ Alt walk · E interact · 4-7 pick action · 1-3 hotbar · LMB attack
 (hold to charge) · RMB aim · Space shove · X cycle weapon · B bandage ·
 Tab inventory (right-click items, drag, Ctrl+click split, G drop) · Q/R
 rotate camera · wheel or +/− zoom · F5-F8 (or , .) time speed · H shout · F3 debug · F4 sound debug · R restart after death · F9 quick-save ·
-F10 quick-load · M map · Esc pause menu (Save / Load / Quit). Beds: Sleep / Rest, sofa: Rest, sinks: Drink / Fill bottle; right-click food: Eat / Eat half.
+F10 quick-load · M map · F2 chunk / population debug map (Round 12) · Esc pause menu (Save / Load / Quit). Beds: Sleep / Rest, sofa: Rest, sinks: Drink / Fill bottle; right-click food: Eat / Eat half.
 
 ## Run the tests
 ```
 GODOT=/path/to/godot scripts/test.sh                 # all (unit + integration)
 GODOT=/path/to/godot scripts/test.sh unit
-GODOT=/path/to/godot scripts/test.sh integration-a       # a quarter of the integration files
-GODOT=/path/to/godot scripts/test.sh integration-b       # … -c, -d: the other quarters (--shard=K/N also works)
+GODOT=/path/to/godot scripts/test.sh integration-a       # a fifth of the integration files (Round 12: 5 shards)
+GODOT=/path/to/godot scripts/test.sh integration-b       # … -c, -d, -e: the other fifths (--shard=K/N also works)
 GODOT=/path/to/godot scripts/test.sh --filter=zombie
 GODOT=/path/to/godot scripts/screenshots.sh          # real-input gameplay run + PNGs
 GODOT=/path/to/godot scripts/perf.sh                 # 200-zombie benchmark

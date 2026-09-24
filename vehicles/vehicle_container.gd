@@ -34,3 +34,13 @@ func _ready() -> void:
 
 func interaction_prompt_position() -> Vector3:
 	return global_transform * prompt_offset
+
+
+## Round 12: the first search is a break-in — the car's alarm may go off.
+func ensure_loot() -> void:
+	var first := not searched
+	super.ensure_loot()
+	if first and is_inside_tree():
+		var v := get_parent() as Vehicle
+		if v != null:
+			v.on_break_in()

@@ -212,6 +212,12 @@ func hashed_count() -> int:
 	return _hash.size()
 
 
+## Round 12: buildings were freed (a chunk unloaded): re-resolve the
+## building every listener's ear is in (no stale building references).
+func forget_buildings() -> void:
+	_refresh_listeners()
+
+
 ## Drop listeners that were freed without unregistering. Returns how many.
 func prune() -> int:
 	var n := 0

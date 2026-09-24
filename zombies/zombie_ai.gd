@@ -185,7 +185,7 @@ func _update_movement_mode() -> void:
 	var hostile := s == S_CHASE or s == S_ATTACK or s == S_ATTACK_DOOR or s == S_STUNNED or s == S_KNOCKED_DOWN \
 		or s == S_CLIMB_WINDOW
 	var far := zombie.senses.last_target_distance != INF and zombie.senses.last_target_distance > profile().cheap_distance
-	zombie.cheap_movement = not hostile and far
+	zombie.cheap_movement = not hostile and far and zombie.cheap_veto <= 0.0
 	if zombie.hostile != hostile:
 		zombie.hostile = hostile
 
@@ -454,14 +454,80 @@ static func attackers_on(target: Node) -> int:
 
 ## Set the nav destination if it moved by more than 0.5 m.
 func set_destination(p: Vector3) -> void:
+	# CRITIC FIX: far goals (sim-group noises hundreds of metres away, far
+	# alarms) lie outside the streamed navmesh: every query to them was an
+	# unreachable-target A* over all loaded polygons (2-5 ms each). Path
+	# to a waypoint MAX_LEG m toward the goal instead; move_along_path
+	# re-issues the leg when it is reached.
+	_far_goal = Vector3.INF
+	var here := zombie.global_position
+	var flat := Vector3(p.x - here.x, 0.0, p.z - here.z)
+	if flat.length() > MAX_LEG:
+		_far_goal = p
+		# No closest-point query: the path query snaps the target itself
+		# (a closest-point query is a brute-force scan of every loaded
+		# polygon, ~0.4 ms).
+		p = here + flat.normalized() * MAX_LEG
 	if _nav_target != Vector3.INF and p.distance_squared_to(_nav_target) < 0.25:
 		return
 	_nav_target = p
 	nav.target_position = p
+	_path_pending = true
+
+
+## Round 12: calm zombies compute at most MAX_CALM_PATHS_PER_FRAME new
+## paths per physics frame (the agent queries lazily on the next
+## get_next_path_position): a loud noise used to send a whole group into
+## the path finder on the same frame — on the fragmented woods navmesh
+## that was 30+ ms. Hostile zombies are never delayed.
+const MAX_CALM_PATHS_PER_FRAME := 3
+static var _path_frame: int = -1
+static var _paths_this_frame: int = 0
+var _path_pending: bool = false
+const MAX_LEG := 40.0
+var _far_goal: Vector3 = Vector3.INF
+
+
+## Round 12 nav-query guard (tests / perf): new path queries, those whose
+## target lay farther than MAX_LEG + 1 m (should be 0: far goals go by
+## legs) and those whose path ended more than 3 m short of the target
+## (unreachable targets cost a full search).
+static var path_queries: int = 0
+static var far_queries: int = 0
+static var unreached_queries: int = 0
+
+
+static func reset_query_stats() -> void:
+	path_queries = 0
+	far_queries = 0
+	unreached_queries = 0
+
+
+func _count_query() -> void:
+	path_queries += 1
+	var here := zombie.global_position
+	if Vector2(_nav_target.x - here.x, _nav_target.z - here.z).length() > MAX_LEG + 1.0:
+		far_queries += 1
+	nav.get_next_path_position()  # the query itself (lazy in the agent)
+	var path := nav.get_current_navigation_path()
+	if path.is_empty() or Vector2(path[path.size() - 1].x - _nav_target.x, path[path.size() - 1].z - _nav_target.z).length() > 3.0:
+		unreached_queries += 1
+
+
+static func _take_path_slot() -> bool:
+	var f := Engine.get_physics_frames()
+	if f != _path_frame:
+		_path_frame = f
+		_paths_this_frame = 0
+	if _paths_this_frame >= MAX_CALM_PATHS_PER_FRAME:
+		return false
+	_paths_this_frame += 1
+	return true
 
 
 func clear_destination() -> void:
 	_nav_target = Vector3.INF
+	_far_goal = Vector3.INF
 
 
 ## True once per re-path period (consumes the tick).
@@ -475,7 +541,22 @@ func repath_due() -> bool:
 ## Steer along the current path at [mode]. Returns true when the agent
 ## reports the destination reached (or there is no path to follow).
 func move_along_path(mode: MovementComponent.Mode) -> bool:
+	var fresh := false
+	if _path_pending:
+		if not zombie.hostile and not _take_path_slot():
+			zombie.set_intent(Vector3.ZERO, mode)
+			return false
+		_path_pending = false
+		fresh = _nav_target != Vector3.INF
+	if fresh:
+		_count_query()
 	if _nav_target == Vector3.INF or nav.is_navigation_finished():
+		if _far_goal != Vector3.INF and _nav_target != Vector3.INF:
+			var fg := _far_goal
+			_nav_target = Vector3.INF
+			set_destination(fg)
+			zombie.set_intent(Vector3.ZERO, mode)
+			return false
 		zombie.set_intent(Vector3.ZERO, mode)
 		return true
 	var next := nav.get_next_path_position()

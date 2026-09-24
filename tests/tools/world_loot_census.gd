@@ -22,6 +22,9 @@ func _run() -> void:
 		var map: Node = sm.instantiate_new_game("res://maps/world.tscn", s)
 		map.get_node("NavRegion").bake_on_ready = false
 		map.get_node("Zombies").auto_spawn = false
+		# Round 12: build every chunk (no streaming) so every container exists.
+		map.get_node("Streamer").enabled = false
+		map.get_node("Population").enabled = false
 		root.add_child(map)
 		await process_frame
 		var builder = map.get_node("Generated")

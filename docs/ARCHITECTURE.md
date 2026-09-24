@@ -69,7 +69,10 @@ zombies/      zombie.gd/.tscn, zombie_visual.gd, zombie_corpse.gd, zombie_senses
               zombie_ai.gd, zombie_spawner.gd, states/zombie_state_*.gd (R3; climb_window R9)
 world/        blockout_box.gd, nav_baker.gd, world_query.gd (R3), world_config.gd, world_state.gd (R5),
               entry_planner.gd (EntryPlanner) (R9), world_snapshot.gd (WorldSnapshot) (R10),
-              day_night_lighting.gd (DayNightLighting) (R7)
+              day_night_lighting.gd (DayNightLighting) (R7), chunk_streamer.gd (ChunkStreamer),
+              world_state_store.gd (WorldStateStore) (R12)
+simulation/   zombie_population.gd (ZombiePopulation), population_director.gd
+              (PopulationDirector), population_params.gd (PopulationParams) (R12)
 ui/hud/       hud.gd, hud.tscn, damage_vignette.gdshader, hotbar.gd (HotbarWidget, R6),
               clock_widget.gd (ClockWidget), moodle_list.gd (MoodleList) (R7),
               noise_meter.gd (NoiseMeter) (R8)
@@ -91,18 +94,21 @@ data/         characters/*.tres, buildings/{house_a,shed_a,furniture_catalog}.tr
               audio/sound_categories.tres (R8), characters/outfits/*.tres (14 outfits),
               vehicles/*.tres (6 vehicle types), loot/vehicle_trunk + vehicle_glovebox (R8.5),
               barricades/wood_planks.tres (R9), worldgen/default_world.tres (R11),
+              simulation/default_population.tres (R12),
               loot/{store_shelf,desk}.tres + loot/{convenience_store,hardware_store,pharmacy,
               gas_station,diner,warehouse,barn}/*.tres (R11)
 assets/       materials/grid_ground.gdshader, world_ground.gdshader, tree_canopy.gdshader (R11)
-tests/        test_runner.gd, test_case.gd, unit/, integration/, perf/, screenshot_run.gd,
+tests/        test_runner.gd, test_case.gd, unit/, integration/ (+ frame_timer.gd,
+              test_world_streaming.gd, test_world_population.gd, R12), perf/
+              (+ perf_streaming.gd, R12), screenshot_run.gd,
               tools/ (dev previews: model_preview.gd, street_preview.gd; R11:
               world_map_preview.gd, world_validate.gd, world_probe.gd — not tests)
 scripts/      test.sh, screenshots.sh, perf.sh
 docs/
 ```
 
-Planned folders follow the brief (`crafting/`, `simulation/`,
-`farming/`, `weather/`, `electricity/`, `npc/`).
+Planned folders follow the brief (`crafting/`, `farming/`, `weather/`,
+`electricity/`, `npc/`).
 
 ## Key types
 
@@ -394,6 +400,97 @@ Planned folders follow the brief (`crafting/`, `simulation/`,
   group `light_budget`; `MainMenu` seed field; input `toggle_map` (M).
 - Tools / scripts: `scripts/worldgen_sweep.sh`, `tests/tools/world_*.gd`,
   `tests/integration/slow_frames.gd` (artificial load helper).
+
+### World streaming + population simulation (R12)
+- `WorldBuilder` (changed): `build()` = ground + `build_recipes()`
+  (per chunk: `recipes[c] = {boxes: MultiMesh, roads: ArrayMesh, trees:
+  [[name, MultiMesh, material]], solids: [[Shape3D, Transform3D]],
+  buildings: [layout records], nodes: [[kind, payload]]}`) + impostors;
+  every chunk is built at `_ready` only when `streaming` is false.
+  `chunk_steps(c)` → `["base", 0..n-1 (buildings), "nodes", "v<i>"
+  (vehicles), "finish"]`, `build_chunk_step(c, step)` (returns the
+  HouseBlockout / Vehicle it made), `build_chunk_now(c)`, `detach_chunk(c)`
+  (forget it, show the impostor, return the nodes to free: buildings /
+  vehicles first, chunk node last), `free_chunk(c)`; `chunks` = COMPLETE
+  chunks only, `building_chunks` = in progress, `buildings` = loaded ones;
+  `impostor_visible(c)`; signals `chunk_built(c)`, `chunk_freed(c)`;
+  counters `built_count`, `freed_count`, `recipe_ms`. `_make_lamp /
+  _make_pump / _make_canopy_roof / _make_silo / _make_pond /
+  _make_vehicle` create the recipe nodes.
+- `ChunkStreamer` (Node "Streamer" after "Generated", group
+  `chunk_streamer`, `ChunkStreamer.of(tree)`): exports `load_radius` 3,
+  `unload_radius` 4, `sync_radius` 1, `initial_radius` 2, `budget_ms` 4,
+  `lookahead` 3 s, `enabled`. Pure statics `chebyshev`, `chunks_within`,
+  `to_unload`, `priority`, `order`. `store: WorldStateStore`,
+  `saveables[c]`; `load_now(c)`, `ensure_loaded(p, r)`, `flush()`,
+  `unload(c)` (fold zombies via `chunk_unloading` → capture → detach →
+  nodes into `_trash`, freed one per frame), `free_detached()`,
+  `capture_chunk(c, take)`, `live_snapshot()` / `save_state()`,
+  `is_loaded`, `loaded_chunks`, `queued`, `is_busy`; signals
+  `chunk_loaded`, `chunk_unloading`, `chunk_unloaded`; stats `loads`,
+  `unloads`, `sync_loads`, `steps_run`, `max_step_ms` / `max_step_name`,
+  `frame_ms`, `max_free_ms`. `_enter_tree` sets `WorldBuilder.streaming`.
+  Its per-frame build budget is reduced by the population director's
+  instantiation work of the same frame (`PopulationDirector.work_usec`).
+- `WorldStateStore` (RefCounted): `statics {id: delta}` (containers carry
+  `_t`), `dynamic {"x,z": {items, corpses, blood, t}}`, runtime
+  `defaults`; `record_default`, `capture(id, state, now)` (stores /
+  drops), `delta_for`, `elapsed_for`, `states_equal`, `forget_default`,
+  `put_dynamic`, `take_dynamic`, `has_dynamic`, `dynamic_count`, statics
+  `key` / `key_to_chunk`, `age_inventory(inv, minutes)`,
+  `age_item(it, minutes)`, `to_dict` / `from_dict`.
+- `ZombiePopulation` (RefCounted, pure): `State {WANDER, MIGRATE,
+  INVESTIGATE}`; `groups {id: {id, pos, heading, state, target, timer,
+  members: PackedInt32Array, att?, tag?}}`, `next_group`, `next_member`,
+  `deaths`, `looks`, `hurt`, `attractors`, `rng`; static `generate(layout,
+  seed, params)`, `look_seed(world_seed, m)`; `setup`, `new_members`,
+  `add_group`, `erase_group`, `total`, `chunk_of`, `groups_in_chunk`,
+  `chunk_counts`, `take_members`, `take_member`, `fold(m, pos, state,
+  target, health, seed)`, `record_death`, `member_position`, `member_seed`,
+  `tick(minutes)` (sub-steps; wander on alternate ids, merge / split on a
+  quarter of the groups per step), `hear(pos, reach)`,
+  `nearest_attractor`, statics `ranges_of` / `parse_ranges`, `to_dict` /
+  `from_dict` (compact); stats `ticks`, `merges`, `splits`, `heard`.
+- `PopulationDirector` (Node "Population", group `population_director`):
+  exports `params`, `active_radius` 2, `release_radius` 3, `max_active`
+  120, `tick_seconds` 0.5, `sync_seconds` 0.25, `spawn_per_sync` 24,
+  `spawn_budget_ms` 5, `freeze_distance` 50 / `wake_distance` 42,
+  `enabled`. `population`, `tick_now()`, `sync_now()`, `flush_spawns()`,
+  `fold_zombie(z)`, `real_zombies()`, `active_count()`, `total_alive()`,
+  static `member_of(z)`, `active_chunks()`, `save_state()`; listens to
+  `SoundManager.sound_dispatched`, `EventBus.zombie_died`,
+  `ChunkStreamer.chunk_unloading`. Stats `spawned_count`, `folded_count`,
+  `died_count`, `frozen_count`, `sim_usec` / `sim_usec_max`, `frame_usec`,
+  `sync_usec`, `work_usec` / `work_frame`, `spawn_cost_usec`.
+- `PopulationParams` (Resource, data/simulation/default_population.tres):
+  speeds, attractors, merge / split, `indoor_factor`, `relay_radius`,
+  `relay_hops`, `max_attracted`.
+- Critic pass: `SoundCategory.sim_carry`; `PopulationDirector.sim_reach(ev)`,
+  `last_sound_reach / _groups / _relays`, `clamp_to_loaded(p)`,
+  `on_folded_zombie_died(z, killer)`; `ZombiePopulation.hear(pos, reach,
+  relays)` (relay hops), `remove_member(m)`; `Zombie.cheap_veto`,
+  `folded_by`, `_enters_building(a, b)`; `ZombieAI.MAX_LEG` (40 m legs,
+  `_far_goal`), static `path_queries / far_queries / unreached_queries`
+  + `reset_query_stats()`; zombie.tscn agent `path_search_max_distance`
+  60; `Vehicle.has_alarm / alarm_chance / alarm_radius / alarm_seconds /
+  on_break_in() / sound_alarm() / is_alarm_sounding()`,
+  `VehicleContainer.ensure_loot` (break-in); `WorldBuilder.prewarm_kinds()`
+  (`ChunkStreamer.prewarm_ms`); `WorldNav.solid_faces` skips cylinders
+  < 0.45 m.
+- Hooks: `WorldConfig.stream_state` (set by
+  `WorldSnapshot.apply_world_config` before the map enters the tree; also
+  sets the clock in `WorldConfig._ready`), `WorldSnapshot._capture_streamed`
+  / `_compact_zombie`, `SaveFile.VERSION` 2 + `builtin_migration` /
+  `migrate_1_to_2`, `SaveSchema._chunks` / `_population` (+ `_t` on
+  statics), `ZombieSpawner.find_spot(p, radius, tries)`,
+  `BloodDecals.transforms / take_in(rect) / add_transforms(list)`,
+  `SoundManager.forget_buildings()`, `Building` bounding circle (room_at
+  early-out), `ZombieAI.MAX_CALM_PATHS_PER_FRAME` (calm path-query budget,
+  static per-frame counter), `OcclusionManager` freed-room guards, `WorldNav`
+  (`chunk_ready` cache, incremental `_parse_step`, worker-thread
+  `_merge_and_bake` + static `solid_faces`, `max_parallel` 1 on ≤ 2
+  cores, `tick_usec`), input `toggle_chunk_debug` (F2) →
+  `WorldMapOverlay.set_debug`.
 
 ### `Building` / `Room` / `BuildingPlan` / `HouseBlockout` (buildings/)
 - `Room` (Node3D): axis-aligned box (`position` = floor centre, `size`);
@@ -968,6 +1065,8 @@ interaction rays: 1+7+8. Physics engine: Jolt (`physics/3d/physics_engine`).
 furniture join `breakable` while they block. `saveable`, `pause_menu` (R10).
 `world_builder`, `world_chunk`, `world_solids`, `street_lamp`, `gas_pump`,
 `world_map_overlay` (R11; street lamps are also `interior_light`).
+`chunk_streamer`, `population_director` (R12; WorldNav briefly puts one
+chunk child at a time in `_world_nav_parse` while parsing it).
 
 ## Testing
 

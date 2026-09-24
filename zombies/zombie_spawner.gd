@@ -171,6 +171,23 @@ func _spawn_groups() -> void:
 			spawned.emit(got)
 
 
+## Round 12 (population director): a usable spot at [p] or within
+## [radius] m, at most [tries] navmesh queries (the population instantiates
+## many zombies; pick_spawn_point's 60 tries cost tens of ms when a spot is
+## blocked). INF when none.
+func find_spot(p: Vector3, radius: float = 4.0, tries: int = 5) -> Vector3:
+	var q := _usable_point(p)
+	if q != Vector3.INF:
+		return q
+	for i in tries:
+		var a := rng.randf() * TAU
+		var r := radius * sqrt(rng.randf())
+		q = _usable_point(p + Vector3(cos(a) * r, 0.0, sin(a) * r))
+		if q != Vector3.INF:
+			return q
+	return Vector3.INF
+
+
 ## [p] snapped to the navmesh when it is a valid spawn spot (INF otherwise).
 func _usable_point(p: Vector3) -> Vector3:
 	var q := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p)

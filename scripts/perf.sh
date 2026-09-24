@@ -5,7 +5,8 @@
 # clustered zombies + 10 window smashes / s). Every mode checks avg and p99
 # frame time. Pass --noisy or --horde-noise to run only that mode; --save runs
 # only the Round-10 save / load timing (tests/perf/perf_save.gd); --world runs
-# only the Round-11 generated-world probe (tests/perf/perf_world.gd).
+# only the Round-11 generated-world probe (tests/perf/perf_world.gd) and the
+# Round-12 streaming probe (tests/perf/perf_streaming.gd).
 # Prints avg physics ms; exits 1 when over budget (see tests/perf/perf_zombies.gd).
 set -u
 GODOT="${GODOT:-godot}"
@@ -24,9 +25,14 @@ run_horde() {
   return ${PIPESTATUS[0]}
 }
 run_world() {
-  echo "== world (Round 11: generated county seed 1337, player on the main street + 40 zombies; layout < 2 s, load < 20 s, avg 10 ms, p99 16 ms)"
+  echo "== world (Round 11: generated county seed 1337, player on the main street + 40 zombies; layout < 2 s, load < 8 s, avg 10 ms, p99 16 ms)"
   "$GODOT" --headless --path . -s tests/perf/perf_world.gd 2>&1 | grep -v -E "$FILTER"
-  return ${PIPESTATUS[0]}
+  local W=${PIPESTATUS[0]}
+  echo "== streaming (Round 12: memory over 2 x 1 km, sprint town / woods frames, population tick with 1000 zombies < 1 ms, save / load with 50 changes)"
+  "$GODOT" --headless --path . -s tests/perf/perf_streaming.gd 2>&1 | grep -v -E "$FILTER"
+  local S=${PIPESTATUS[0]}
+  if [ "$W" -ne 0 ] || [ "$S" -ne 0 ]; then return 1; fi
+  return 0
 }
 if [ "${1:-}" = "--world" ]; then
   run_world

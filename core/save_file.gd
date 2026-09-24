@@ -10,7 +10,7 @@ extends RefCounted
 ## Writes go to "<file>.tmp" first and are renamed over the old file, so a
 ## crash mid-write leaves the previous save intact.
 
-const VERSION := 1
+const VERSION := 2
 const ROOT := "user://saves"
 ## Where the tests / tools write (SaveManager switches to it when a test
 ## runner, the screenshot run or a perf probe is the main loop).
@@ -142,14 +142,76 @@ static func migrate(data: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "Save is from a newer version (%d > %d)" % [v, VERSION]}
 	var d := data
 	while v < VERSION:
-		if not migrations.has(v):
+		var mig: Callable = migrations.get(v, builtin_migration(v))
+		if not mig.is_valid():
 			return {"ok": false, "error": "Save version %d is too old (no migration)" % v}
-		d = (migrations[v] as Callable).call(d.duplicate(true))
+		d = mig.call(d.duplicate(true))
 		if d == null or not d is Dictionary:
 			return {"ok": false, "error": "Migration from version %d failed" % v}
 		v += 1
 		d["version"] = v
 	return {"ok": true, "data": d}
+
+
+## The migrations that ship with the game (tests add their own through
+## [migrations], which win).
+static func builtin_migration(from_version: int) -> Callable:
+	match from_version:
+		1:
+			return migrate_1_to_2
+	return Callable()
+
+
+## Round 12: version 2 = streamed worlds. Hand-made maps keep the Round-10
+## format unchanged. A Round-11 generated-world save (every static in
+## full, dropped items / corpses / blood as flat lists) becomes a streamed
+## one: its statics are the store's deltas (objects equal to their
+## default are pruned on the next unload), items / corpses / blood move
+## into the record of the chunk they lie in, and the population is
+## generated from the seed minus the start pack and the rural groups the
+## save had already spawned (those are in its zombie records).
+static func migrate_1_to_2(d: Dictionary) -> Dictionary:
+	var w: Variant = d.get("world")
+	if not w is Dictionary or not (w as Dictionary).has("worldgen"):
+		return d
+	var cs := 64.0
+	var gp := String((w as Dictionary).get("worldgen_params", ""))
+	if gp.begins_with("res://data/worldgen/") and gp.ends_with(".tres") and not gp.contains("..") and ResourceLoader.exists(gp):
+		var prm := load(gp) as WorldGenParams
+		if prm != null and prm.chunk_size > 0.0:
+			cs = prm.chunk_size
+	var t := 0.0
+	if d.get("time") is Dictionary:
+		t = float((d.time as Dictionary).get("minutes", 0.0))
+	var chunks := {}
+	var put := func(pos: Variant, key: String, rec: Variant) -> void:
+		var p := Saveable.to_vec3(pos)
+		var k := WorldStateStore.key(Vector2i(maxi(int(floor(p.x / cs)), 0), maxi(int(floor(p.z / cs)), 0)))
+		if not chunks.has(k):
+			chunks[k] = {"items": [], "corpses": [], "blood": [], "t": t}
+		(chunks[k][key] as Array).append(rec)
+	for rec in d.get("items", []):
+		if rec is Dictionary:
+			put.call(rec.get("position"), "items", rec)
+	for rec in d.get("corpses", []):
+		if rec is Dictionary:
+			put.call(rec.get("position"), "corpses", rec)
+	if d.get("blood") is Dictionary:
+		for x in (d.blood as Dictionary).get("splats", []):
+			if x is Array and (x as Array).size() == 12:
+				put.call([x[9], x[10], x[11]], "blood", x)
+	d["items"] = []
+	d["corpses"] = []
+	d.erase("blood")
+	d["chunks"] = chunks
+	var spawned: Array = []
+	if d.get("spawners") is Dictionary:
+		for sid in d.spawners:
+			var sp: Variant = d.spawners[sid]
+			if sp is Dictionary:
+				spawned.append_array((sp as Dictionary).get("groups_spawned", []))
+	d["population"] = {"legacy": true, "groups_spawned": spawned}
+	return d
 
 
 ## "" when [data] (already migrated) is loadable, else the reason: the

@@ -5,18 +5,36 @@ that fixed them.
 
 ## Open
 
+- **Round-12 streaming / population gaps** (ordered):
+   - **Trunks are not in the navmesh** (critic fix for woods frame
+     spikes): paths go straight through trees and zombies slide round
+     trunks with move_and_slide (cheap movers slide through them).
+   - **Relay chains can empty a town**: a smash / alarm turns every group
+     in direct reach plus ≤ 60 relayed zombies (live and data each); no
+     notion yet of line of sight or of groups losing interest early.
+   - **Hostile zombies are not path-budgeted** (only calm ones: ≤ 3 new
+     paths per physics frame) — a horde turning hostile at once can still
+     spike.
+   - **Data groups ignore terrain**: simulated groups walk straight lines
+     (through ponds / buildings); positions are snapped to the navmesh
+     when instantiated (spots inside buildings are re-tried within 4 m,
+     then the group waits 5 s).
+   - **Frozen LOD zombies** (calm, > 50 m) do not see the player until
+     woken at 42 m or by a sound (or a relay) — fine at the current sight
+     ranges.
+   - **Horde markers on the map** (only hordes the player has seen) are
+     not done; the F2 debug layer shows every group.
+   - **Save right after a load** of a streamed world differs slightly
+     (the population ticked once, zombie positions rounded to the cm) —
+     the Round-10 "identical save" property is only tested on the
+     hand-made map.
+   - **Window glass shards / splinters / noise rings** are not chunk
+     objects (effects only; shards are part of the window state).
+   - **Nav borders while streaming**: a chunk baked before its neighbour's
+     content loaded misses obstacles straddling the shared border (the 2.4
+     m bake border); it is not re-baked when the neighbour arrives. Load
+     radius 3 vs nav radius 2 makes this rare (teleports / the first bake).
 - **Round-11 generated world gaps** (ordered):
-   - **No chunk-node streaming yet**: the whole county is built at load
-     (144 chunk nodes, ~27 k nodes, ~1 s). Navigation streams (5 × 5
-     around the player, baked ahead while walking, freed beyond 4 chunks);
-     zombies are the 40-zombie start population + one rural group per
-     hamlet / farm spawned when its chunk's navmesh is live — no
-     despawning and no simulation of `chunk_density` yet.
-     Round 12: stream chunk nodes in and out, population sim.
-   - **Save size grows with the world**: every instantiated static
-     (~2 000 containers / doors / windows / vehicle containers) is saved
-     even when untouched (228 KB, 30 ms). Per-chunk records of changed
-     statics only belong with streaming.
    - **Furniture re-bake is per chunk**: `WorldNav.request_rebake()`
      re-parses the chunk under the player only; furniture moved within the
      2.4 m bake border of a neighbouring chunk leaves that tile stale until
@@ -346,6 +364,27 @@ that fixed them.
    here).
 
 ## Fixed
+
+- **Round 12**: the whole county built at load (~27 k nodes) → chunk
+  streaming (≤ 81 chunks, ~9-19 k nodes); every static saved (228 KB) →
+  delta saves (~24 KB untouched); zombies only near the start / never
+  despawned → population simulation (900 zombies as data, 120 live cap);
+  `WorldNav.chunk_ready` queries every few frames cost ~15 ms per physics
+  frame (cached now); `Building.room_at` scanned every room of every
+  building for every sound listener (bounding-circle early out); a
+  failing zombie spawn spot cost up to 50 ms (`ZombieSpawner.find_spot`);
+  OcclusionManager kept freed rooms / buildings (guards). Critic pass:
+  woods frame spikes (trunks carved into the navmesh: ~11 k polygons;
+  population zombies re-pathing to goals 250-555 m away, off-mesh) →
+  uncarved trunks + 40 m legs + target clamping (woods worst 15 ms);
+  the engine error "It's not expect to not find the most reachable
+  polygons" (path_search_max_polygons 0 → max distance 60 m); cheap movers
+  sliding through closed doors into sealed houses; random_nav_point
+  returning an indoor point; unloading a half-built chunk erased its
+  stored items; a zombie killed in the frame it was folded came back;
+  tests mutating the shared population .tres; sprint footsteps counted as
+  loud for the sim (now a per-category `sim_carry`); first-of-a-kind
+  building steps mid-sprint (pre-built at load).
 
 - R10: nothing was saved to disk — barricades / skills registered with
   nothing, moved / destroyed furniture, dropped items and the player's

@@ -1083,7 +1083,8 @@ loaded onto a freshly instanced map.
   (`SaveFile.first_difference`, 1e-9 relative): Godot's JSON number parser
   can change the last bit of a double.
 - **Two-phase load**: phase 1 touches nothing — read, parse, migrate
-  (`version: 1`, `SaveFile.migrations` hook), then `SaveSchema.check`
+  (`version: 2` since Round 12 — streamed worlds, see World streaming;
+  built-in 1 → 2 migration; `SaveFile.migrations` hook for tests), then `SaveSchema.check`
   type-checks EVERY field (finite in-range numbers, bools, strings,
   dicts / lists, enum values, item ids known to ItemDB, count 1..max_stack,
   condition ≤ max, contents only on bags, nesting ≤ 8, zombie profile ids
@@ -1263,8 +1264,12 @@ lists every exterior door (the generator keeps props and cars off them).
 ### Instantiation (`WorldBuilder`, node `Generated`)
 
 At `_ready`: seed from `WorldConfig.world_seed`, params from
-`WorldConfig.worldgen_params`; generates (cached) and builds the whole
-world (~1 s, ~27 k nodes): ground body + a splat-shaded plane
+`WorldConfig.worldgen_params`; generates (cached) and turns the layout
+into per-chunk **recipes** (Round 12, ~90 ms: shared MultiMesh / ArrayMesh
+resources + solid shape lists + building records + node payloads); the
+chunk CONTENT is instantiated from the recipes by the ChunkStreamer
+around the player (World streaming below) — or all at once when the map
+has no streamer (tools; ~0.8 s, ~27 k nodes). Content: ground body + a splat-shaded plane
 (`world_ground.gdshader`: olive / desaturated greens, value noise, worn
 dirt patches, dry tufts; gravel verges beside rural roads), bounds, and
 per 64 m chunk `C_x_z` with its buildings (HouseBlockout at the plan's
@@ -1295,9 +1300,23 @@ chunks around the player and 4 s ahead along its velocity are queued (≤ 2
 bakes in flight, ≤ 1 chunk source parsed per tick), regions beyond
 `keep_radius` 4 are freed with their sources (hysteresis). `chunk_ready(c)`
 = region live and verified.
+Round 12: only LOADED chunks are baked (a streamed-out chunk has no
+source); tree trunks (cylinders < 0.45 m radius) are not carved into the
+navmesh (they fragmented the woods into ~11 k polygons; zombies slide
+round trunks with move_and_slide); sources are parsed one child node (a building, a vehicle, a
+prop holder) per physics tick; the `Solids` body is not parsed at all —
+its faces (boxes, trunks as 8-sided prisms) come from the chunk recipe on
+the bake worker (`solid_faces`), where the 3 × 3 sources are also merged
+(`_merge_and_bake`, a WorkerThreadPool task; the node waits for running
+tasks in `_exit_tree`); one background bake at a time on ≤ 2 cores;
+`chunk_ready` caches a verified region (navigation queries every few
+frames kept the map busy: ~15 ms per physics frame on the 2-core box).
 
 ### Population
 
+Round 12: replaced by the population simulation (below) — the spawner
+is only the zombie factory in world.tscn. Round 11 behaviour (kept for
+maps without a PopulationDirector):
 `layout.zombies` (40 around the start) → `ZombieSpawner.spawn_points`
 (spawned on `navigation_ready` via a one-shot signal; points not yet
 usable are retried every 0.5 s, one summary warning after 20 rounds).
@@ -1345,10 +1364,141 @@ freed, player chunk always baked. Variety (100 seeds): town centre x / z
 22-60 lots (mean 36), hamlets 1 / 2 / 3 = 38 / 40 / 22 (62 crossroads,
 122 linear), farms 3-8, loop road on 26 %, rural length / chord mean 1.24.
 
+## World streaming ✅ (Round 12)
+
+`ChunkStreamer` (node `Streamer` in world.tscn). The layout and every
+chunk recipe stay in memory; chunk content lives only near the player.
+
+- **Radii** (Chebyshev, 64 m chunks): load ≤ 3 (7 × 7), unload > 4
+  (hysteresis: walking back and forth over a border never reloads),
+  initial 2 (built synchronously at map load, the rest over frames),
+  sync 1 — the player's chunk and its 8 neighbours are built at once when
+  missing (teleport / load; "Loading area…" when that took > 100 ms), so
+  the player never stands in an unbuilt chunk.
+- **Budget**: `budget_ms` 4 per frame, at least one step: a chunk is built
+  as `base` (box / road / tree meshes + one Solids body) → one step per
+  building (~2 ms each; a building always starts a frame of its own) →
+  lights / props / pumps / ponds → one step per vehicle → `finish`. The
+  population director's instantiation work of the same frame comes off
+  the budget. Queue: nearest first, chunks ahead of the walking direction
+  (3 s of velocity) earlier; ties by z, x.
+- **Unload**: one chunk per frame — `chunk_unloading` (the director folds
+  its zombies), capture into the store, `WorldBuilder.detach_chunk` (no
+  longer loaded, impostor shown, nodes hidden), then its nodes are freed
+  one per frame (a building ~ 1-4 ms); a chunk rebuilt before its old
+  nodes are gone frees them first (no two nodes with one persist id).
+- **Impostors**: every building has a low-detail box (walls + roof-colour
+  slab) in a per-chunk MultiMesh, shown while its chunk is not loaded, so
+  the horizon at max zoom is never empty.
+- **Persistent chunk state** (`WorldStateStore`): when a chunk is built,
+  each saveable's `save_state()` is recorded as its generated default,
+  then the stored delta is applied (`load_state`) and destroyed ids are
+  removed (`remove_for_load`). At unload a saveable is stored only when
+  its state differs from that default (an unsearched container, an
+  untouched door or a door opened and closed again are not stored).
+  Containers carry `_t` (capture minute): when the chunk loads again the
+  food inside ages by the elapsed game minutes × the container's spoil
+  rate (a fridge 0.25). Dropped WorldItems, corpses (with their pockets)
+  and blood splats are stored per chunk by position at unload time (so a
+  carried / dragged object belongs to the chunk it is in then) and come
+  back where they were (items aged at rate 1).
+- **Saves**: `WorldSnapshot.capture` of a streamed map = world + time +
+  `statics` (store deltas + live deltas of loaded chunks) + `destroyed` +
+  `chunks` (store records + live items / corpses / blood of loaded
+  chunks) + `population` + the living real zombies (positions to the cm)
+  + player + camera. An untouched new game saves ~24 KB (budget 50 KB);
+  50 changed objects ~32 KB, save ~45 ms. A load hands the store,
+  population, clock and player position to `WorldConfig.stream_state`
+  before the map enters the tree: the chunks around the saved player are
+  built with their deltas (load ≈ 4.8 s incl. the nav bake), the rest
+  loads as the player walks. `SaveFile.VERSION` 2: Round-11 saves of the
+  generated world migrate (statics → deltas, items / corpses / blood →
+  chunk records, population regenerated minus the start pack and the
+  rural groups the save already spawned); hand-made-map saves keep their
+  format.
+- **Debug** (F2, `toggle_chunk_debug`): the map overlay (opens it) with
+  the chunk grid — loaded chunks framed green, queued amber, unloaded
+  dimmed — simulated zombies per chunk, data groups (white wandering, red
+  investigating, orange migrating), live zombies (green) and a stats line.
+
+## Zombie population simulation ✅ (Round 12)
+
+`ZombiePopulation` (pure data) + `PopulationDirector` (node `Population`)
++ `PopulationParams` (`data/simulation/default_population.tres`).
+
+- **Population**: the layout's start pack (40, one per point, as in
+  Round 11), its rural groups (one per hamlet / farm) and a fill over the
+  rest of the county by `chunk_density` (towns dense, woods × 0.3), no
+  fill within 2 chunks of the start: 900 at 768 m (scaled by area,
+  600-1200), groups of 1-6. Seed 1337: 900 in ~300 groups.
+- **Groups** `{pos, heading, state, target, timer, members}`; members are
+  int ids (look seed `sub_seed(world seed, "pop:<id>")`, or the zombie's
+  own seed when it was spawned elsewhere and folded in; wounded members
+  keep their health). States: WANDER (0.25 m / game min random walk,
+  drifting back toward the nearest attractor — town / hamlet / farm
+  centre — beyond 110 m; 3 % per game hour set off to another one),
+  MIGRATE (0.5 m / min to it), INVESTIGATE (0.9 m / min to a heard noise,
+  wander there; gives up after 90 min). Same-state groups within 6 m
+  merge (≤ 24); wandering groups > 12 split (20 % / h). Deterministic
+  (one seeded rng, id order); members only move between groups, so data +
+  live zombies + dead is constant.
+- **Time**: ticks at 2 Hz of real time by the GAME minutes elapsed
+  (TimeManager), sub-stepped by 20 min: fast-forward and sleep move groups
+  proportionally (8 game hours ≈ 15 ms). 1000 zombies: ~0.7 ms per tick
+  (wander on alternate ids, merge / split on a quarter of the groups per
+  step).
+- **Sound** (critic pass): a category's `sim_carry` (SoundCategory, data)
+  says how far it carries for the population: radius × sim_carry, halved
+  when made inside a building — window smash / door break / hammering /
+  shout / alarm × 3.5 (smash 70 m, car alarm 90 m → 315 m), door bang /
+  wood break / barricade bang × 2.5, gunshot × 2, vehicle / generator × 1;
+  footsteps, doors, rummaging never. Zombies follow zombies: live zombies
+  in reach, calm live zombies within 45 m of those (≤ 3 hops, ≤ 60 —
+  they turn to investigate too) and data groups within 45 m of any of
+  them (≤ 3 hops, ≤ 60 relayed) walk to the noise; every group in direct
+  reach turns. A smash on the main street turned 8 data groups 100-200 m
+  away; the first reached the active area ~10 game minutes later.
+- **Car alarms**: cars parked in town (`Vehicle.has_alarm`) go off on
+  ~30 % of break-ins (the first search of the trunk / glovebox; rolled
+  from the world seed + car id): alarm 90 m every 5 s for 30 s.
+- **Live zombie guards**: a cheap (collision-free) mover whose step would
+  enter a building room from outside hands over to full physics (doors /
+  windows block and get attacked; `Zombie.cheap_veto` 3 s);
+  `WorldQuery.random_nav_point` stays at the centre instead of returning
+  an indoor point. Far goals are walked in 40 m legs (`ZombieAI.MAX_LEG`;
+  no query to a target off the streamed navmesh); agents search at most
+  60 m (`path_search_max_distance`); calm zombies start ≤ 3 new paths per
+  physics frame. Population-spawned zombies clamp their group's goal into
+  the loaded chunks. A zombie killed in the frame it was folded back is a
+  death (member removed, corpse laid), never a resurrection.
+- **Active area**: loaded chunks within 2 of the player whose navmesh is
+  verified. Their groups become real zombies nearest first (spawn id
+  `pop/<member>`, state idle / wander, or investigating the group's
+  target), at most `max_active` 120 alive; ≤ 5 ms of instantiation per
+  physics frame (a zombie costs ~2-5 ms). A calm live zombie farther than
+  30 m beyond a nearer waiting group is swapped back into data at the cap
+  (nearest-first overall). Zombies beyond 3 chunks (or in a chunk that is
+  unloading) fold back into data with their position, calm state /
+  investigation target and wounds, a few per frame. A killed zombie's
+  member is gone for good (deaths counted); its corpse is a chunk object.
+- **LOD** (the brief's "medium distance: simplified"): calm live zombies
+  farther than 50 m stop their per-frame AI / senses / movement (still
+  bodies and sound listeners); they wake within 42 m or when a sound
+  changed their state.
+
+Numbers (2-core box, headless, seed 1337): load ≈ 5.4 s (recipes 90 ms,
+49 chunks, 25 nav regions); ~18.7 k world nodes near the start, ~9.5 k
+400 m away in the countryside; memory flat over a second 1 km walk
+(+1 MB); sprint (6.5 m/s): town avg 6.9 ms / p99 14.5 ms / worst 27 ms
+frames, woods avg 6.9 / p99 11 / worst 15 ms (29-48 ms before the critic
+fixes: uncarved trunks, 40 m path legs); test route: worst 17-31 ms.
+Load ≈ 4.9 s incl. pre-building one building of each kind (first-of-a-
+kind costs at load, not mid-sprint).
+
 ## Planned (see MASTER_PLAN for order)
 
 Sound propagation ✅ · Combat ✅ (melee) · Health & injuries ✅ · Inventory ✅ (equipment, bags, encumbrance) ·
 Loot tables ✅ · Needs ✅ (hunger / thirst / fatigue / sickness; temperature, wetness, stress ⬜) ·
 Barricades ✅ (R9: planks, furniture, carpentry) · Save/load ✅ (R10) · Crafting ⬜ · World time ✅ · Vehicles 🔶 (parked, R8.5) · Character models ✅ (R8.5) ·
-Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ⬜ (R11: density records only) ·
-World generation ✅ (R11) · World streaming 🔶 (R11: chunk nodes + per-chunk nav; R12 streams) · NPC survivors ⬜
+Farming ⬜ · Weather ⬜ · Electricity ⬜ · Zombie population sim ✅ (R12) ·
+World generation ✅ (R11) · World streaming ✅ (R12: chunks, persistent deltas, delta saves) · NPC survivors ⬜

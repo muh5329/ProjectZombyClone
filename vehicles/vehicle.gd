@@ -13,6 +13,12 @@ extends StaticBody3D
 ## the "vehicle" group. Meshes / materials come from VehicleAssets.
 ## Driving is a later round: a VehicleBody3D will reuse VehicleData +
 ## VehicleBuilder the same way.
+## Round 12: [has_alarm] cars (parked in town) may go off when broken into
+## (the first search of the trunk / glovebox): [alarm_chance], rolled
+## deterministically from the world seed and the car's id; the alarm
+## sounds (category "alarm", [alarm_radius] m) every ALARM_REPEAT seconds
+## for [alarm_seconds] — loud enough to pull the zombie population from
+## a few hundred metres (SoundCategory.sim_carry).
 
 const GROUP := &"vehicle"
 const LAYER_WORLD := 1
@@ -27,6 +33,15 @@ const MAX_BEACON_LIGHTS := 4
 @export var variant_seed: int = 0
 ## Persist id prefix for the containers ("" = "Vehicle/<name>").
 @export var persist_prefix: String = ""
+@export var has_alarm: bool = false
+@export var alarm_chance: float = 0.3
+@export var alarm_radius: float = 90.0
+@export var alarm_seconds: float = 30.0
+
+const ALARM_REPEAT := 5.0
+## Seconds of alarm left (> 0 while it sounds).
+var alarm_left: float = 0.0
+var _alarm_emit: float = 0.0
 
 var visual: Node3D
 var mesh_instance: MeshInstance3D
@@ -146,10 +161,48 @@ func set_night_lights(night: bool) -> void:
 		beacon_light.visible = false
 		beacon_light.remove_from_group(BEACON_GROUP)
 	_beacon_t = 0.0
-	set_process(on)
+	set_process(on or alarm_left > 0.0)
+
+
+## Broken into (VehicleContainer's first search): maybe the alarm.
+## Returns true when it went off.
+func on_break_in() -> bool:
+	if not has_alarm or alarm_left > 0.0:
+		return false
+	var ws := 0
+	var cfg := WorldConfig.find(get_tree()) if is_inside_tree() else null
+	if cfg != null:
+		ws = cfg.world_seed
+	var r := RandomNumberGenerator.new()
+	r.seed = WorldGenerator.sub_seed(ws, "%s/alarm" % (persist_prefix if persist_prefix != "" else String(name)))
+	if r.randf() >= alarm_chance:
+		return false
+	sound_alarm()
+	return true
+
+
+## Start the alarm now (tests call it directly).
+func sound_alarm() -> void:
+	alarm_left = alarm_seconds
+	_alarm_emit = 0.0
+	set_process(true)
+
+
+func is_alarm_sounding() -> bool:
+	return alarm_left > 0.0
 
 
 func _process(delta: float) -> void:
+	if alarm_left > 0.0:
+		_alarm_emit -= delta
+		if _alarm_emit <= 0.0:
+			_alarm_emit = ALARM_REPEAT
+			SoundManager.emit_sound(&"alarm", global_position, self, {"radius": alarm_radius, "intensity": 1.0})
+		alarm_left -= delta
+		if alarm_left <= 0.0 and not lights_on:
+			set_process(false)
+	if not lights_on:
+		return
 	# Alternate the light bar halves (and the light pool's colour).
 	var first := _beacon_t == 0.0
 	_beacon_t += delta
